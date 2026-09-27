@@ -7,7 +7,11 @@ import * as NodeSqlite from "node:sqlite";
 
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { HostProcessEnvironment, HostProcessPlatform } from "@t3tools/shared/hostProcess";
+import {
+  HostProcessEnvironment,
+  HostProcessHostname,
+  HostProcessPlatform,
+} from "@t3tools/shared/hostProcess";
 import { mergeUsage } from "@t3tools/shared/usageMerge";
 import {
   EnvironmentId,
@@ -85,10 +89,13 @@ const serviceLayers = (input: {
   readonly ratesDocument?: unknown;
   readonly environment?: NodeJS.ProcessEnv;
   readonly platform?: NodeJS.Platform;
+  readonly hostname?: string;
+  readonly baseDir?: string;
 }) =>
-  ServerConfig.layerTest(process.cwd(), { prefix: input.prefix }).pipe(
+  ServerConfig.layerTest(process.cwd(), input.baseDir ?? { prefix: input.prefix }).pipe(
     Layer.provideMerge(NodeServices.layer),
     Layer.provideMerge(Layer.succeed(HostProcessPlatform, input.platform ?? "linux")),
+    Layer.provideMerge(Layer.succeed(HostProcessHostname, input.hostname ?? "usage-test-host")),
     Layer.provideMerge(ServerSettings.layerTest(input.settings)),
     Layer.provideMerge(
       Layer.succeed(
@@ -121,6 +128,48 @@ function totalOutputTokens(summary: { buckets: readonly { totals: { outputTokens
 }
 
 describe("UsageService", () => {
+  it.live("keeps a stable usage host id across container hostname changes", () =>
+    Effect.gen(function* () {
+      const { transcript, settings, home } = yield* setup;
+      const baseDir = yield* Effect.promise(() =>
+        NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "usage-host-id-test-")),
+      );
+      yield* Effect.addFinalizer(() =>
+        Effect.promise(() => NodeFSP.rm(baseDir, { recursive: true, force: true })),
+      );
+      yield* Effect.promise(() => NodeFSP.writeFile(transcript, claudeLine(1, 5)));
+
+      const readHostId = (hostname: string, environment?: NodeJS.ProcessEnv) =>
+        Effect.gen(function* () {
+          const service = yield* UsageService.make.pipe(
+            Effect.provide(
+              serviceLayers({
+                prefix: "usage-host-id-stability",
+                baseDir,
+                home,
+                settings,
+                hostname,
+                environment,
+              }),
+            ),
+          );
+          const summary = yield* service.readSummary(WINDOW);
+          return summary.sources.find((source) => source.fingerprint.provider === "claude")
+            ?.fingerprint.hostId;
+        });
+
+      assert.strictEqual(yield* readHostId("container-a"), "container-a");
+      assert.strictEqual(yield* readHostId("container-b"), "container-a");
+      assert.strictEqual(
+        yield* readHostId("container-c", { T3CODE_HOST_ID: "physical-host" }),
+        "physical-host",
+      );
+      // An explicit override is runtime configuration, not a rewrite of the
+      // persisted fallback used when the override is later removed.
+      assert.strictEqual(yield* readHostId("container-d"), "container-a");
+    }).pipe(Effect.scoped),
+  );
+
   it.live("omits Cursor account usage when no file login is saved", () =>
     Effect.gen(function* () {
       const { settings, home } = yield* setup;
