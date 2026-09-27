@@ -264,6 +264,7 @@ export const make = Effect.gen(function* () {
     const dirs: Array<{
       provider: UsageProviderKind;
       dir: string;
+      scanDirs: readonly string[];
       volumeId: string;
       fileName?: string;
     }> = [];
@@ -304,6 +305,8 @@ export const make = Effect.gen(function* () {
           );
         }
         const directory = path.resolve(home, provider === "claude" ? "projects" : "sessions");
+        const additionalDirectories =
+          provider === "codex" ? [path.resolve(home, "archived_sessions")] : [];
         const sourceKey = provider + "\0" + directory;
         const previous = sourceCache.get(sourceKey);
         // Keep canonical paths and source fingerprints stable after root cleanup,
@@ -311,6 +314,14 @@ export const make = Effect.gen(function* () {
         const dir = yield* fileSystem
           .realPath(directory)
           .pipe(Effect.orElseSucceed(() => previous?.dir ?? directory));
+        const scanDirs = [
+          ...new Set([
+            dir,
+            ...(yield* Effect.forEach(additionalDirectories, (candidate) =>
+              fileSystem.realPath(candidate).pipe(Effect.orElseSucceed(() => candidate)),
+            )),
+          ]),
+        ];
         const currentVolumeId = yield* Effect.promise(() => readDirectoryVolumeId(dir));
         const hasRetainedHistory = fileCache
           .entries()
@@ -319,7 +330,7 @@ export const make = Effect.gen(function* () {
               entry.provider === provider &&
               entry.mtimeMs >= retentionCutoffMs &&
               entry.records.length + entry.tailRecords.length > 0 &&
-              isWithinDirectory(filePath, dir),
+              scanDirs.some((scanDir) => isWithinDirectory(filePath, scanDir)),
           );
         // A recreated directory still reports the retained history under its old identity.
         const volumeId =
@@ -336,6 +347,7 @@ export const make = Effect.gen(function* () {
         dirs.push({
           provider,
           dir,
+          scanDirs,
           volumeId,
           ...(provider === "grok" ? { fileName: "updates.jsonl" } : {}),
         });
@@ -453,6 +465,7 @@ export const make = Effect.gen(function* () {
   interface ScannedDir {
     readonly provider: UsageProviderKind;
     readonly dir: string;
+    readonly scanDirs: readonly string[];
     readonly volumeId: string;
     readonly hostId?: string;
     readonly status?: UsageSource["status"];
@@ -475,23 +488,34 @@ export const make = Effect.gen(function* () {
       Effect.provideService(Path.Path, path),
     );
     const scanned: ScannedDir[] = [];
-    for (const { provider, dir, volumeId, fileName } of dirs) {
-      const exists = yield* fileSystem
-        .exists(dir)
-        .pipe(Effect.catchCause(() => Effect.succeed(false)));
-      if (!exists) {
-        scanned.push({ provider, dir, volumeId, files: null });
-        continue;
-      }
-      const files = yield* Effect.promise(() =>
-        listTranscriptFiles(dir, windowStartMs, fileName === undefined ? undefined : { fileName }),
-      );
+    for (const { provider, dir, scanDirs, volumeId, fileName } of dirs) {
       const parsedFiles: { path: string; records: readonly UsageRecord[] }[] = [];
-      for (const file of files) {
-        const records = yield* readFileRecords(file.path, file.size, file.mtimeMs, provider);
-        parsedFiles.push({ path: file.path, records });
+      let foundTranscriptDir = false;
+      for (const scanDir of scanDirs) {
+        const exists = yield* fileSystem
+          .exists(scanDir)
+          .pipe(Effect.catchCause(() => Effect.succeed(false)));
+        if (!exists) continue;
+        foundTranscriptDir = true;
+        const files = yield* Effect.promise(() =>
+          listTranscriptFiles(
+            scanDir,
+            windowStartMs,
+            fileName === undefined ? undefined : { fileName },
+          ),
+        );
+        for (const file of files) {
+          const records = yield* readFileRecords(file.path, file.size, file.mtimeMs, provider);
+          parsedFiles.push({ path: file.path, records });
+        }
       }
-      scanned.push({ provider, dir, volumeId, files: parsedFiles });
+      scanned.push({
+        provider,
+        dir,
+        scanDirs,
+        volumeId,
+        files: foundTranscriptDir ? parsedFiles : null,
+      });
     }
 
     const home = NodeOS.homedir();
@@ -737,6 +761,7 @@ export const make = Effect.gen(function* () {
     for (const {
       provider,
       dir,
+      scanDirs,
       volumeId,
       files,
       status,
@@ -753,7 +778,7 @@ export const make = Effect.gen(function* () {
           entry.provider !== provider ||
           entry.mtimeMs < retentionCutoffMs ||
           livePaths.has(filePath) ||
-          !isWithinDirectory(filePath, dir)
+          !scanDirs.some((scanDir) => isWithinDirectory(filePath, scanDir))
         )
           continue;
         retainedFiles.push({ path: filePath, records: [...entry.records, ...entry.tailRecords] });

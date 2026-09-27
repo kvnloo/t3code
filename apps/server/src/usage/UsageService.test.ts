@@ -49,6 +49,25 @@ function claudeLine(id: number, outputTokens: number, model = "claude-fable-5"):
   })}\n`;
 }
 
+function codexRollout(sessionId: string, outputTokens: number): string {
+  return (
+    [
+      { type: "session_meta", payload: { id: sessionId } },
+      { type: "turn_context", payload: { model: "gpt-5.6-sol" } },
+      {
+        type: "event_msg",
+        timestamp: "2026-08-01T10:00:00Z",
+        payload: {
+          type: "token_count",
+          info: { last_token_usage: { input_tokens: 10, output_tokens: outputTokens } },
+        },
+      },
+    ]
+      .map((line) => encodeUnknownJsonString(line))
+      .join("\n") + "\n"
+  );
+}
+
 const WINDOW: UsageSummaryInput = {
   timeZone: "UTC",
   sinceDay: UsageDay.make("2026-07-31"),
@@ -338,6 +357,57 @@ describe("UsageService", () => {
         sourcesFor("antigravity")[0]?.fingerprint.resolvedHomePath,
         yield* Effect.promise(() => NodeFSP.realpath(conversations)),
       );
+    }).pipe(Effect.scoped),
+  );
+
+  it.live("counts Codex active and archived sessions as one usage source", () =>
+    Effect.gen(function* () {
+      const { settings, home } = yield* setup;
+      const codexHome = NodePath.join(home, "codex");
+      const sessions = NodePath.join(codexHome, "sessions");
+      const archivedSessions = NodePath.join(codexHome, "archived_sessions");
+      yield* Effect.promise(async () => {
+        await NodeFSP.mkdir(sessions, { recursive: true });
+        await NodeFSP.mkdir(archivedSessions, { recursive: true });
+        await NodeFSP.writeFile(
+          NodePath.join(sessions, "active.jsonl"),
+          codexRollout("codex-active-session", 5),
+        );
+        await NodeFSP.writeFile(
+          NodePath.join(archivedSessions, "archived.jsonl"),
+          codexRollout("codex-archived-session", 7),
+        );
+      });
+
+      const service = yield* UsageService.make.pipe(
+        Effect.provide(
+          serviceLayers({
+            prefix: "usage-service-codex-archived-sessions-test",
+            home,
+            settings,
+          }),
+        ),
+      );
+      const summary = yield* service.readSummary(WINDOW);
+
+      assert.strictEqual(totalOutputTokens(summary), 12);
+      const codexSources = summary.sources.filter(
+        (source) => source.fingerprint.provider === "codex",
+      );
+      assert.strictEqual(codexSources.length, 1);
+      assert.strictEqual(codexSources[0]?.scannedFiles, 2);
+      assert.strictEqual(codexSources[0]?.distinctSessions, 2);
+
+      const canonicalSessions = yield* Effect.promise(() => NodeFSP.realpath(sessions));
+      assert.strictEqual(codexSources[0]?.fingerprint.resolvedHomePath, canonicalSessions);
+      const sourcePaths = [
+        ...new Set(
+          summary.buckets
+            .filter((bucket) => bucket.provider === "codex")
+            .map((bucket) => bucket.sourcePath),
+        ),
+      ];
+      assert.deepStrictEqual(sourcePaths, [canonicalSessions]);
     }).pipe(Effect.scoped),
   );
 
