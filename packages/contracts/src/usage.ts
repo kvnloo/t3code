@@ -138,6 +138,15 @@ export const UsageSourceFingerprint = Schema.Struct({
    * effectively never collides across machines. Empty when it cannot be read.
    */
   volumeId: Schema.String,
+  /**
+   * Optional cross-runtime identity for the same physical transcript store.
+   *
+   * Desktop-managed Windows + WSL backends can see one NTFS directory through
+   * different path and inode namespaces. When both sides can prove a shared
+   * physical-host scope, the server emits the same value here and clients
+   * prefer it over the legacy host/path/volume tuple.
+   */
+  physicalSourceId: Schema.optional(TrimmedNonEmptyString),
 });
 export type UsageSourceFingerprint = typeof UsageSourceFingerprint.Type;
 

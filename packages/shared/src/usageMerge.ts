@@ -112,6 +112,9 @@ export interface MergedUsage {
  * having one of them silently dropped.
  */
 function fingerprintKey(fingerprint: UsageSourceFingerprint): string {
+  if (fingerprint.physicalSourceId !== undefined) {
+    return ["physical", fingerprint.provider, fingerprint.physicalSourceId].join(" ");
+  }
   return [
     fingerprint.hostId,
     fingerprint.provider,

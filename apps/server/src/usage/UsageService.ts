@@ -68,6 +68,7 @@ import {
   type ScanCache,
 } from "./usageScanCache.ts";
 import type { UsageRecord } from "./usageTranscripts.ts";
+import { usagePhysicalSourceId } from "./usageSourceIdentity.ts";
 
 const LITELLM_RATES_URL =
   "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
@@ -158,6 +159,7 @@ export const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
   const hostEnvironment = yield* HostProcessEnvironment;
   const platform = yield* HostProcessPlatform;
+  const usageHostScope = hostEnvironment["T3CODE_USAGE_HOST_ID"]?.trim() || undefined;
 
   const fileCache: ScanCache = new Map();
   const sourceCache = new Map<string, typeof CachedSource.Type>();
@@ -795,8 +797,16 @@ export const make = Effect.gen(function* () {
         }
       }
 
+      const physicalSourceId =
+        sourceHostId === undefined ? usagePhysicalSourceId(usageHostScope, dir) : undefined;
       sources.push({
-        fingerprint: { hostId: sourceHostId ?? hostId, provider, resolvedHomePath: dir, volumeId },
+        fingerprint: {
+          hostId: sourceHostId ?? hostId,
+          provider,
+          resolvedHomePath: dir,
+          volumeId,
+          ...(physicalSourceId === undefined ? {} : { physicalSourceId }),
+        },
         // Clients exclude missing sources, so saved records remain an available source.
         status: files === null && scannedFiles === 0 ? "missing" : (status ?? "ok"),
         scannedFiles,

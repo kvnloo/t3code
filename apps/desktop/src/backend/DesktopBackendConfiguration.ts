@@ -81,6 +81,7 @@ const DESKTOP_BACKEND_ENV_NAMES = [
   "T3CODE_MODE",
   "T3CODE_NO_BROWSER",
   "T3CODE_HOST",
+  "T3CODE_USAGE_HOST_ID",
   "T3CODE_DESKTOP_WS_URL",
   "T3CODE_DESKTOP_LAN_ACCESS",
   "T3CODE_DESKTOP_LAN_HOST",
@@ -258,6 +259,7 @@ const readBackendObservabilitySettings = Effect.gen(function* () {
 
 interface SharedBootstrapInput {
   readonly bootstrapToken: string;
+  readonly usageHostId: string;
   readonly observabilitySettings: BackendObservabilitySettings;
 }
 
@@ -584,6 +586,7 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
       env: {
         ...backendChildEnvPatch(),
         ELECTRON_RUN_AS_NODE: "1",
+        T3CODE_USAGE_HOST_ID: input.usageHostId,
       },
       // Primary wants process.env (PATH, dev-runner's T3CODE_HOME, etc.).
       extendEnv: true,
@@ -717,8 +720,10 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
   const httpBaseUrl = new URL(`http://${rendererHost}:${input.port}`);
 
   const distroArgs = distroForConfig ? ["-d", distroForConfig] : [];
-  const forwardedEnv: Record<string, string> = {};
-  const forwardedEnvNames: string[] = [];
+  const forwardedEnv: Record<string, string> = {
+    T3CODE_USAGE_HOST_ID: input.usageHostId,
+  };
+  const forwardedEnvNames: string[] = ["T3CODE_USAGE_HOST_ID"];
   for (const name of WSL_FORWARDED_ENV_NAMES) {
     const value = process.env[name];
     if (value !== undefined && value.length > 0) {
@@ -848,6 +853,19 @@ export const make = Effect.gen(function* () {
         ),
     }),
   );
+  const usageHostIdRef = yield* SynchronizedRef.make(Option.none<string>());
+  const getOrCreateUsageHostId = SynchronizedRef.modifyEffect(usageHostIdRef, (current) =>
+    Option.match(current, {
+      onSome: (id) => Effect.succeed([id, current] as const),
+      onNone: () =>
+        crypto.randomBytes(16).pipe(
+          Effect.map((bytes) => {
+            const id = Encoding.encodeHex(bytes);
+            return [id, Option.some(id)] as const;
+          }),
+        ),
+    }),
+  );
 
   // Both resolvers share the same bootstrap token: the renderer holds a
   // single token and uses it against whichever backend it's currently
@@ -856,11 +874,14 @@ export const make = Effect.gen(function* () {
   // restart cycle without having to bounce the desktop process.
   const sharedInputs = Effect.gen(function* () {
     const bootstrapToken = yield* getOrCreateBootstrapToken;
+    // Non-secret process-scoped identity shared by Windows + WSL. Keep it
+    // separate from the bearer token because Usage summaries are client-visible.
+    const usageHostId = yield* getOrCreateUsageHostId;
     const observabilitySettings = yield* readBackendObservabilitySettings.pipe(
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(DesktopEnvironment.DesktopEnvironment, environment),
     );
-    return { bootstrapToken, observabilitySettings } satisfies SharedBootstrapInput;
+    return { bootstrapToken, usageHostId, observabilitySettings } satisfies SharedBootstrapInput;
   });
 
   const buildWslPrimaryConfig = Effect.gen(function* () {

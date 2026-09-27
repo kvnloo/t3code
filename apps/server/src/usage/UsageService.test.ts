@@ -31,6 +31,10 @@ import { HttpClient, HttpClientResponse } from "effect/unstable/http";
 import * as ServerConfig from "../config.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as UsageService from "./UsageService.ts";
+import {
+  normalizePhysicalUsageSourcePath,
+  usagePhysicalSourceId,
+} from "./usageSourceIdentity.ts";
 
 const encodeUnknownJson = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const encodeUnknownJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
@@ -119,6 +123,31 @@ const serviceLayers = (input: {
 function totalOutputTokens(summary: { buckets: readonly { totals: { outputTokens: number } }[] }) {
   return summary.buckets.reduce((sum, bucket) => sum + bucket.totals.outputTokens, 0);
 }
+
+describe("usage source identity", () => {
+  it("normalizes Windows and WSL aliases to one physical path", () => {
+    assert.strictEqual(
+      normalizePhysicalUsageSourcePath("C:\\Users\\Theo\\.claude\\projects"),
+      "windows:c:/Users/Theo/.claude/projects",
+    );
+    assert.strictEqual(
+      normalizePhysicalUsageSourcePath("/mnt/c/Users/Theo/.claude/projects"),
+      "windows:c:/Users/Theo/.claude/projects",
+    );
+    assert.isUndefined(normalizePhysicalUsageSourcePath("/home/theo/.claude/projects"));
+  });
+
+  it("requires a shared host scope before emitting a physical source id", () => {
+    assert.strictEqual(
+      usagePhysicalSourceId(undefined, "/mnt/c/Users/Theo/.claude/projects"),
+      undefined,
+    );
+    assert.strictEqual(
+      usagePhysicalSourceId("desktop-1", "/mnt/c/Users/Theo/.claude/projects"),
+      "desktop-1\0windows:c:/Users/Theo/.claude/projects",
+    );
+  });
+});
 
 describe("UsageService", () => {
   it.live("omits Cursor account usage when no file login is saved", () =>

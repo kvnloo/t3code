@@ -247,6 +247,7 @@ describe("DesktopBackendConfiguration", () => {
         assert.isUndefined(first.env.T3CODE_PORT);
         assert.isUndefined(first.env.T3CODE_MODE);
         assert.isUndefined(first.env.T3CODE_DESKTOP_LAN_HOST);
+        assert.match(first.env.T3CODE_USAGE_HOST_ID ?? "", /^[0-9a-f]{32}$/i);
 
         assert.equal(first.bootstrap.mode, "desktop");
         assert.equal(first.bootstrap.noBrowser, true);
@@ -307,7 +308,7 @@ describe("DesktopBackendConfiguration", () => {
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
-  it.effect("resolveWsl reuses the primary's bootstrap token", () =>
+  it.effect("resolveWsl reuses the primary bootstrap and usage host identities", () =>
     withHarness(
       Effect.gen(function* () {
         const configuration = yield* DesktopBackendConfiguration.DesktopBackendConfiguration;
@@ -316,6 +317,8 @@ describe("DesktopBackendConfiguration", () => {
         const wsl = yield* configuration.resolveWsl({ port: 5000, distro: null });
 
         assert.equal(wsl.bootstrap.desktopBootstrapToken, primary.bootstrap.desktopBootstrapToken);
+        assert.equal(wsl.env.T3CODE_USAGE_HOST_ID, primary.env.T3CODE_USAGE_HOST_ID);
+        assert.include(wsl.env.WSLENV ?? "", "T3CODE_USAGE_HOST_ID");
       }),
     ),
   );

@@ -44,6 +44,7 @@ function summary(
     hostId: string;
     homePath: string;
     volumeId?: string;
+    physicalSourceId?: string;
     distinctSessions?: number;
   }[],
   contractVersion: number = USAGE_CONTRACT_VERSION,
@@ -61,6 +62,9 @@ function summary(
         provider: source.provider,
         resolvedHomePath: source.homePath,
         volumeId: source.volumeId ?? `vol-${source.hostId}`,
+        ...(source.physicalSourceId === undefined
+          ? {}
+          : { physicalSourceId: source.physicalSourceId }),
       },
       status: "ok" as const,
       scannedFiles: 1,
@@ -131,6 +135,78 @@ describe("mergeUsage", () => {
 
     expect(merged.costUsd).toBe(20);
     expect(merged.records).toBe(10);
+    expect(merged.duplicateSources).toHaveLength(0);
+  });
+
+  it("dedupes one physical source across Windows and WSL namespaces", () => {
+    const physicalSourceId = "desktop-host-1\0windows:c:/users/theo/.claude/projects";
+    const merged = mergeUsage(
+      [
+        environment(
+          "windows",
+          summary(
+            [bucket({ sourcePath: "C:\\Users\\theo\\.claude\\projects" })],
+            [{
+              provider: "claude",
+              hostId: "WINDOWS-HOST",
+              homePath: "C:\\Users\\theo\\.claude\\projects",
+              volumeId: "ntfs:123",
+              physicalSourceId,
+            }],
+          ),
+        ),
+        environment(
+          "wsl",
+          summary(
+            [bucket({ sourcePath: "/mnt/c/Users/theo/.claude/projects" })],
+            [{
+              provider: "claude",
+              hostId: "wsl-custom-name",
+              homePath: "/mnt/c/Users/theo/.claude/projects",
+              volumeId: "drvfs:999",
+              physicalSourceId,
+            }],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    expect(merged.costUsd).toBe(10);
+    expect(merged.records).toBe(5);
+    expect(merged.sessions).toBe(1);
+    expect(merged.duplicateSources).toHaveLength(1);
+  });
+
+  it("keeps equal paths on different physical hosts separate", () => {
+    const source = (physicalSourceId: string) => ({
+      provider: "claude" as const,
+      hostId: "same-hostname",
+      homePath: "C:\\Users\\theo\\.claude\\projects",
+      volumeId: "same-looking-volume",
+      physicalSourceId,
+    });
+    const merged = mergeUsage(
+      [
+        environment(
+          "pc-a",
+          summary(
+            [bucket({ sourcePath: "C:\\Users\\theo\\.claude\\projects" })],
+            [source("host-a\0windows:c:/users/theo/.claude/projects")],
+          ),
+        ),
+        environment(
+          "pc-b",
+          summary(
+            [bucket({ sourcePath: "C:\\Users\\theo\\.claude\\projects" })],
+            [source("host-b\0windows:c:/users/theo/.claude/projects")],
+          ),
+        ),
+      ],
+      USAGE_CONTRACT_VERSION,
+    );
+
+    expect(merged.costUsd).toBe(20);
     expect(merged.duplicateSources).toHaveLength(0);
   });
 
