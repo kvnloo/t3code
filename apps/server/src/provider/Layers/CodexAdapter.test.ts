@@ -14,6 +14,7 @@ import {
   type ProviderEvent,
   type ProviderSession,
   type ProviderTurnStartResult,
+  type RuntimeTaskUsage,
   type ProviderUserInputAnswers,
   ThreadId,
   TurnId,
@@ -1090,6 +1091,113 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
             hasSubagents: false,
           },
         ],
+      );
+    }),
+  );
+
+  it.effect("subtracts inherited history from Codex child token usage", () =>
+    Effect.gen(function* () {
+      const { adapter, runtime } = yield* startLifecycleRuntime();
+      const usageFiber = yield* adapter.streamEvents.pipe(
+        Stream.filter(
+          (event) =>
+            event.type === "task.progress" &&
+            typeof event.payload === "object" &&
+            event.payload !== null &&
+            "typedUsage" in event.payload,
+        ),
+        Stream.take(4),
+        Stream.runCollect,
+        Effect.forkChild,
+      );
+
+      const childUsage = (
+        id: string,
+        agentThreadId: string,
+        totalTokens: number,
+        lastTokens: number,
+        inputTokens: number,
+        lastInputTokens: number,
+      ) =>
+        runtime.emit({
+          id: asEventId(id),
+          kind: "notification",
+          provider: ProviderDriverKind.make("codex"),
+          createdAt: "2026-01-01T00:00:00.000Z",
+          method: "collabAgent/tokenUsage",
+          threadId: asThreadId("thread-1"),
+          turnId: asTurnId("turn-1"),
+          payload: {
+            agentThreadId,
+            agentPath: `/root/${agentThreadId}`,
+            tokenUsage: {
+              total: {
+                totalTokens,
+                inputTokens,
+                cachedInputTokens: 0,
+                outputTokens: totalTokens - inputTokens,
+                reasoningOutputTokens: 0,
+              },
+              last: {
+                totalTokens: lastTokens,
+                inputTokens: lastInputTokens,
+                cachedInputTokens: 0,
+                outputTokens: lastTokens - lastInputTokens,
+                reasoningOutputTokens: 0,
+              },
+            },
+          },
+        });
+
+      yield* childUsage(
+        "evt-child-a-1",
+        "child-a",
+        5_803_101_943,
+        2_161_386,
+        5_802_000_000,
+        2_100_000,
+      );
+      // Duplicate cumulative frames are idempotent.
+      yield* childUsage(
+        "evt-child-a-duplicate",
+        "child-a",
+        5_803_101_943,
+        2_161_386,
+        5_802_000_000,
+        2_100_000,
+      );
+      // A later activation continues from the child's previous cumulative
+      // total rather than re-counting inherited history.
+      yield* childUsage(
+        "evt-child-a-2",
+        "child-a",
+        5_803_102_443,
+        500,
+        5_802_000_400,
+        400,
+      );
+      // Each child owns an independent inherited baseline.
+      yield* childUsage(
+        "evt-child-b-1",
+        "child-b",
+        5_803_507_447,
+        2_324_152,
+        5_802_200_000,
+        2_200_000,
+      );
+
+      const usageEvents = Array.from(yield* Fiber.join(usageFiber));
+      const usages = usageEvents.map(
+        (event) =>
+          (event.payload as { typedUsage?: RuntimeTaskUsage }).typedUsage,
+      );
+      NodeAssert.deepStrictEqual(
+        usages.map((usage) => usage?.totalTokens),
+        [2_161_386, 2_161_386, 2_161_886, 2_324_152],
+      );
+      NodeAssert.deepStrictEqual(
+        usages.map((usage) => usage?.inputTokens),
+        [2_100_000, 2_100_000, 2_100_400, 2_200_000],
       );
     }),
   );

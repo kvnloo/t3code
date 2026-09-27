@@ -136,6 +136,122 @@ interface CodexTurnTokenUsageState {
   readonly byTurnId: Map<string, CodexTurnTokenUsageAccumulator>;
 }
 
+type CodexCollabTokenUsage = {
+  readonly totalTokens: number;
+  readonly inputTokens?: number;
+  readonly cachedInputTokens?: number;
+  readonly outputTokens?: number;
+  readonly reasoningOutputTokens?: number;
+};
+
+interface CodexCollabTokenUsageState {
+  readonly previous: CodexCollabTokenUsage;
+  readonly accumulated: CodexCollabTokenUsage;
+}
+
+function readCodexCollabTokenUsage(value: unknown): CodexCollabTokenUsage | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Record<string, unknown>;
+  const count = (candidate: unknown): number | undefined =>
+    typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 0
+      ? candidate
+      : undefined;
+  const totalTokens = count(record.totalTokens);
+  if (totalTokens === undefined) return undefined;
+  const inputTokens = count(record.inputTokens);
+  const cachedInputTokens = count(record.cachedInputTokens);
+  const outputTokens = count(record.outputTokens);
+  const reasoningOutputTokens = count(record.reasoningOutputTokens);
+  return {
+    totalTokens,
+    ...(inputTokens !== undefined ? { inputTokens } : {}),
+    ...(cachedInputTokens !== undefined ? { cachedInputTokens } : {}),
+    ...(outputTokens !== undefined ? { outputTokens } : {}),
+    ...(reasoningOutputTokens !== undefined ? { reasoningOutputTokens } : {}),
+  };
+}
+
+function addCodexCollabTokenUsage(
+  current: CodexCollabTokenUsage | undefined,
+  delta: CodexCollabTokenUsage,
+): CodexCollabTokenUsage {
+  const add = (a: number | undefined, b: number | undefined): number | undefined =>
+    a === undefined && b === undefined ? undefined : (a ?? 0) + (b ?? 0);
+  const inputTokens = add(current?.inputTokens, delta.inputTokens);
+  const cachedInputTokens = add(current?.cachedInputTokens, delta.cachedInputTokens);
+  const outputTokens = add(current?.outputTokens, delta.outputTokens);
+  const reasoningOutputTokens = add(
+    current?.reasoningOutputTokens,
+    delta.reasoningOutputTokens,
+  );
+  return {
+    totalTokens: (current?.totalTokens ?? 0) + delta.totalTokens,
+    ...(inputTokens !== undefined ? { inputTokens } : {}),
+    ...(cachedInputTokens !== undefined ? { cachedInputTokens } : {}),
+    ...(outputTokens !== undefined ? { outputTokens } : {}),
+    ...(reasoningOutputTokens !== undefined ? { reasoningOutputTokens } : {}),
+  };
+}
+
+function codexCollabTokenUsageDelta(
+  previous: CodexCollabTokenUsage | undefined,
+  current: CodexCollabTokenUsage,
+  last: CodexCollabTokenUsage | undefined,
+): CodexCollabTokenUsage {
+  // Codex child totals include inherited history. The first observed `last`
+  // is the only provider reading attributable to the child itself. Later
+  // cumulative growth is safe to subtract. If Codex resets the cumulative
+  // counter, start the next segment from `last` instead of charging history.
+  if (previous === undefined || current.totalTokens < previous.totalTokens) {
+    return last ?? current;
+  }
+  const deltaField = (
+    currentValue: number | undefined,
+    previousValue: number | undefined,
+    lastValue: number | undefined,
+  ): number | undefined => {
+    if (currentValue === undefined) return lastValue;
+    if (previousValue === undefined || currentValue < previousValue) return lastValue;
+    return currentValue - previousValue;
+  };
+  const inputTokens = deltaField(current.inputTokens, previous.inputTokens, last?.inputTokens);
+  const cachedInputTokens = deltaField(
+    current.cachedInputTokens,
+    previous.cachedInputTokens,
+    last?.cachedInputTokens,
+  );
+  const outputTokens = deltaField(current.outputTokens, previous.outputTokens, last?.outputTokens);
+  const reasoningOutputTokens = deltaField(
+    current.reasoningOutputTokens,
+    previous.reasoningOutputTokens,
+    last?.reasoningOutputTokens,
+  );
+  return {
+    totalTokens: current.totalTokens - previous.totalTokens,
+    ...(inputTokens !== undefined ? { inputTokens } : {}),
+    ...(cachedInputTokens !== undefined ? { cachedInputTokens } : {}),
+    ...(outputTokens !== undefined ? { outputTokens } : {}),
+    ...(reasoningOutputTokens !== undefined ? { reasoningOutputTokens } : {}),
+  };
+}
+
+function normalizeCodexCollabTokenUsage(
+  states: Map<string, CodexCollabTokenUsageState>,
+  agentThreadId: string,
+  value: unknown,
+): RuntimeTaskUsage | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const tokenUsage = value as Record<string, unknown>;
+  const current = readCodexCollabTokenUsage(tokenUsage.total);
+  if (!current) return undefined;
+  const last = readCodexCollabTokenUsage(tokenUsage.last);
+  const state = states.get(agentThreadId);
+  const delta = codexCollabTokenUsageDelta(state?.previous, current, last);
+  const accumulated = addCodexCollabTokenUsage(state?.accumulated, delta);
+  states.set(agentThreadId, { previous: current, accumulated });
+  return accumulated;
+}
+
 function mapCodexRuntimeError(
   threadId: ThreadId,
   method: string,
@@ -1051,6 +1167,7 @@ function mapItemLifecycle(
 function mapCollabAgentEvent(
   event: ProviderEvent,
   canonicalThreadId: ThreadId,
+  tokenUsageStates: Map<string, CodexCollabTokenUsageState>,
 ): ReadonlyArray<ProviderRuntimeEvent> {
   const payload =
     typeof event.payload === "object" && event.payload !== null
@@ -1214,39 +1331,12 @@ function mapCollabAgentEvent(
       return [];
     }
     case "collabAgent/tokenUsage": {
-      // Cumulative per child thread: always the `total` breakdown, never
-      // `last` (which shrinks on follow-ups). Client folds max-merge.
-      const tokenUsage =
-        typeof payload.tokenUsage === "object" && payload.tokenUsage !== null
-          ? (payload.tokenUsage as Record<string, unknown>)
-          : undefined;
-      const total =
-        typeof tokenUsage?.total === "object" && tokenUsage.total !== null
-          ? (tokenUsage.total as Record<string, unknown>)
-          : undefined;
-      const count = (value: unknown): number | undefined =>
-        typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
-      // Same validation as every other field: RuntimeTaskUsage.totalTokens
-      // is NonNegativeInt, so NaN/Infinity/negative wire values must miss.
-      const totalTokens = count(total?.totalTokens);
-      if (totalTokens === undefined) {
-        return [];
-      }
-      const typedUsage: RuntimeTaskUsage = {
-        totalTokens,
-        ...(count(total?.inputTokens) !== undefined
-          ? { inputTokens: count(total?.inputTokens) }
-          : {}),
-        ...(count(total?.cachedInputTokens) !== undefined
-          ? { cachedInputTokens: count(total?.cachedInputTokens) }
-          : {}),
-        ...(count(total?.outputTokens) !== undefined
-          ? { outputTokens: count(total?.outputTokens) }
-          : {}),
-        ...(count(total?.reasoningOutputTokens) !== undefined
-          ? { reasoningOutputTokens: count(total?.reasoningOutputTokens) }
-          : {}),
-      };
+      const typedUsage = normalizeCodexCollabTokenUsage(
+        tokenUsageStates,
+        agentThreadId,
+        payload.tokenUsage,
+      );
+      if (!typedUsage) return [];
       return [
         {
           ...base,
@@ -1292,6 +1382,7 @@ function mapCollabAgentEvent(
       ];
     }
     case "collabAgent/closed":
+      tokenUsageStates.delete(agentThreadId);
       return [
         {
           ...base,
@@ -1307,9 +1398,10 @@ function mapCollabAgentEvent(
 function mapToRuntimeEvents(
   event: ProviderEvent,
   canonicalThreadId: ThreadId,
+  collabTokenUsageStates: Map<string, CodexCollabTokenUsageState>,
 ): ReadonlyArray<ProviderRuntimeEvent> {
   if (event.kind === "notification" && event.method.startsWith("collabAgent/")) {
-    return mapCollabAgentEvent(event, canonicalThreadId);
+    return mapCollabAgentEvent(event, canonicalThreadId, collabTokenUsageStates);
   }
   if (event.kind === "error") {
     if (!event.message) {
@@ -2312,6 +2404,7 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
             : {}),
         };
         const turnTokenUsage = makeCodexTurnTokenUsageState();
+        const collabTokenUsageStates = new Map<string, CodexCollabTokenUsageState>();
         // Codex reports a usage-limit stop as OpenAI's own sentence, which on a
         // Business workspace blames credits for a window that ran out. The
         // snapshot naming that window arrives in its own notification, before or
@@ -2418,7 +2511,11 @@ export const makeCodexAdapter = Effect.fn("makeCodexAdapter")(function* (
               }
             }
 
-            const mappedEvents = mapToRuntimeEvents(event, event.threadId).map((runtimeEvent) => {
+            const mappedEvents = mapToRuntimeEvents(
+              event,
+              event.threadId,
+              collabTokenUsageStates,
+            ).map((runtimeEvent) => {
               if (runtimeEvent.type === "turn.completed" && runtimeEvent.turnId) {
                 return {
                   ...runtimeEvent,
