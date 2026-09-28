@@ -16,6 +16,7 @@ import {
   AuthOrchestrationOperateScope,
   type AuthEnvironmentScope,
 } from "@t3tools/contracts";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import {
@@ -76,6 +77,14 @@ const DROPPED_REQUEST_HEADERS = new Set([
   "content-length",
   "accept-encoding",
 ]);
+
+/**
+ * How long the proxy waits for the hub's response headers before reporting it
+ * down. `execute` resolves once headers arrive and the body streams after, so
+ * this bounds time-to-first-response without cutting off long-lived
+ * MJPEG/AVCC streams.
+ */
+const DEVICE_HUB_PROXY_HTTP_TIMEOUT = Duration.seconds(30);
 
 const isWebSocketUpgrade = (request: HttpServerRequest.HttpServerRequest) =>
   request.headers.upgrade?.toLowerCase() === "websocket";
@@ -168,7 +177,17 @@ const proxyHttp = Effect.fn("DeviceHubProxy.proxyHttp")(function* (
       ? (self) => self
       : HttpClientRequest.bodyStream(request.stream),
   );
-  const response = yield* httpClient.execute(upstreamRequest);
+  // `execute` resolves once response headers arrive and the body streams
+  // after, so this bounds time-to-first-response without cutting off
+  // long-lived MJPEG/AVCC streams. A hub that accepted the connection but
+  // went silent is reported down instead of hanging the client fiber forever.
+  const upstream = yield* httpClient.execute(upstreamRequest).pipe(
+    Effect.timeoutOption(DEVICE_HUB_PROXY_HTTP_TIMEOUT),
+  );
+  if (Option.isNone(upstream)) {
+    return HttpServerResponse.text("Device hub did not respond", { status: 504 });
+  }
+  const response = upstream.value;
   const headers: Record<string, string> = {};
   for (const [name, value] of Object.entries(response.headers)) {
     if (name === "content-encoding" || name === "transfer-encoding" || name === "connection") {
