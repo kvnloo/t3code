@@ -2583,7 +2583,11 @@ export const makeCodexSessionRuntime = (
             ),
           });
           yield* Ref.set(lastAdditionalContextRef, params.additionalContext);
-          const rawResponse = yield* client.raw.request("turn/start", params);
+          const rawResponse = yield* client.raw.request("turn/start", params, {
+            // A wedged app server must not brick the session: fail the turn
+            // start with a clear error instead of awaiting forever.
+            timeout: "30 seconds",
+          });
           const response = yield* decodeV2TurnStartResponse(rawResponse).pipe(
             Effect.mapError((error) =>
               CodexErrors.CodexAppServerProtocolParseError.fromSchemaError(
@@ -2628,11 +2632,12 @@ export const makeCodexSessionRuntime = (
           // Stop-everything: children are full threads with their own turns;
           // interrupting only the parent leaves the fleet running. Interrupt
           // each live child turn first, best-effort per child, BOUNDED: the
-          // transport awaits an unbounded Deferred per request, so a wedged
-          // child would otherwise block the parent interrupt forever —
-          // exactly during the runaway fleet where Stop matters most
+          // transport awaits an unbounded Deferred per request by default, so
+          // a wedged child would otherwise block the parent interrupt forever
+          // — exactly during the runaway fleet where Stop matters most
           // (review finding). Per-child and overall deadlines guarantee the
-          // parent interrupt below always runs.
+          // parent interrupt below always runs, and it carries its own
+          // deadline too.
           const liveChildTurns = yield* Ref.get(collabChildLiveTurnsRef);
           yield* Effect.forEach(
             Array.from(liveChildTurns.entries()),
@@ -2649,10 +2654,17 @@ export const makeCodexSessionRuntime = (
           if (!effectiveTurnId) {
             return;
           }
-          yield* client.request("turn/interrupt", {
-            threadId: providerThreadId,
-            turnId: effectiveTurnId,
-          });
+          yield* client.request(
+            "turn/interrupt",
+            {
+              threadId: providerThreadId,
+              turnId: effectiveTurnId,
+            },
+            // User Stop must always complete: a wedged app server turns the
+            // unbounded wait into a logged interrupt failure, and the reactor
+            // still marks the session stopped.
+            { timeout: "5 seconds" },
+          );
         }),
       readThread: Effect.gen(function* () {
         const providerThreadId = yield* readProviderThreadId;

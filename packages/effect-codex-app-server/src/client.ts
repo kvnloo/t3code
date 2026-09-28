@@ -42,6 +42,7 @@ export class CodexAppServerClient extends Context.Service<
     readonly request: <M extends CodexRpc.ClientRequestMethod>(
       method: M,
       payload: CodexRpc.ClientRequestParamsByMethod[M],
+      options?: CodexProtocol.CodexAppServerRequestOptions,
     ) => Effect.Effect<CodexRpc.ClientRequestResponsesByMethod[M], CodexError.CodexAppServerError>;
     readonly notify: <M extends CodexRpc.ClientNotificationMethod>(
       method: M,
@@ -195,9 +196,10 @@ const make = Effect.fn("effect-codex-app-server/CodexAppServerClient.make")(func
   const request = <M extends CodexRpc.ClientRequestMethod>(
     method: M,
     payload: CodexRpc.ClientRequestParamsByMethod[M],
+    options?: CodexProtocol.CodexAppServerRequestOptions,
   ): Effect.Effect<CodexRpc.ClientRequestResponsesByMethod[M], CodexError.CodexAppServerError> =>
     encodeOptionalPayload(method, getClientRequestParamSchema(method), payload).pipe(
-      Effect.flatMap((encoded) => transport.request(method, encoded)),
+      Effect.flatMap((encoded) => transport.request(method, encoded, options)),
       Effect.flatMap(
         (
           raw,

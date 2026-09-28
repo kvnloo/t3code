@@ -1,5 +1,6 @@
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
@@ -49,12 +50,19 @@ export interface CodexAppServerPatchedProtocolOptions {
   readonly onTermination?: (error: CodexError.CodexAppServerError) => Effect.Effect<void, never>;
 }
 
+export interface CodexAppServerRequestOptions {
+  // Bounds how long the request waits for a response. A wedged peer must not
+  // hold the caller forever. Defaults to unbounded (existing behavior).
+  readonly timeout?: Duration.Input;
+}
+
 export interface CodexAppServerPatchedProtocol {
   readonly incomingNotifications: Stream.Stream<CodexAppServerIncomingNotification>;
   readonly incomingRequests: Stream.Stream<CodexAppServerIncomingRequest>;
   readonly request: (
     method: string,
     payload?: unknown,
+    options?: CodexAppServerRequestOptions,
   ) => Effect.Effect<unknown, CodexError.CodexAppServerError>;
   readonly notify: (
     method: string,
@@ -447,7 +455,7 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
 
     yield* Stream.fromQueue(outgoing).pipe(Stream.run(options.stdio.stdout()), Effect.forkScoped);
 
-    const request = (method: string, payload?: unknown) =>
+    const request = (method: string, payload?: unknown, options?: CodexAppServerRequestOptions) =>
       Effect.gen(function* () {
         const requestId = yield* Ref.modify(
           nextRequestId,
@@ -462,9 +470,25 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
           method,
           ...(payload !== undefined ? { params: payload } : {}),
         }).pipe(Effect.tapError(() => removePending(String(requestId))));
-        return yield* Deferred.await(deferred).pipe(
+        if (options?.timeout === undefined) {
+          return yield* Deferred.await(deferred).pipe(
+            Effect.onInterrupt(() => removePending(String(requestId))),
+          );
+        }
+        const response = yield* Deferred.await(deferred).pipe(
           Effect.onInterrupt(() => removePending(String(requestId))),
+          Effect.timeoutOption(options.timeout),
         );
+        if (Option.isNone(response)) {
+          // The peer never answered. Drop the pending entry (a late response
+          // is ignored by resolvePending) and fail instead of hanging.
+          yield* removePending(String(requestId));
+          return yield* new CodexError.CodexAppServerRequestTimeoutError({
+            method,
+            requestId: String(requestId),
+          });
+        }
+        return response.value;
       });
 
     const notify = (method: string, payload?: unknown) =>
