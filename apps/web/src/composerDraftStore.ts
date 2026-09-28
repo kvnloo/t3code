@@ -75,6 +75,7 @@ import { getDefaultServerModel } from "./providerModels";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 import { UnifiedSettings } from "@t3tools/contracts/settings";
 import { ReviewCommentContextSchema, type ReviewCommentContext } from "./reviewCommentContext";
+import type { PendingUserInputDraftAnswer } from "./pendingUserInput";
 const isRuntimeMode = Schema.is(RuntimeMode);
 const isProviderDriverKind = Schema.is(ProviderDriverKind);
 const isReviewCommentContext = Schema.is(ReviewCommentContextSchema);
@@ -226,6 +227,16 @@ const PersistedTerminalContextDraft = Schema.Struct({
 });
 type PersistedTerminalContextDraft = typeof PersistedTerminalContextDraft.Type;
 
+const PersistedPendingUserInputDraftAnswer = Schema.Struct({
+  selectedOptionValues: Schema.optionalKey(Schema.Array(Schema.String)),
+  customAnswer: Schema.optionalKey(Schema.String),
+});
+const PersistedPendingUserInputDraftState = Schema.Struct({
+  answers: Schema.Record(Schema.String, PersistedPendingUserInputDraftAnswer),
+  questionIndex: Schema.Number,
+});
+const isPersistedPendingUserInputDraftState = Schema.is(PersistedPendingUserInputDraftState);
+
 const PersistedComposerThreadDraftState = Schema.Struct({
   prompt: Schema.String,
   attachments: Schema.Array(PersistedComposerImageAttachment),
@@ -233,6 +244,9 @@ const PersistedComposerThreadDraftState = Schema.Struct({
   terminalContexts: Schema.optionalKey(Schema.Array(PersistedTerminalContextDraft)),
   previewAnnotations: Schema.optionalKey(Schema.Array(PreviewAnnotationPayloadSchema)),
   reviewComments: Schema.optionalKey(Schema.Array(ReviewCommentContextSchema)),
+  userInputDraftsByRequestId: Schema.optionalKey(
+    Schema.Record(Schema.String, PersistedPendingUserInputDraftState),
+  ),
   // Keyed by `ProviderInstanceId` (open branded slug) so custom provider
   // instances (e.g. `codex_personal`) round-trip alongside the built-in
   // `codex` / `claudeAgent` / ... entries. Every prior `ProviderDriverKind`
@@ -375,6 +389,11 @@ export type ComposerContextInsertionHandler = (
 ) => boolean;
 const contextInsertionHandlers = new Map<string, ComposerContextInsertionHandler>();
 
+export interface ComposerPendingUserInputDraftState {
+  answers: Record<string, PendingUserInputDraftAnswer>;
+  questionIndex: number;
+}
+
 export interface ComposerThreadDraftState {
   prompt: string;
   images: ComposerImageAttachment[];
@@ -384,6 +403,7 @@ export interface ComposerThreadDraftState {
   terminalContexts: TerminalContextDraft[];
   previewAnnotations: PreviewAnnotationPayload[];
   reviewComments: ReviewCommentContext[];
+  userInputDraftsByRequestId: Record<string, ComposerPendingUserInputDraftState>;
   /**
    * Per-instance model selection. Keyed by `ProviderInstanceId` (open
    * branded slug) so a default `codex` instance and a user-authored
@@ -426,7 +446,8 @@ export function composerDraftHasUserContent(
     draft.persistedAttachments.length > 0 ||
     draft.terminalContexts.length > 0 ||
     draft.previewAnnotations.length > 0 ||
-    draft.reviewComments.length > 0
+    draft.reviewComments.length > 0 ||
+    Object.keys(draft.userInputDraftsByRequestId).length > 0
   );
 }
 
@@ -571,6 +592,18 @@ interface ComposerDraftStoreState {
   clearDraftThread: (threadRef: ComposerThreadTarget) => void;
   setStickyModelSelection: (modelSelection: ModelSelection | null | undefined) => void;
   setPrompt: (threadRef: ComposerThreadTarget, prompt: string) => void;
+  setPendingUserInputDraftAnswer: (
+    threadRef: ComposerThreadTarget,
+    requestId: string,
+    questionId: string,
+    answer: PendingUserInputDraftAnswer,
+  ) => void;
+  setPendingUserInputQuestionIndex: (
+    threadRef: ComposerThreadTarget,
+    requestId: string,
+    questionIndex: number,
+  ) => void;
+  clearPendingUserInputDraft: (threadRef: ComposerThreadTarget, requestId: string) => void;
   setTerminalContexts: (threadRef: ComposerThreadTarget, contexts: TerminalContextDraft[]) => void;
   setModelSelection: (
     threadRef: ComposerThreadTarget,
@@ -763,12 +796,14 @@ const EMPTY_PERSISTED_ATTACHMENTS: PersistedComposerImageAttachment[] = [];
 const EMPTY_TERMINAL_CONTEXTS: TerminalContextDraft[] = [];
 const EMPTY_PREVIEW_ANNOTATIONS: PreviewAnnotationPayload[] = [];
 const EMPTY_REVIEW_COMMENTS: ReviewCommentContext[] = [];
+const EMPTY_USER_INPUT_DRAFTS: Record<string, ComposerPendingUserInputDraftState> = {};
 Object.freeze(EMPTY_IMAGES);
 Object.freeze(EMPTY_FILES);
 Object.freeze(EMPTY_IDS);
 Object.freeze(EMPTY_PERSISTED_ATTACHMENTS);
 Object.freeze(EMPTY_PREVIEW_ANNOTATIONS);
 Object.freeze(EMPTY_REVIEW_COMMENTS);
+Object.freeze(EMPTY_USER_INPUT_DRAFTS);
 const EMPTY_MODEL_SELECTION_BY_PROVIDER: Partial<Record<ProviderDriverKind, ModelSelection>> =
   Object.freeze({});
 const EMPTY_COMPOSER_DRAFT_MODEL_STATE = Object.freeze<ComposerDraftModelState>({
@@ -785,6 +820,7 @@ const EMPTY_THREAD_DRAFT = Object.freeze<ComposerThreadDraftState>({
   terminalContexts: EMPTY_TERMINAL_CONTEXTS,
   previewAnnotations: EMPTY_PREVIEW_ANNOTATIONS,
   reviewComments: EMPTY_REVIEW_COMMENTS,
+  userInputDraftsByRequestId: EMPTY_USER_INPUT_DRAFTS,
   modelSelectionByProvider: EMPTY_MODEL_SELECTION_BY_PROVIDER,
   activeProvider: null,
   runtimeMode: null,
@@ -807,6 +843,7 @@ function createEmptyThreadDraft(): ComposerThreadDraftState {
     terminalContexts: [],
     previewAnnotations: [],
     reviewComments: [],
+    userInputDraftsByRequestId: {},
     modelSelectionByProvider: {},
     activeProvider: null,
     runtimeMode: null,
@@ -901,6 +938,7 @@ function shouldRemoveDraft(draft: ComposerThreadDraftState): boolean {
     draft.terminalContexts.length === 0 &&
     draft.previewAnnotations.length === 0 &&
     draft.reviewComments.length === 0 &&
+    Object.keys(draft.userInputDraftsByRequestId).length === 0 &&
     Object.keys(draft.modelSelectionByProvider).length === 0 &&
     draft.activeProvider === null &&
     draft.runtimeMode === null &&
@@ -1878,6 +1916,18 @@ function normalizePersistedDraftsByThreadId(
     const previewAnnotations = Array.isArray(draftCandidate.previewAnnotations)
       ? draftCandidate.previewAnnotations.filter(isPreviewAnnotationPayload)
       : [];
+    const userInputDraftsByRequestId =
+      draftCandidate.userInputDraftsByRequestId &&
+      typeof draftCandidate.userInputDraftsByRequestId === "object"
+        ? Object.fromEntries(
+            Object.entries(draftCandidate.userInputDraftsByRequestId).flatMap(
+              ([requestId, draft]) =>
+                requestId.length > 0 && isPersistedPendingUserInputDraftState(draft)
+                  ? [[requestId, draft]]
+                  : [],
+            ),
+          )
+        : {};
     const legacyElements =
       "elementContexts" in draftValue && Array.isArray(draftValue.elementContexts)
         ? draftValue.elementContexts
@@ -1997,6 +2047,7 @@ function normalizePersistedDraftsByThreadId(
       previewAnnotations.length === 0 &&
       reviewComments.length === 0 &&
       previewAnnotations.length === 0 &&
+      Object.keys(userInputDraftsByRequestId).length === 0 &&
       !hasModelData &&
       !runtimeMode &&
       !interactionMode
@@ -2023,6 +2074,9 @@ function normalizePersistedDraftsByThreadId(
       ...(previewAnnotations.length > 0 ? { previewAnnotations } : {}),
       ...(reviewComments.length > 0 ? { reviewComments } : {}),
       ...(previewAnnotations.length > 0 ? { previewAnnotations } : {}),
+      ...(Object.keys(userInputDraftsByRequestId).length > 0
+        ? { userInputDraftsByRequestId }
+        : {}),
       ...(hasModelData
         ? {
             modelSelectionByProvider: compactModelSelectionByProvider(modelSelectionByProvider),
@@ -2045,7 +2099,8 @@ function persistedComposerDraftHasUserContent(draft: PersistedComposerThreadDraf
     (draft.files?.length ?? 0) > 0 ||
     (draft.terminalContexts?.length ?? 0) > 0 ||
     (draft.previewAnnotations?.length ?? 0) > 0 ||
-    (draft.reviewComments?.length ?? 0) > 0
+    (draft.reviewComments?.length ?? 0) > 0 ||
+    Object.keys(draft.userInputDraftsByRequestId ?? {}).length > 0
   );
 }
 
@@ -2130,6 +2185,7 @@ export function partializeComposerDraftStoreState(
       draft.terminalContexts.length === 0 &&
       draft.previewAnnotations.length === 0 &&
       draft.reviewComments.length === 0 &&
+      Object.keys(draft.userInputDraftsByRequestId).length === 0 &&
       !hasModelData &&
       draft.runtimeMode === null &&
       draft.interactionMode === null
@@ -2183,6 +2239,31 @@ export function partializeComposerDraftStoreState(
       ...(draft.reviewComments.length > 0
         ? {
             reviewComments: draft.reviewComments.map((comment) => ({ ...comment })),
+          }
+        : {}),
+      ...(Object.keys(draft.userInputDraftsByRequestId).length > 0
+        ? {
+            userInputDraftsByRequestId: Object.fromEntries(
+              Object.entries(draft.userInputDraftsByRequestId).map(([requestId, requestDraft]) => [
+                requestId,
+                {
+                  questionIndex: requestDraft.questionIndex,
+                  answers: Object.fromEntries(
+                    Object.entries(requestDraft.answers).map(([questionId, answer]) => [
+                      questionId,
+                      {
+                        ...(answer.selectedOptionValues && answer.selectedOptionValues.length > 0
+                          ? { selectedOptionValues: [...answer.selectedOptionValues] }
+                          : {}),
+                        ...(answer.customAnswer !== undefined
+                          ? { customAnswer: answer.customAnswer }
+                          : {}),
+                      },
+                    ]),
+                  ),
+                },
+              ]),
+            ),
           }
         : {}),
       ...(hasModelData
@@ -2457,6 +2538,29 @@ function toHydratedThreadDraft(
     previewAnnotations:
       persistedDraft.previewAnnotations?.map((annotation) => ({ ...annotation })) ?? [],
     reviewComments: persistedDraft.reviewComments?.map((comment) => ({ ...comment })) ?? [],
+    userInputDraftsByRequestId: Object.fromEntries(
+      Object.entries(persistedDraft.userInputDraftsByRequestId ?? {}).map(
+        ([requestId, requestDraft]) => [
+          requestId,
+          {
+            questionIndex: Math.max(0, Math.floor(requestDraft.questionIndex)),
+            answers: Object.fromEntries(
+              Object.entries(requestDraft.answers).map(([questionId, answer]) => [
+                questionId,
+                {
+                  ...(answer.selectedOptionValues && answer.selectedOptionValues.length > 0
+                    ? { selectedOptionValues: [...answer.selectedOptionValues] }
+                    : {}),
+                  ...(answer.customAnswer !== undefined
+                    ? { customAnswer: answer.customAnswer }
+                    : {}),
+                },
+              ]),
+            ),
+          },
+        ],
+      ),
+    ),
     modelSelectionByProvider,
     activeProvider,
     ...(persistedDraft.modelSelectionExplicit ? { modelSelectionExplicit: true } : {}),
@@ -2990,6 +3094,119 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
             const nextDraft: ComposerThreadDraftState = {
               ...existing,
               prompt,
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        setPendingUserInputDraftAnswer: (threadRef, requestId, questionId, answer) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0 || requestId.length === 0 || questionId.length === 0) {
+            return;
+          }
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            const currentRequest = existing.userInputDraftsByRequestId[requestId] ?? {
+              answers: {},
+              questionIndex: 0,
+            };
+            const nextAnswers = { ...currentRequest.answers };
+            const normalizedAnswer: PendingUserInputDraftAnswer = {
+              ...(answer.selectedOptionValues && answer.selectedOptionValues.length > 0
+                ? { selectedOptionValues: [...answer.selectedOptionValues] }
+                : {}),
+              ...(answer.customAnswer !== undefined ? { customAnswer: answer.customAnswer } : {}),
+            };
+            if (
+              (normalizedAnswer.selectedOptionValues?.length ?? 0) === 0 &&
+              (normalizedAnswer.customAnswer?.length ?? 0) === 0
+            ) {
+              delete nextAnswers[questionId];
+            } else {
+              nextAnswers[questionId] = normalizedAnswer;
+            }
+            const nextUserInputDrafts = { ...existing.userInputDraftsByRequestId };
+            if (Object.keys(nextAnswers).length === 0 && currentRequest.questionIndex === 0) {
+              delete nextUserInputDrafts[requestId];
+            } else {
+              nextUserInputDrafts[requestId] = {
+                answers: nextAnswers,
+                questionIndex: currentRequest.questionIndex,
+              };
+            }
+            const nextDraft: ComposerThreadDraftState = {
+              ...existing,
+              userInputDraftsByRequestId: nextUserInputDrafts,
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        setPendingUserInputQuestionIndex: (threadRef, requestId, questionIndex) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0 || requestId.length === 0) {
+            return;
+          }
+          const normalizedQuestionIndex = Math.max(0, Math.floor(questionIndex));
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey] ?? createEmptyThreadDraft();
+            const currentRequest = existing.userInputDraftsByRequestId[requestId] ?? {
+              answers: {},
+              questionIndex: 0,
+            };
+            if (
+              currentRequest.questionIndex === normalizedQuestionIndex &&
+              existing.userInputDraftsByRequestId[requestId] !== undefined
+            ) {
+              return state;
+            }
+            const nextUserInputDrafts = { ...existing.userInputDraftsByRequestId };
+            if (normalizedQuestionIndex === 0 && Object.keys(currentRequest.answers).length === 0) {
+              delete nextUserInputDrafts[requestId];
+            } else {
+              nextUserInputDrafts[requestId] = {
+                answers: currentRequest.answers,
+                questionIndex: normalizedQuestionIndex,
+              };
+            }
+            const nextDraft: ComposerThreadDraftState = {
+              ...existing,
+              userInputDraftsByRequestId: nextUserInputDrafts,
+            };
+            const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
+            if (shouldRemoveDraft(nextDraft)) {
+              delete nextDraftsByThreadKey[threadKey];
+            } else {
+              nextDraftsByThreadKey[threadKey] = nextDraft;
+            }
+            return { draftsByThreadKey: nextDraftsByThreadKey };
+          });
+        },
+        clearPendingUserInputDraft: (threadRef, requestId) => {
+          const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
+          if (threadKey.length === 0 || requestId.length === 0) {
+            return;
+          }
+          set((state) => {
+            const existing = state.draftsByThreadKey[threadKey];
+            if (!existing || existing.userInputDraftsByRequestId[requestId] === undefined) {
+              return state;
+            }
+            const nextUserInputDrafts = { ...existing.userInputDraftsByRequestId };
+            delete nextUserInputDrafts[requestId];
+            const nextDraft: ComposerThreadDraftState = {
+              ...existing,
+              userInputDraftsByRequestId: nextUserInputDrafts,
             };
             const nextDraftsByThreadKey = { ...state.draftsByThreadKey };
             if (shouldRemoveDraft(nextDraft)) {
