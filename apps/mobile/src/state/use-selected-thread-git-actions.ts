@@ -23,6 +23,7 @@ import { appAtomRegistry } from "./atom-registry";
 import { setPendingConnectionError } from "./use-remote-environment-registry";
 import { useAtomCommand } from "./use-atom-command";
 import { showGitActionResult } from "./use-vcs-action-state";
+import { selectedThreadGitRefreshIdentity } from "./selected-thread-git-refresh";
 import { useThreadSelection } from "./use-thread-selection";
 import { useSelectedThreadWorktree } from "./use-selected-thread-worktree";
 
@@ -37,6 +38,10 @@ export function useSelectedThreadGitActions() {
   const pull = useAtomCommand(vcsEnvironment.pull, { reportFailure: false });
   const { selectedThread, selectedThreadProject } = useThreadSelection();
   const { selectedThreadCwd, selectedThreadWorktreePath } = useSelectedThreadWorktree();
+  const selectedThreadEnvironmentId = selectedThread?.environmentId ?? null;
+  const selectedThreadId = selectedThread?.id ?? null;
+  const selectedThreadBranch = selectedThread?.branch ?? null;
+  const selectedThreadProjectId = selectedThreadProject?.id ?? null;
   const runStackedAction = useAtomCommand(
     vcsActionManager.runStackedAction({
       environmentId: selectedThread?.environmentId ?? null,
@@ -55,6 +60,13 @@ export function useSelectedThreadGitActions() {
     [selectedThread?.environmentId, selectedThreadGitRootCwd],
   );
   const branchState = useBranches(branchTarget);
+  const gitRefreshIdentity = selectedThreadGitRefreshIdentity({
+    environmentId: selectedThreadEnvironmentId,
+    threadId: selectedThreadId,
+    projectId: selectedThreadProjectId,
+    cwd: selectedThreadCwd,
+    branch: selectedThreadBranch,
+  });
   const updateThreadGitContext = useCallback(
     async (
       thread: NonNullable<typeof selectedThread>,
@@ -77,7 +89,7 @@ export function useSelectedThreadGitActions() {
 
   const refreshSelectedThreadGitStatus = useCallback(
     async (options?: { readonly quiet?: boolean; readonly cwd?: string | null }) => {
-      if (!selectedThread || !selectedThreadProject) {
+      if (!selectedThreadEnvironmentId || !selectedThreadProjectId) {
         return null;
       }
 
@@ -86,10 +98,10 @@ export function useSelectedThreadGitActions() {
         return null;
       }
 
-      const target = { environmentId: selectedThread.environmentId, cwd };
+      const target = { environmentId: selectedThreadEnvironmentId, cwd };
       const execute = () =>
         refreshStatus({
-          environmentId: selectedThread.environmentId,
+          environmentId: selectedThreadEnvironmentId,
           input: { cwd },
         });
       const result = options?.quiet
@@ -112,15 +124,20 @@ export function useSelectedThreadGitActions() {
       setPendingConnectionError(null);
       return result.value;
     },
-    [refreshStatus, selectedThread, selectedThreadCwd, selectedThreadProject],
+    [
+      refreshStatus,
+      selectedThreadCwd,
+      selectedThreadEnvironmentId,
+      selectedThreadProjectId,
+    ],
   );
 
   useEffect(() => {
-    if (!selectedThread || !selectedThreadProject) {
+    if (gitRefreshIdentity === null) {
       return;
     }
     void refreshSelectedThreadGitStatus({ quiet: true });
-  }, [refreshSelectedThreadGitStatus, selectedThread, selectedThreadProject]);
+  }, [gitRefreshIdentity, refreshSelectedThreadGitStatus]);
 
   const runSelectedThreadGitMutation = useCallback(
     async <T, E>(
