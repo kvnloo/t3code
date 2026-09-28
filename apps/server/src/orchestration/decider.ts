@@ -2118,6 +2118,24 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           detail: `turn ${command.turnId} already has a captured checkpoint`,
         });
       }
+      // checkpointTurnCount doubles as the deterministic git ref suffix, so two
+      // turns must never share one. The dispatching sides compute it as max+1
+      // from a read taken before their (sometimes slow) capture, so a newer
+      // turn's placeholder can claim the count an older turn's capture is
+      // about to commit. The decider runs under the engine's command lock, so
+      // rejecting here closes that window; the loser recomputes from a fresh
+      // read and retries.
+      const turnCountClaimant = thread.checkpoints.find(
+        (checkpoint) =>
+          checkpoint.turnId !== command.turnId &&
+          checkpoint.checkpointTurnCount === command.checkpointTurnCount,
+      );
+      if (turnCountClaimant !== undefined) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `checkpoint turn count ${command.checkpointTurnCount} already claimed by turn ${turnCountClaimant.turnId}`,
+        });
+      }
       return {
         ...(yield* withEventBase({
           aggregateKind: "thread",

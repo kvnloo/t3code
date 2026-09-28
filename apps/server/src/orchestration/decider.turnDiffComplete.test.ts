@@ -124,4 +124,39 @@ it.layer(NodeServices.layer)("turn diff complete decider", (it) => {
       expect(events[0]?.type).toBe("thread.turn-diff-completed");
     }),
   );
+
+  it.effect("rejects a checkpoint when another turn already claimed its turn count", () =>
+    Effect.gen(function* () {
+      const exit = yield* Effect.exit(
+        decideOrchestrationCommand({
+          command: {
+            ...placeholderCommand(),
+            checkpointRef: CheckpointRef.make("refs/t3/checkpoints/turn-1"),
+            checkpointTurnCount: 1,
+            status: "ready",
+          },
+          readModel: makeReadModel([
+            { ...makeCheckpoint("missing"), turnId: TurnId.make("turn-2") },
+          ]),
+        }),
+      );
+      expect(Exit.isFailure(exit)).toBe(true);
+    }),
+  );
+
+  it.effect("accepts a capture that reuses its own turn's placeholder turn count", () =>
+    Effect.gen(function* () {
+      const event = yield* decideOrchestrationCommand({
+        command: {
+          ...placeholderCommand(),
+          checkpointRef: CheckpointRef.make("refs/t3/checkpoints/turn-1"),
+          checkpointTurnCount: 1,
+          status: "ready",
+        },
+        readModel: makeReadModel([makeCheckpoint("missing")]),
+      });
+      const events = Array.isArray(event) ? event : [event];
+      expect(events[0]?.type).toBe("thread.turn-diff-completed");
+    }),
+  );
 });
