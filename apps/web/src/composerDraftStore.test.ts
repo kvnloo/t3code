@@ -361,6 +361,72 @@ describe("composerDraftStore addImages", () => {
   });
 });
 
+describe("composerDraftStore pending user input drafts", () => {
+  const threadId = ThreadId.make("thread-pending-user-input");
+  const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
+
+  beforeEach(() => {
+    resetComposerDraftStore();
+  });
+
+  it("persists an in-progress answer and question position with the thread draft", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPendingUserInputDraftAnswer(threadRef, "request-1", "question-1", {
+      customAnswer: "Half-written answer",
+    });
+    store.setPendingUserInputQuestionIndex(threadRef, "request-1", 2);
+
+    const draft = store.getComposerDraft(threadRef);
+    expect(draft?.userInputDraftsByRequestId["request-1"]).toEqual({
+      answers: {
+        "question-1": {
+          customAnswer: "Half-written answer",
+        },
+      },
+      questionIndex: 2,
+    });
+    expect(composerDraftHasUserContent(draft)).toBe(true);
+
+    const persisted = partializeComposerDraftStoreState(useComposerDraftStore.getState());
+    expect(
+      persisted.draftsByThreadKey[threadKeyFor(threadId, TEST_ENVIRONMENT_ID)]
+        ?.userInputDraftsByRequestId?.["request-1"],
+    ).toEqual({
+      answers: {
+        "question-1": {
+          customAnswer: "Half-written answer",
+        },
+      },
+      questionIndex: 2,
+    });
+  });
+
+  it("clears only the completed request and removes an otherwise empty draft", () => {
+    const store = useComposerDraftStore.getState();
+    store.setPendingUserInputDraftAnswer(threadRef, "request-1", "question-1", {
+      selectedOptionValues: ["option-a"],
+    });
+    store.setPendingUserInputDraftAnswer(threadRef, "request-2", "question-2", {
+      customAnswer: "Keep me",
+    });
+
+    store.clearPendingUserInputDraft(threadRef, "request-1");
+    expect(store.getComposerDraft(threadRef)?.userInputDraftsByRequestId).toEqual({
+      "request-2": {
+        answers: {
+          "question-2": {
+            customAnswer: "Keep me",
+          },
+        },
+        questionIndex: 0,
+      },
+    });
+
+    store.clearPendingUserInputDraft(threadRef, "request-2");
+    expect(store.getComposerDraft(threadRef)).toBeNull();
+  });
+});
+
 describe("composerDraftStore clearComposerContent", () => {
   const threadId = ThreadId.make("thread-clear");
   const threadRef = scopeThreadRef(TEST_ENVIRONMENT_ID, threadId);
