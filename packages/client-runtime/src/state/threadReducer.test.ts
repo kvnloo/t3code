@@ -11,7 +11,7 @@ import {
   ThreadId,
   TurnId,
 } from "@t3tools/contracts";
-import type { OrchestrationThread } from "@t3tools/contracts";
+import type { OrchestrationSession, OrchestrationThread } from "@t3tools/contracts";
 
 import { applyThreadDetailEvent } from "./threadReducer.ts";
 
@@ -1041,6 +1041,48 @@ describe("applyThreadDetailEvent", () => {
         expect(result.thread.latestTurn?.state).toBe("running");
       }
     });
+
+    it("keeps a valid latestTurn state when the session reports an unknown newer status", () => {
+      const threadWithRunningTurn: OrchestrationThread = {
+        ...baseThread,
+        latestTurn: {
+          turnId: TurnId.make("turn-1"),
+          state: "running",
+          requestedAt: "2026-04-01T07:00:00.000Z",
+          startedAt: "2026-04-01T07:00:00.000Z",
+          completedAt: null,
+          assistantMessageId: MessageId.make("msg-3"),
+        },
+      };
+
+      const result = applyThreadDetailEvent(threadWithRunningTurn, {
+        ...baseEventFields,
+        sequence: 9,
+        occurredAt: "2026-04-01T08:00:00.000Z",
+        aggregateKind: "thread",
+        aggregateId: ThreadId.make("thread-1"),
+        type: "thread.session-set",
+        payload: {
+          threadId: ThreadId.make("thread-1"),
+          session: {
+            threadId: ThreadId.make("thread-1"),
+            // A newer server may add session statuses this client release does
+            // not know about; the turn must stay unsettled, never `undefined`.
+            status: "paused-for-input" as OrchestrationSession["status"],
+            providerName: "claude",
+            runtimeMode: "full-access",
+            activeTurnId: TurnId.make("turn-1"),
+            lastError: null,
+            updatedAt: "2026-04-01T08:00:00.000Z",
+          },
+        },
+      });
+
+      expect(result.kind).toBe("updated");
+      if (result.kind === "updated") {
+        expect(result.thread.latestTurn?.state).toBe("running");
+      }
+    });
   });
 
   describe("thread.session-stop-requested", () => {
@@ -1513,6 +1555,47 @@ describe("applyThreadDetailEvent", () => {
         }
       },
     );
+
+    it("settles the turn as completed when the checkpoint reports an unknown newer status", () => {
+      const result = applyThreadDetailEvent(
+        {
+          ...baseThread,
+          latestTurn: {
+            turnId: TurnId.make("turn-1"),
+            state: "running",
+            requestedAt: "2026-04-01T11:00:00.000Z",
+            startedAt: "2026-04-01T11:00:00.000Z",
+            completedAt: null,
+            assistantMessageId: null,
+          },
+        },
+        {
+          ...baseEventFields,
+          sequence: 13,
+          occurredAt: "2026-04-01T12:00:00.000Z",
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-1"),
+          type: "thread.turn-diff-completed",
+          payload: {
+            threadId: ThreadId.make("thread-1"),
+            turnId: TurnId.make("turn-1"),
+            checkpointTurnCount: 1,
+            checkpointRef: CheckpointRef.make("ref-1"),
+            // A newer server may add checkpoint statuses this client release
+            // does not know about; the completed diff means the turn is done.
+            status: "partial" as "ready",
+            files: [],
+            assistantMessageId: MessageId.make("msg-3"),
+            completedAt: "2026-04-01T12:00:00.000Z",
+          },
+        },
+      );
+
+      expect(result.kind).toBe("updated");
+      if (result.kind === "updated") {
+        expect(result.thread.latestTurn?.state).toBe("completed");
+      }
+    });
   });
 
   describe("thread.reverted", () => {

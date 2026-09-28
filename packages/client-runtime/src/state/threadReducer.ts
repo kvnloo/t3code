@@ -751,7 +751,8 @@ export function applyThreadDetailEvent(
 /**
  * Turn state to settle a still-running latest turn with when its session
  * leaves the "running" status, or null while the session is (re)starting or
- * running and the turn must stay unsettled.
+ * running and the turn must stay unsettled. Unknown future statuses also
+ * stay unsettled: only known-terminal statuses may settle a turn.
  */
 function settledTurnStateForSessionStatus(
   status: OrchestrationSession["status"],
@@ -768,18 +769,24 @@ function settledTurnStateForSessionStatus(
     case "starting":
     case "running":
       return null;
+    default:
+      return null;
   }
 }
 
 function checkpointStatusToTurnState(
   status: "ready" | "missing" | "error",
 ): OrchestrationLatestTurn["state"] {
+  // The turn is known done at every call site, so unknown future checkpoint
+  // statuses settle as completed, matching "missing".
   switch (status) {
     case "ready":
       return "completed";
     case "error":
       return "error";
     case "missing":
+      return "completed";
+    default:
       return "completed";
   }
 }
