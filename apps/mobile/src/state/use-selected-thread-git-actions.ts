@@ -37,6 +37,10 @@ export function useSelectedThreadGitActions() {
   const pull = useAtomCommand(vcsEnvironment.pull, { reportFailure: false });
   const { selectedThread, selectedThreadProject } = useThreadSelection();
   const { selectedThreadCwd, selectedThreadWorktreePath } = useSelectedThreadWorktree();
+  const selectedThreadEnvironmentId = selectedThread?.environmentId ?? null;
+  const selectedThreadId = selectedThread?.id ?? null;
+  const selectedThreadBranch = selectedThread?.branch ?? null;
+  const hasSelectedThreadProject = selectedThreadProject !== null;
   const runStackedAction = useAtomCommand(
     vcsActionManager.runStackedAction({
       environmentId: selectedThread?.environmentId ?? null,
@@ -77,7 +81,7 @@ export function useSelectedThreadGitActions() {
 
   const refreshSelectedThreadGitStatus = useCallback(
     async (options?: { readonly quiet?: boolean; readonly cwd?: string | null }) => {
-      if (!selectedThread || !selectedThreadProject) {
+      if (!selectedThreadEnvironmentId || !hasSelectedThreadProject) {
         return null;
       }
 
@@ -86,10 +90,10 @@ export function useSelectedThreadGitActions() {
         return null;
       }
 
-      const target = { environmentId: selectedThread.environmentId, cwd };
+      const target = { environmentId: selectedThreadEnvironmentId, cwd };
       const execute = () =>
         refreshStatus({
-          environmentId: selectedThread.environmentId,
+          environmentId: selectedThreadEnvironmentId,
           input: { cwd },
         });
       const result = options?.quiet
@@ -112,15 +116,21 @@ export function useSelectedThreadGitActions() {
       setPendingConnectionError(null);
       return result.value;
     },
-    [refreshStatus, selectedThread, selectedThreadCwd, selectedThreadProject],
+    [refreshStatus, selectedThreadEnvironmentId, selectedThreadCwd, hasSelectedThreadProject],
   );
 
   useEffect(() => {
-    if (!selectedThread || !selectedThreadProject) {
+    if (!selectedThreadEnvironmentId || !selectedThreadId || !hasSelectedThreadProject) {
       return;
     }
     void refreshSelectedThreadGitStatus({ quiet: true });
-  }, [refreshSelectedThreadGitStatus, selectedThread, selectedThreadProject]);
+  }, [
+    refreshSelectedThreadGitStatus,
+    selectedThreadEnvironmentId,
+    selectedThreadId,
+    selectedThreadBranch,
+    hasSelectedThreadProject,
+  ]);
 
   const runSelectedThreadGitMutation = useCallback(
     async <T, E>(
