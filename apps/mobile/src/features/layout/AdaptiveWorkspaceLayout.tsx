@@ -46,6 +46,7 @@ import {
 } from "../../lib/adaptive-navigation";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { mobilePreferencesAtom } from "../../state/preferences";
+import type { PendingNewTask } from "../../state/use-pending-new-tasks";
 import {
   DEFAULT_MOBILE_PROJECT_GROUPING_SETTINGS,
   resolveMobileProjectGroupingSettings,
@@ -435,6 +436,22 @@ function AdaptiveWorkspaceLayoutContent(
     });
   }, [navigation]);
 
+  const handleOpenPendingTask = useCallback(
+    (pendingTask: PendingNewTask) => {
+      navigation.navigate("NewTaskSheet", {
+        screen: "NewTaskDraft",
+        params: {
+          environmentId: String(pendingTask.environmentId),
+          projectId: String(pendingTask.projectId),
+          ...(pendingTask.kind === "pending"
+            ? { pendingTaskId: String(pendingTask.message.messageId) }
+            : { draftId: pendingTask.draftKey }),
+        },
+      });
+    },
+    [navigation],
+  );
+
   const handleNewThreadOnBranch = useCallback(
     (thread: EnvironmentThreadShell) => {
       navigation.navigate("NewTaskSheet", {
@@ -598,6 +615,7 @@ function AdaptiveWorkspaceLayoutContent(
                       selectedThreadKey={selectedThreadKey}
                       onOpenSettings={handleOpenSettings}
                       onOpenEnvironmentSettings={handleOpenEnvironmentSettings}
+                      onOpenPendingTask={handleOpenPendingTask}
                       onNewThreadInProject={handleNewThreadInProject}
                       onNewThreadOnBranch={handleNewThreadOnBranch}
                       onSelectThread={handleSelectThread}
