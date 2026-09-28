@@ -543,6 +543,7 @@ export type TaskRunHandles = typeof TaskRunHandles.Type;
 export const MONITOR_TASK_TYPES: ReadonlySet<string> = new Set([
   "monitor",
   "monitor_mcp",
+  "monitor_ws",
   "local_bash",
   "shell",
 ]);
