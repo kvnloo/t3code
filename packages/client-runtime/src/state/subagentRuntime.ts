@@ -234,6 +234,7 @@ interface MutableAgent {
   effort: string | null;
   status: RuntimeSubagentStatus;
   activationCount: number;
+  startToolUseIds: Set<string>;
   usage: SubagentUsage | null;
   progress: string | null;
   lastToolName: string | null;
@@ -291,6 +292,7 @@ function getOrCreate(
     effort: asString(payload.effort) ?? null,
     status: "pending",
     activationCount: 0,
+    startToolUseIds: new Set(),
     usage: null,
     progress: null,
     lastToolName: null,
@@ -483,18 +485,31 @@ export function foldSubagentActivities(
         if (isBackgroundTaskActivity(payload)) break;
         const agent = getOrCreate(agents, taskId, payload, at);
         fillMetadata(agent, payload);
-        // Order-robustness: a start row arriving after a terminal state is a
-        // late/out-of-order delivery and only fills metadata — it must not
-        // reopen the run. Reactivation comes exclusively from explicit
-        // status transitions (task.updated / progress status). Guard on the
-        // status itself, not activationCount: a task first seen via a
-        // terminal task.updated has zero activations but is still settled
-        // (review finding: a late start reopened a failed child).
+        const startToolUseId = asString(payload.toolUseId);
+        const startsNewActivation =
+          startToolUseId !== undefined &&
+          agent.startToolUseIds.size > 0 &&
+          !agent.startToolUseIds.has(startToolUseId);
+        if (startToolUseId !== undefined) {
+          agent.startToolUseIds.add(startToolUseId);
+        }
+        // Order-robustness: a repeated start row arriving after a terminal
+        // state is late delivery and must not reopen the run. Claude resumes
+        // a completed/failed subagent by emitting another task.started for
+        // the same taskId but a NEW toolUseId (the SendMessage call), so an
+        // unseen start identity is explicit reactivation evidence.
+        //
+        // A task first seen via a terminal row still stays terminal when its
+        // first retained start arrives: without an earlier start identity we
+        // cannot distinguish that row from delayed metadata.
         if (agent.activationCount === 0 && !isTerminalSubagentStatus(agent.status)) {
           agent.activationCount = 1;
           agent.startedAt = agent.startedAt ?? at;
           agent.status = "running";
-        } else if (agent.status === "idle") {
+        } else if (
+          agent.status === "idle" ||
+          (isTerminalSubagentStatus(agent.status) && startsNewActivation)
+        ) {
           applyStatus(agent, "running", at);
         }
         const detail = asString(payload.detail);
