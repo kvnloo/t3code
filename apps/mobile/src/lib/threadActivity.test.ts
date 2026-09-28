@@ -549,6 +549,40 @@ describe("buildThreadFeed", () => {
     expect(row?.getCopyText()).toBe(`Command run\n${command}\n\n${command}`);
   });
 
+  it("uses structured tool identity when a historical row only says Tool updated", () => {
+    const thread = makeThread({
+      id: ThreadId.make("thread-generic-tool-title"),
+      projectId: ProjectId.make("project-1"),
+      title: "Generic tool title",
+      activities: [
+        makeActivity({
+          id: EventId.make("generic-tool-title"),
+          kind: "tool.updated",
+          tone: "tool",
+          summary: "Tool updated",
+          createdAt: "2026-09-01T00:00:00.000Z",
+          payload: {
+            itemType: "dynamic_tool_call",
+            status: "inProgress",
+            data: {
+              toolName: "Read",
+              kind: "read",
+              input: { filePath: "/workspace/src/app.ts" },
+            },
+          },
+        }),
+      ],
+    });
+
+    const [group] = buildThreadFeed(thread);
+    expect(group?.type).toBe("activity-group");
+    if (group?.type !== "activity-group") return;
+    const row = group.activities[0]!;
+    expect(row.summary).toBe("Read file");
+    expect(workEntryRowLabel(row.workEntry)).toBe("Read file");
+    expect(row.getFullDetail()).toBe("/workspace/src/app.ts");
+  });
+
   it("keeps OpenCode detail-only output when it equals the command", () => {
     const command = "printf hello";
     const thread = makeThread({
@@ -579,7 +613,7 @@ describe("buildThreadFeed", () => {
     expect(row?.workEntry.detail).toBe(command);
     expect(row?.getFullDetail()).toBe(`${command}\n\n${command}`);
     expect(row?.canExpand).toBe(true);
-    expect(workEntryRowLabel(row!.workEntry, true)).toBe("Command");
+    expect(workEntryRowLabel(row!.workEntry, true)).toBe("Ran printf");
   });
 
   it.each([
