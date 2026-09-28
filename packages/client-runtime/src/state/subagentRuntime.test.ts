@@ -194,6 +194,61 @@ describe("foldSubagentActivities", () => {
     expect(agent.status).toBe("running");
   });
 
+  it("a new task.started toolUseId reactivates a terminal Claude subagent", () => {
+    const resumedAt = "2026-08-01T11:30:00.000Z";
+    const agents = fold([
+      activity("task.started", {
+        taskId: "task-resumed",
+        taskType: "subagent",
+        toolUseId: "tool-agent-call",
+      }),
+      activity("task.completed", {
+        taskId: "task-resumed",
+        status: "failed",
+        summary: "usage limit",
+      }),
+      activity(
+        "task.started",
+        {
+          taskId: "task-resumed",
+          taskType: "subagent",
+          toolUseId: "tool-send-message",
+        },
+        resumedAt,
+      ),
+    ]);
+    const agent = agents[0]!;
+    expect(agent.activationCount).toBe(2);
+    expect(agent.status).toBe("running");
+    expect(agent.error).toBeNull();
+    expect(agent.completedAt).toBeNull();
+    expect(agent.startedAt).toBe(resumedAt);
+  });
+
+  it("a repeated task.started toolUseId does not reopen a terminal activation", () => {
+    const agents = fold([
+      activity("task.started", {
+        taskId: "task-duplicate-start",
+        taskType: "subagent",
+        toolUseId: "tool-agent-call",
+      }),
+      activity("task.completed", {
+        taskId: "task-duplicate-start",
+        status: "completed",
+        summary: "done",
+      }),
+      activity("task.started", {
+        taskId: "task-duplicate-start",
+        taskType: "subagent",
+        toolUseId: "tool-agent-call",
+      }),
+    ]);
+    const agent = agents[0]!;
+    expect(agent.activationCount).toBe(1);
+    expect(agent.status).toBe("completed");
+    expect(agent.result).toBe("done");
+  });
+
   it("idle is nonterminal: an idle agent resumes without losing identity", () => {
     const agents = fold([
       activity("task.started", { taskId: "codex-child-1", title: "Marlow", role: "explorer" }),
