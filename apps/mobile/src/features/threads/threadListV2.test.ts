@@ -29,6 +29,7 @@ import {
   buildThreadListV2ListItems,
   getThreadListV2OrderedSection,
   isThreadListV2ListItem,
+  resolvePendingTaskDeliveryLabel,
   resolveThreadListV2SnoozeMenuSelection,
   resolveThreadListV2SnoozeGateExpiryMs,
   resolveThreadListV2Status,
@@ -74,6 +75,28 @@ const linkedPullRequest = {
   number: 42,
   url: "https://github.com/pingdotgg/t3code/pull/42",
 };
+
+describe("resolvePendingTaskDeliveryLabel", () => {
+  it("explains the actual gate for queued creations", () => {
+    expect(resolvePendingTaskDeliveryLabel({ kind: "queued", shellStatus: "live" })).toBe("Queued");
+    expect(
+      resolvePendingTaskDeliveryLabel({ kind: "queued", shellStatus: "synchronizing" }),
+    ).toBe("Waiting for thread sync");
+    expect(
+      resolvePendingTaskDeliveryLabel({ kind: "queued", shellStatus: "unavailable" }),
+    ).toBe("Sends on reconnect");
+    expect(resolvePendingTaskDeliveryLabel({ kind: "queued", shellStatus: undefined })).toBe(
+      "Sends on reconnect",
+    );
+  });
+
+  it("keeps drafts user-owned regardless of environment state", () => {
+    expect(resolvePendingTaskDeliveryLabel({ kind: "draft", shellStatus: "live" })).toBe("Draft");
+    expect(
+      resolvePendingTaskDeliveryLabel({ kind: "draft", shellStatus: "synchronizing" }),
+    ).toBe("Draft");
+  });
+});
 
 describe("resolveThreadListV2SnoozeMenuSelection", () => {
   it("accepts a displayed evening preset while its wake time is still future", () => {

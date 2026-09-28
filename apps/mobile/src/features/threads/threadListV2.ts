@@ -8,7 +8,10 @@ import {
   snoozeWakeLabel,
 } from "@t3tools/client-runtime/state/thread-settled";
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type {
+  EnvironmentShellStatus,
+  EnvironmentThreadShell,
+} from "@t3tools/client-runtime/state/shell";
 import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import {
   sortActiveThreadsByOrderKey,
@@ -41,6 +44,16 @@ export { snoozeWakeLabel };
  */
 export type ThreadListV2Status = "approval" | "input" | "working" | "failed" | "ready";
 export type ThreadListV2SwipeAction = "archive" | "settle" | "unsettle" | "snooze" | "unsnooze";
+
+export function resolvePendingTaskDeliveryLabel(input: {
+  readonly kind: PendingNewTask["kind"];
+  readonly shellStatus: EnvironmentShellStatus | undefined;
+}): "Draft" | "Queued" | "Waiting for thread sync" | "Sends on reconnect" {
+  if (input.kind === "draft") return "Draft";
+  if (input.shellStatus === "live") return "Queued";
+  if (input.shellStatus === "synchronizing") return "Waiting for thread sync";
+  return "Sends on reconnect";
+}
 
 export function resolveThreadListV2SnoozeMenuSelection(input: {
   readonly event: string;

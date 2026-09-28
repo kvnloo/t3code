@@ -34,7 +34,10 @@ import { useThreadListV2ShelfPreferences } from "./use-thread-list-v2-shelf-pref
 import { usePendingThreadOrder } from "../../state/thread-order";
 import { environmentServerConfigsAtom } from "../../state/server";
 import { usePendingNewTasks } from "../../state/use-pending-new-tasks";
-import { useQueuedThreadKeys } from "../../state/use-thread-outbox";
+import {
+  useQueuedThreadKeys,
+  useThreadOutboxShellStatuses,
+} from "../../state/use-thread-outbox";
 import { useWorkspaceState } from "../../state/workspace";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands";
@@ -159,6 +162,7 @@ function ThreadNavigationSidebarPane(
   } = useThreadListActions();
   const pendingTasks = usePendingNewTasks();
   const queuedThreadKeys = useQueuedThreadKeys();
+  const outboxShellStatuses = useThreadOutboxShellStatuses();
   const { openPendingTask, confirmDeletePendingTask } = usePendingTaskListActions();
   const environments = useMemo(
     () =>
@@ -718,6 +722,7 @@ function ThreadNavigationSidebarPane(
                   : null
               }
               environmentMachine={machineByEnvironmentId.get(item.pendingTask.environmentId)}
+              shellStatus={outboxShellStatuses.get(item.pendingTask.environmentId)}
               pane="sidebar"
               showPendingDivider={item.showPendingDivider}
               onSelectPendingTask={openPendingTask}
@@ -840,6 +845,7 @@ function ThreadNavigationSidebarPane(
       machineByEnvironmentId,
       moveThread,
       openPendingTask,
+      outboxShellStatuses,
       pinReorderEnvironmentIds,
       pinThread,
       pinningEnvironmentIds,

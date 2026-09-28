@@ -13,6 +13,7 @@ import { threadArrangementOpenAtom } from "../../state/thread-order";
 import type { ThreadMoveDestination } from "./threadOrder";
 import type {
   EnvironmentProject,
+  EnvironmentShellStatus,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state/thread-search";
@@ -41,6 +42,7 @@ import { buildThreadTitleRegenerationMenuItems } from "./thread-title-regenerati
 import {
   THREAD_LIST_V2_SETTLED_PAGE_COUNT,
   resolveThreadListV2SnoozeMenuSelection,
+  resolvePendingTaskDeliveryLabel,
   resolveThreadListV2SnoozeGateExpiryMs,
   resolveThreadListV2Status,
   resolveThreadListV2SwipeActions,
@@ -267,6 +269,7 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
   readonly environmentLabel: string | null;
   /** Drawn beside the label; ignored while the label is null. */
   readonly environmentMachine?: EnvironmentMachineKind;
+  readonly shellStatus?: EnvironmentShellStatus;
   readonly pane?: "screen" | "sidebar";
   /** Draws the "Unsent" divider above the first draft or queued row. */
   readonly showPendingDivider: boolean;
@@ -280,6 +283,10 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
   const isDraft = pendingTask.kind === "draft";
   const projectTitle = props.projectTitle ?? props.project?.title ?? pendingTask.projectTitle ?? "";
   const branch = pendingTask.branch;
+  const deliveryLabel = resolvePendingTaskDeliveryLabel({
+    kind: pendingTask.kind,
+    shellStatus: props.shellStatus,
+  });
 
   const handleMenuAction = useCallback(
     ({ nativeEvent }: { readonly nativeEvent: { readonly event: string } }) => {
@@ -327,7 +334,7 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
               sidebarPane && "text-drawer-foreground-muted",
             )}
           >
-            Sends on reconnect
+            {deliveryLabel}
           </Text>
         )}
       </View>
@@ -403,7 +410,11 @@ export const ThreadListV2PendingRow = memo(function ThreadListV2PendingRow(props
           accessibilityHint={
             isDraft
               ? "Opens the draft in the new task composer"
-              : "Sends when the environment reconnects. Opens the task for editing"
+              : props.shellStatus === "synchronizing"
+                ? "Sends after thread synchronization completes. Opens the task for editing"
+                : props.shellStatus === "live"
+                  ? "Queued to send. Opens the task for editing"
+                  : "Sends when the environment reconnects. Opens the task for editing"
           }
           accessibilityLabel={pendingTask.title}
           accessibilityRole="button"

@@ -41,7 +41,10 @@ import { useThreadJumpShortcuts } from "../keyboard/threadKeyboardShortcuts";
 import { usePendingThreadOrder } from "../../state/thread-order";
 import { environmentServerConfigsAtom } from "../../state/server";
 import type { PendingNewTask } from "../../state/use-pending-new-tasks";
-import { useQueuedThreadKeys } from "../../state/use-thread-outbox";
+import {
+  useQueuedThreadKeys,
+  useThreadOutboxShellStatuses,
+} from "../../state/use-thread-outbox";
 import {
   ThreadListV2PendingRow,
   ThreadListV2Row,
@@ -225,6 +228,7 @@ function HomeTopContentSpacer() {
 
 export function HomeScreen(props: HomeScreenProps) {
   const queuedThreadKeys = useQueuedThreadKeys();
+  const outboxShellStatuses = useThreadOutboxShellStatuses();
   const openSwipeableRef = useRef<SwipeableMethods | null>(null);
   const insets = useSafeAreaInsets();
   const { fabClearance } = useAndroidControlSizing();
@@ -729,6 +733,7 @@ export function HomeScreen(props: HomeScreenProps) {
                 : null
             }
             environmentMachine={machineByEnvironmentId.get(item.pendingTask.environmentId)}
+            shellStatus={outboxShellStatuses.get(item.pendingTask.environmentId)}
             showPendingDivider={item.showPendingDivider}
             showTrailingDivider={item.showTrailingDivider}
             onSelectPendingTask={props.onSelectPendingTask}
@@ -846,6 +851,7 @@ export function HomeScreen(props: HomeScreenProps) {
       props.onSelectThread,
       props.onNewThreadOnBranch,
       props.savedConnectionsById,
+      outboxShellStatuses,
       resolveProviderInstance,
       settlementEnvironmentIds,
       snoozeEnvironmentIds,
