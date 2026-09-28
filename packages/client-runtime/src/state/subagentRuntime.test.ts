@@ -164,6 +164,79 @@ describe("foldSubagentActivities", () => {
     expect(agent.error).toBe("boom");
   });
 
+  it("reopens a terminal Claude subagent when a new toolUseId starts it", () => {
+    const agents = fold([
+      activity("task.started", {
+        taskId: "claude-resume",
+        taskType: "local_agent",
+        toolUseId: "tool-first",
+      }),
+      activity("task.updated", {
+        taskId: "claude-resume",
+        status: "failed",
+        error: "session limit",
+      }),
+      activity("task.started", {
+        taskId: "claude-resume",
+        taskType: "local_agent",
+        toolUseId: "tool-resume",
+      }),
+      activity("task.progress", {
+        taskId: "claude-resume",
+        lastToolName: "Bash",
+      }),
+    ]);
+
+    expect(agents).toHaveLength(1);
+    expect(agents[0]).toMatchObject({
+      status: "running",
+      activationCount: 2,
+      error: null,
+      completedAt: null,
+      lastToolName: "Bash",
+    });
+  });
+
+  it("does not reopen a terminal subagent for a duplicate or late original start", () => {
+    const duplicate = fold([
+      activity("task.started", {
+        taskId: "claude-duplicate",
+        taskType: "local_agent",
+        toolUseId: "tool-original",
+      }),
+      activity("task.completed", {
+        taskId: "claude-duplicate",
+        status: "completed",
+      }),
+      activity("task.started", {
+        taskId: "claude-duplicate",
+        taskType: "local_agent",
+        toolUseId: "tool-original",
+      }),
+    ]);
+    expect(duplicate[0]).toMatchObject({
+      status: "completed",
+      activationCount: 1,
+    });
+
+    const late = fold([
+      activity("task.completed", {
+        taskId: "claude-late",
+        status: "failed",
+        summary: "failed before start retained",
+      }),
+      activity("task.started", {
+        taskId: "claude-late",
+        taskType: "local_agent",
+        toolUseId: "tool-original",
+      }),
+    ]);
+    expect(late[0]).toMatchObject({
+      status: "failed",
+      activationCount: 1,
+    });
+  });
+
   it("duplicate terminal events are idempotent (timestamps do not slide)", () => {
     const agents = fold([
       activity("task.started", { taskId: "task-3", taskType: "local_agent" }),

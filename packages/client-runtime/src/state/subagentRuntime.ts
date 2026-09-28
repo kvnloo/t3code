@@ -234,6 +234,8 @@ interface MutableAgent {
   effort: string | null;
   status: RuntimeSubagentStatus;
   activationCount: number;
+  /** Tool call that opened the current activation, when the provider exposes one. */
+  startToolUseId: string | null;
   usage: SubagentUsage | null;
   progress: string | null;
   lastToolName: string | null;
@@ -291,6 +293,7 @@ function getOrCreate(
     effort: asString(payload.effort) ?? null,
     status: "pending",
     activationCount: 0,
+    startToolUseId: null,
     usage: null,
     progress: null,
     lastToolName: null,
@@ -483,19 +486,35 @@ export function foldSubagentActivities(
         if (isBackgroundTaskActivity(payload)) break;
         const agent = getOrCreate(agents, taskId, payload, at);
         fillMetadata(agent, payload);
-        // Order-robustness: a start row arriving after a terminal state is a
-        // late/out-of-order delivery and only fills metadata — it must not
-        // reopen the run. Reactivation comes exclusively from explicit
-        // status transitions (task.updated / progress status). Guard on the
-        // status itself, not activationCount: a task first seen via a
-        // terminal task.updated has zero activations but is still settled
-        // (review finding: a late start reopened a failed child).
-        if (agent.activationCount === 0 && !isTerminalSubagentStatus(agent.status)) {
+        const toolUseId = asString(payload.toolUseId);
+        const previousStartToolUseId = agent.startToolUseId;
+
+        // Claude resumes the same subagent with a second task.started row and
+        // a new toolUseId, without an intervening task.updated {running}.
+        // Treat that new launch identity as a reactivation. A late duplicate
+        // of the original start keeps the same toolUseId and remains metadata-only.
+        if (
+          isTerminalSubagentStatus(agent.status) &&
+          previousStartToolUseId !== null &&
+          toolUseId !== undefined &&
+          toolUseId !== previousStartToolUseId
+        ) {
+          agent.startToolUseId = toolUseId;
+          applyStatus(agent, "running", at);
+        } else if (agent.activationCount === 0 && !isTerminalSubagentStatus(agent.status)) {
           agent.activationCount = 1;
           agent.startedAt = agent.startedAt ?? at;
           agent.status = "running";
+          if (toolUseId !== undefined) agent.startToolUseId = toolUseId;
         } else if (agent.status === "idle") {
+          if (toolUseId !== undefined) agent.startToolUseId = toolUseId;
           applyStatus(agent, "running", at);
+        } else if (!isTerminalSubagentStatus(agent.status) && toolUseId !== undefined) {
+          agent.startToolUseId = toolUseId;
+        } else if (agent.startToolUseId === null && toolUseId !== undefined) {
+          // A terminal row can age in before its original start row. Remember
+          // that start identity for future dedupe, but do not reopen it.
+          agent.startToolUseId = toolUseId;
         }
         const detail = asString(payload.detail);
         if (detail && agent.title === agent.id) agent.title = detail;
