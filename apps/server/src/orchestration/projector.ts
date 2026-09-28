@@ -60,8 +60,9 @@ type ThreadPatch = Partial<Omit<OrchestrationThread, "id" | "projectId">>;
 const MAX_THREAD_MESSAGES = 2_000;
 const MAX_THREAD_CHECKPOINTS = 500;
 
-// Async questions can stay open while the agent produces more activity.
-// Match the database snapshot's pending-question retention.
+// Open requests stay actionable while the agent produces more activity:
+// async questions, native questions, and approvals can all outlast the
+// activity window. Match the database snapshot's pending-request retention.
 function retainThreadActivities(activities: OrchestrationThread["activities"]) {
   const recentStart = activities.length - 500;
   if (recentStart <= 0) return activities;
@@ -70,9 +71,9 @@ function retainThreadActivities(activities: OrchestrationThread["activities"]) {
     if (!Predicate.isObject(activity.payload)) continue;
     const requestId = activity.payload.requestId;
     if (typeof requestId !== "string") continue;
-    if (activity.kind === "user-input.requested" && activity.payload.responseMode === "message") {
+    if (activity.kind === "user-input.requested" || activity.kind === "approval.requested") {
       pending.set(requestId, activity);
-    } else if (activity.kind === "user-input.resolved") {
+    } else if (activity.kind === "user-input.resolved" || activity.kind === "approval.resolved") {
       pending.delete(requestId);
     }
   }
