@@ -154,18 +154,47 @@ function isEquivalent(left: string | undefined, right: string | undefined): bool
   return normalizedLeft !== undefined && normalizedLeft === normalizedRight;
 }
 
+function normalizedToolName(data: Record<string, unknown> | undefined): string | undefined {
+  const item = asRecord(data?.item);
+  const raw = asTrimmedString(data?.toolName ?? data?.tool ?? item?.tool);
+  return raw
+    ?.split(/__|[./]/u)
+    .at(-1)
+    ?.replace(/[_\s-]/gu, "")
+    .toLowerCase();
+}
+
+function displayToolName(data: Record<string, unknown> | undefined): string | undefined {
+  const item = asRecord(data?.item);
+  const raw = asTrimmedString(data?.toolName ?? data?.tool ?? item?.tool);
+  const leaf = raw?.split(/__|[./]/u).at(-1)?.trim();
+  if (!leaf) return undefined;
+  const spaced = leaf.replace(/[_-]+/gu, " ").replace(/\s+/gu, " ").trim();
+  return spaced.length > 0 ? `${spaced.charAt(0).toUpperCase()}${spaced.slice(1)}` : undefined;
+}
+
 function classifyToolAction(input: {
   readonly itemType?: ToolLifecycleItemType | null | undefined;
   readonly title?: string | undefined;
   readonly data?: Record<string, unknown> | undefined;
-}): "command" | "read" | "file_change" | "search" | "other" {
+}): "command" | "read" | "file_change" | "search" | "web_search" | "other" {
   const itemType = input.itemType ?? undefined;
   const kind = asTrimmedString(input.data?.kind)?.toLowerCase();
   const title = asTrimmedString(input.title)?.toLowerCase();
-  if (itemType === "command_execution" || kind === "execute" || title === "terminal") {
+  const toolName = normalizedToolName(input.data);
+  if (
+    itemType === "command_execution" ||
+    kind === "execute" ||
+    title === "terminal" ||
+    toolName === "bash" ||
+    toolName === "shell" ||
+    toolName === "terminal" ||
+    toolName === "execute" ||
+    toolName === "command"
+  ) {
     return "command";
   }
-  if (kind === "read" || title === "read file") {
+  if (kind === "read" || title === "read file" || toolName === "read" || toolName === "readfile") {
     return "read";
   }
   if (
@@ -173,11 +202,27 @@ function classifyToolAction(input: {
     kind === "edit" ||
     kind === "move" ||
     kind === "delete" ||
-    kind === "write"
+    kind === "write" ||
+    toolName === "edit" ||
+    toolName === "write" ||
+    toolName === "applypatch" ||
+    toolName === "move" ||
+    toolName === "delete"
   ) {
     return "file_change";
   }
-  if (itemType === "web_search" || kind === "search" || title === "find" || title === "grep") {
+  if (itemType === "web_search" || toolName === "websearch") {
+    return "web_search";
+  }
+  if (
+    kind === "search" ||
+    title === "find" ||
+    title === "grep" ||
+    toolName === "grep" ||
+    toolName === "glob" ||
+    toolName === "find" ||
+    toolName === "search"
+  ) {
     return "search";
   }
   return "other";
@@ -203,6 +248,7 @@ export function deriveToolActivityPresentation(
   const detail = stripTrailingExitCode(asTrimmedString(input.detail));
   const fallbackSummary = asTrimmedString(input.fallbackSummary) ?? "Tool";
   const data = asRecord(input.data);
+  const toolName = displayToolName(data);
   const command = extractToolCommand(data, title);
   const primaryPath = extractPrimaryPath(data);
   const action = classifyToolAction({
@@ -237,26 +283,28 @@ export function deriveToolActivityPresentation(
     };
   }
 
-  if (action === "search") {
+  if (action === "search" || action === "web_search") {
+    const rawInput = asRecord(data?.rawInput) ?? asRecord(data?.input);
     const query =
-      asTrimmedString(asRecord(data?.rawInput)?.query) ??
-      asTrimmedString(asRecord(data?.rawInput)?.pattern) ??
-      asTrimmedString(asRecord(data?.rawInput)?.searchTerm);
+      asTrimmedString(rawInput?.query) ??
+      asTrimmedString(rawInput?.pattern) ??
+      asTrimmedString(rawInput?.searchTerm);
     return {
-      summary: "Searched files",
+      summary: action === "web_search" ? "Searched the web" : "Searched files",
       ...(query ? { detail: query } : {}),
     };
   }
 
-  if (detail && !isEquivalent(detail, title) && !isEquivalent(detail, fallbackSummary)) {
+  const identity = title ?? toolName ?? fallbackSummary;
+  if (detail && !isEquivalent(detail, identity) && !isEquivalent(detail, fallbackSummary)) {
     return {
-      summary: title ?? fallbackSummary,
+      summary: identity,
       detail,
     };
   }
 
   return {
-    summary: title ?? fallbackSummary,
+    summary: identity,
   };
 }
 
