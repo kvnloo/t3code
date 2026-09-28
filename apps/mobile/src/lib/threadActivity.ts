@@ -15,6 +15,7 @@ import type {
   UserInputQuestion,
 } from "@t3tools/contracts";
 import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import { deriveToolActivityPresentation } from "@t3tools/shared/toolActivity";
 import {
   commandDetailRepeatsCommand,
   extractCommandOutputText,
@@ -483,6 +484,16 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   const commandPreview = extractToolCommand(payload);
   const changedFiles = extractChangedFiles(payload);
   const title = extractToolTitle(payload);
+  const itemType = extractWorkLogItemType(payload);
+  const data = asRecord(payload?.data);
+  const fallbackPresentation = deriveToolActivityPresentation({
+    itemType,
+    title,
+    detail: asTrimmedString(payload?.detail),
+    data,
+    fallbackSummary: activity.summary,
+  });
+  const genericToolSummary = /^Tool(?: updated| started)?$/iu.test(activity.summary);
   const toolPresentation = extractToolActivityPresentation(payload);
   // Terminal task updates carry identity so they replace each child's progress row.
   const isTaskActivity =
@@ -512,7 +523,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
     createdAt: activity.createdAt,
     turnId: activity.turnId,
     ...(taskId ? { taskId } : {}),
-    label: taskLabel || activity.summary,
+    label:
+      taskLabel ||
+      (genericToolSummary && !isTaskActivity ? fallbackPresentation.summary : activity.summary),
     tone:
       activity.kind === "task.progress"
         ? "thinking"
@@ -546,7 +559,6 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
       entry.isWorkflowCoordinator = true;
     }
   }
-  const itemType = extractWorkLogItemType(payload);
   const requestKind = extractWorkLogRequestKind(payload);
   const viewedImagePath = asTrimmedString(asRecord(payload?.data)?.imagePath);
   const commandOutput = commandPreview.command ? extractCommandOutputText(payload?.data) : null;
@@ -570,6 +582,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (isTaskActivity && typeof payload?.error === "string" && payload.error.trim()) {
     entry.detail = payload.error;
   }
+  if (!entry.detail && genericToolSummary && fallbackPresentation.detail) {
+    entry.detail = fallbackPresentation.detail;
+  }
   if (!entry.detail && (activity.kind === "runtime.error" || activity.kind === "runtime.warning")) {
     const message = asTrimmedString(payload?.message);
     if (message) entry.detail = message;
@@ -588,6 +603,8 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   }
   if (title) {
     entry.toolTitle = title;
+  } else if (genericToolSummary && fallbackPresentation.summary !== activity.summary) {
+    entry.toolTitle = fallbackPresentation.summary;
   }
   if (toolPresentation.toolSurface) {
     entry.toolSurface = toolPresentation.toolSurface;
@@ -1038,7 +1055,22 @@ export function workEntryRowLabel(entry: WorkLogEntry, expanded = false): string
   if (entry.agentSpawn) return agentSpawnLabel(entry.agentSpawn);
   const presentation = resolveWorkEntryToolPresentation(entry);
   if (presentation) return presentation.displayName;
-  if (expanded && entry.command?.trim()) return "Command";
+  if (expanded && entry.command?.trim()) {
+    const program = commandProgramName(entry.command);
+    const status = entry.toolLifecycleStatus;
+    const verb =
+      status === "inProgress"
+        ? "Running"
+        : status === "failed"
+          ? "Failed"
+          : status === "declined"
+            ? "Declined"
+            : status === "stopped"
+              ? "Stopped"
+              : "Ran";
+    return `${verb} ${program ?? "command"}`;
+  }
+  if (entry.toolTitle && !entry.command) return workEntryHeading(entry);
   const preview = workEntryPreview(entry);
   if (expanded) return preview?.trim() || workEntryHeading(entry);
   const compactPreview = preview === null ? null : collapseWhitespace(stripShellWrapper(preview));
