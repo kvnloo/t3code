@@ -1355,6 +1355,7 @@ function renderFeedEntry(
   props: Pick<
     ThreadFeedProps,
     | "environmentId"
+    | "threadId"
     | "onUseArtifactTemplate"
     | "skills"
     | "dispatchingMessageId"
@@ -1625,6 +1626,7 @@ function renderFeedEntry(
                 <UserMessageContent
                   text={renderedText}
                   environmentId={props.environmentId}
+                  threadId={props.threadId}
                   context={message.context}
                   markdownStyles={styles}
                   reviewCommentColors={props.reviewCommentColors}
@@ -1773,6 +1775,7 @@ function renderFeedEntry(
 type UserMessageContentProps = {
   readonly text: string;
   readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
   readonly context?: OrchestrationMessageContext;
   readonly markdownStyles: MarkdownStyleSet;
   readonly reviewCommentColors: ReviewCommentColors;
@@ -1784,7 +1787,6 @@ type UserMessageContentProps = {
 function UserMessageContent(props: UserMessageContentProps) {
   const [selected, setSelected] = useState<{ contextId: string; label: string } | null>(null);
   const navigation = useNavigation();
-  const { selectedThread } = useThreadSelection();
   const text = replaceComposerContextReferences(props.text, (ref) => {
     const available = props.context?.records.some((record) => record.contextId === ref.contextId);
     return `[${ref.label}${available ? "" : " (unavailable)"}](t3-context://v1/${ref.kind}/${ref.contextId})`;
@@ -1804,7 +1806,7 @@ function UserMessageContent(props: UserMessageContentProps) {
     if (document) {
       navigation.navigate("ThreadAttachment", {
         environmentId: String(props.environmentId),
-        ...(selectedThread ? { threadId: String(selectedThread.id) } : {}),
+        threadId: String(props.threadId),
         attachmentId: document.attachmentId,
         name: document.name,
         mimeType: document.mimeType,
@@ -2755,6 +2757,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         <ThreadMediaVisibility>
           {renderFeedEntry(info, {
             environmentId: props.environmentId,
+            threadId: props.threadId,
             dispatchingMessageId: props.dispatchingMessageId,
             onEditPendingMessage: props.onEditPendingMessage,
             copiedRowId,
