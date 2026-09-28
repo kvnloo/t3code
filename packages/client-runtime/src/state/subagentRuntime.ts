@@ -234,7 +234,6 @@ interface MutableAgent {
   effort: string | null;
   status: RuntimeSubagentStatus;
   activationCount: number;
-  startToolUseIds: Set<string>;
   usage: SubagentUsage | null;
   progress: string | null;
   lastToolName: string | null;
@@ -292,7 +291,6 @@ function getOrCreate(
     effort: asString(payload.effort) ?? null,
     status: "pending",
     activationCount: 0,
-    startToolUseIds: new Set(),
     usage: null,
     progress: null,
     lastToolName: null,
@@ -467,6 +465,7 @@ export function foldSubagentActivities(
   options?: { readonly sessionLive?: boolean },
 ): ReadonlyArray<RuntimeSubagent> {
   const agents = new Map<string, MutableAgent>();
+  const startToolUseIdsByTask = new Map<string, Set<string>>();
 
   for (const activity of activities) {
     if (typeof activity.payload !== "object" || activity.payload === null) {
@@ -486,12 +485,14 @@ export function foldSubagentActivities(
         const agent = getOrCreate(agents, taskId, payload, at);
         fillMetadata(agent, payload);
         const startToolUseId = asString(payload.toolUseId);
+        const seenStartToolUseIds = startToolUseIdsByTask.get(taskId) ?? new Set<string>();
         const startsNewActivation =
           startToolUseId !== undefined &&
-          agent.startToolUseIds.size > 0 &&
-          !agent.startToolUseIds.has(startToolUseId);
+          seenStartToolUseIds.size > 0 &&
+          !seenStartToolUseIds.has(startToolUseId);
         if (startToolUseId !== undefined) {
-          agent.startToolUseIds.add(startToolUseId);
+          seenStartToolUseIds.add(startToolUseId);
+          startToolUseIdsByTask.set(taskId, seenStartToolUseIds);
         }
         // Order-robustness: a repeated start row arriving after a terminal
         // state is late delivery and must not reopen the run. Claude resumes
