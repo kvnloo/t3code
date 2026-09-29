@@ -71,7 +71,7 @@ export const runPiSessionCommand = Effect.fn("runPiSessionCommand")(function* (
     const stderr = result.stderr.trim();
     return yield* new PiRpcError({
       operation: "share",
-      detail: "GitHub CLI sharing failed.",
+      detail: "GitHub CLI sharing failed",
       ...(stderr.length > 0 ? { cause: new Error(stderr) } : {}),
     });
   }
