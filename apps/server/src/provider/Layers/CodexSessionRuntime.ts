@@ -23,6 +23,7 @@ import { normalizeModelSlug } from "@t3tools/shared/model";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -1294,6 +1295,38 @@ export const rollbackCodexThread = Effect.fn("rollbackCodexThread")(function* (
     yield* client.raw.request("thread/revert", { threadId, beforeTurnId: firstRemoved.id });
   }
   return { threadId, turns: snapshot.turns.slice(0, retainedCount) };
+});
+
+// The transport awaits an unbounded Deferred per request, so a wedged app
+// server would park the feedback upload forever: the upload carries the
+// session logs and the client would spin with no way to report the outcome.
+// Bounding the wait turns the wedge into a clear request error.
+const FEEDBACK_UPLOAD_TIMEOUT = Duration.seconds(60);
+
+export const uploadCodexFeedback = Effect.fn("uploadCodexFeedback")(function* (
+  client: CodexHistoryClient,
+  threadId: string,
+  reason: string | undefined,
+): Effect.fn.Return<EffectCodexSchema.V2FeedbackUploadResponse, CodexErrors.CodexAppServerError> {
+  return yield* client
+    .request("feedback/upload", {
+      classification: "bug",
+      includeLogs: true,
+      ...(reason ? { reason } : {}),
+      threadId,
+    })
+    .pipe(
+      Effect.timeout(FEEDBACK_UPLOAD_TIMEOUT),
+      Effect.catchTag("TimeoutError", () =>
+        Effect.fail(
+          CodexErrors.CodexAppServerRequestError.internalError(
+            "Codex App Server request 'feedback/upload' timed out waiting for a response.",
+            undefined,
+            { method: "feedback/upload", operation: "receive-response" },
+          ),
+        ),
+      ),
+    );
 });
 
 export const makeCodexSessionRuntime = (
@@ -2671,12 +2704,7 @@ export const makeCodexSessionRuntime = (
       uploadFeedback: (reason) =>
         Effect.gen(function* () {
           const providerThreadId = yield* readProviderThreadId;
-          return yield* client.request("feedback/upload", {
-            classification: "bug",
-            includeLogs: true,
-            ...(reason ? { reason } : {}),
-            threadId: providerThreadId,
-          });
+          return yield* uploadCodexFeedback(client, providerThreadId, reason);
         }),
       respondToRequest: (requestId, decision) =>
         Effect.gen(function* () {
