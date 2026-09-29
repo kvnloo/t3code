@@ -2,8 +2,15 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Scope from "effect/Scope";
+import * as TestClock from "effect/testing/TestClock";
+import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpServer from "effect/unstable/http/HttpServer";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
@@ -189,6 +196,65 @@ it.layer(NodeServices.layer)("AnalyticsService test", (it) => {
       }).pipe(Effect.provide(runtimeLayer));
 
       assert.deepEqual(capturedPaths, []);
+    }),
+  );
+
+  it.effect("flush completes instead of hanging when the telemetry endpoint never responds", () =>
+    Effect.gen(function* () {
+      const serverConfigLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
+        prefix: "t3-telemetry-hang-",
+      });
+      const configLayer = ConfigProvider.layer(
+        ConfigProvider.fromUnknown({
+          T3CODE_TELEMETRY_ENABLED: true,
+          T3CODE_POSTHOG_KEY: "phc_test_key",
+          T3CODE_POSTHOG_HOST: "http://localhost",
+          T3CODE_TELEMETRY_FLUSH_BATCH_SIZE: 20,
+        }),
+      );
+      // Simulates a wedged endpoint: the connection is accepted, but no
+      // response bytes ever arrive.
+      const hangingClient = HttpClient.make(() => Effect.never);
+      const telemetryLayer = AnalyticsService.layer.pipe(
+        Layer.provideMerge(serverConfigLayer),
+        Layer.provide(configLayer),
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.succeed(HostProcessPlatform, "linux"),
+            Layer.succeed(HostProcessArchitecture, "arm64"),
+          ),
+        ),
+        Layer.provide(Layer.succeed(HttpClient.HttpClient, hangingClient)),
+      );
+
+      // The service registers a shutdown finalizer that flushes, so the
+      // scope is managed explicitly and the test clock keeps moving while
+      // it closes.
+      const scope = yield* Scope.make();
+      const context = yield* Layer.build(telemetryLayer).pipe(
+        Effect.provideService(Scope.Scope, scope),
+      );
+      const analytics = Context.get(context, AnalyticsService.AnalyticsService);
+
+      yield* analytics.record("test.hang", { index: 1 });
+
+      const flushFiber = yield* analytics.flush.pipe(Effect.forkIn(scope));
+      const joinFiber = yield* Fiber.join(flushFiber).pipe(
+        Effect.timeoutOption("20 seconds"),
+        Effect.forkDetach,
+      );
+      yield* TestClock.adjust("30 seconds");
+      const completed = yield* Fiber.join(joinFiber);
+      yield* Fiber.interrupt(flushFiber);
+
+      const closeFiber = yield* Scope.close(scope, Exit.void).pipe(Effect.forkDetach);
+      yield* TestClock.adjust("5 minutes");
+      yield* Fiber.join(closeFiber);
+
+      assert.isTrue(
+        Option.isSome(completed),
+        "flush must complete instead of hanging forever when the telemetry endpoint never responds",
+      );
     }),
   );
 });
