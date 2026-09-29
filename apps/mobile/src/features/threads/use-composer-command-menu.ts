@@ -16,6 +16,7 @@ import {
 } from "../../state/use-composer-drafts";
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
 import {
+  composerTriggerIsOnlyText,
   detectComposerTrigger,
   replaceTextRange,
   serializeComposerFileLink,
@@ -534,7 +535,8 @@ export function useComposerCommandMenu({
       if (
         item.type === "provider-slash-command" &&
         item.command.argumentMode === "none" &&
-        onProviderCommand
+        onProviderCommand &&
+        composerTriggerIsOnlyText(draftMessage, trigger.rangeStart, trigger.rangeEnd)
       ) {
         const cleared = replaceTextRange(draftMessage, trigger.rangeStart, trigger.rangeEnd, "");
         setSelection({ start: cleared.cursor, end: cleared.cursor });
