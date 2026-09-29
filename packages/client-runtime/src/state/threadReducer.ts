@@ -694,11 +694,53 @@ export function applyThreadDetailEvent(
       // array; a superseded array falls back to the sorting path.
       const ids = activityIdIndex.get(thread.activities);
       const lastActivity = thread.activities.at(-1);
-      if (
-        !supersedesContextWindow &&
+      const canAppendInOrder =
         ids !== undefined &&
         (lastActivity === undefined || activityOrder(lastActivity, activity) <= 0) &&
-        !ids.has(activity.id)
+        !ids.has(activity.id);
+
+      if (supersedesContextWindow && canAppendInOrder) {
+        // Live context-window updates are ordered and replace at most the
+        // previous resolvable snapshot for this turn. Avoid sorting the whole
+        // history: remove that one row and append the new latest snapshot.
+        let supersededIndex = -1;
+        for (let index = thread.activities.length - 1; index >= 0; index -= 1) {
+          const entry = thread.activities[index]!;
+          if (
+            entry.turnId === activity.turnId &&
+            isResolvableContextWindowActivity(entry)
+          ) {
+            supersededIndex = index;
+            break;
+          }
+        }
+        const superseded =
+          supersededIndex === -1 ? undefined : thread.activities[supersededIndex];
+        const activities =
+          supersededIndex === -1
+            ? Arr.append(thread.activities, activity)
+            : [
+                ...thread.activities.slice(0, supersededIndex),
+                ...thread.activities.slice(supersededIndex + 1),
+                activity,
+              ];
+        activityIdIndex.delete(thread.activities);
+        if (superseded) ids.delete(superseded.id);
+        ids.add(activity.id);
+        activityIdIndex.set(activities, ids);
+        return {
+          kind: "updated",
+          thread: {
+            ...thread,
+            activities,
+            updatedAt: event.occurredAt,
+          },
+        };
+      }
+
+      if (
+        !supersedesContextWindow &&
+        canAppendInOrder
       ) {
         const activities = Arr.append(thread.activities, activity);
         activityIdIndex.delete(thread.activities);
