@@ -35,6 +35,10 @@ const isCredentialedHost = (url: string) => {
 
 /** GitHub answers an asset request with a 302 to a signed object URL that needs no credential. */
 const MAX_REDIRECTS = 3;
+/** A hop that takes longer is a wedged store, not a slow one: the signed object URL either
+ * answers fast or never does. Without a per-hop bound one stalled hop parks the media-route
+ * fiber forever, and a PR review image or video seek becomes a hung request. */
+const PER_HOP_TIMEOUT_MS = 10_000;
 /** Following the redirect here, rather than in `fetch`, is what keeps the token on GitHub. */
 const MANUAL_REDIRECT: RequestInit = { redirect: "manual" };
 const TOKEN_CACHE_TTL_MS = 5 * 60_000;
@@ -115,7 +119,7 @@ const fetchFollowingRedirects = Effect.fn("GitHubMediaFetch.fetchFollowingRedire
     // a token — deciding that from the target, not from the hop count, is what makes it so.
     const authorization =
       token !== null && isCredentialedHost(target) ? `Bearer ${Redacted.value(token)}` : null;
-    const response: HttpClientResponse.HttpClientResponse = yield* httpClient
+    const response: HttpClientResponse.HttpClientResponse | null = yield* httpClient
       .execute(
         HttpClientRequest.get(target).pipe(
           HttpClientRequest.setHeaders({
@@ -126,7 +130,14 @@ const fetchFollowingRedirects = Effect.fn("GitHubMediaFetch.fetchFollowingRedire
           }),
         ),
       )
-      .pipe(Effect.provideService(FetchHttpClient.RequestInit, MANUAL_REDIRECT));
+      .pipe(
+        Effect.provideService(FetchHttpClient.RequestInit, MANUAL_REDIRECT),
+        // An expired hop is a broken hop: the bytes never arrived, so the redirect chain
+        // cannot be followed and the route answers 502, the file's existing broken-hop shape.
+        Effect.timeoutOption(PER_HOP_TIMEOUT_MS),
+        Effect.map(Option.getOrElse(() => null)),
+      );
+    if (response === null) return null;
     const location = response.headers.location;
     if (response.status < 300 || response.status >= 400) return response;
     // A chain this long is not GitHub answering with bytes, and its body is not the media.
