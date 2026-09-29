@@ -4384,6 +4384,70 @@ describe("ProviderCommandReactor", () => {
     }),
   );
 
+  effectIt.effect("stops a live provider session after the thread is archived", () =>
+    Effect.gen(function* () {
+      const harness = yield* Effect.promise(() => createHarness());
+      const threadId = ThreadId.make("thread-1");
+      const now = "2026-01-01T00:00:00.000Z";
+      const providerInstanceId = ProviderInstanceId.make("codex_work");
+
+      yield* harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-session-set-before-archive"),
+        threadId,
+        session: {
+          threadId,
+          status: "ready",
+          providerName: "codex",
+          providerInstanceId,
+          runtimeMode: "approval-required",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: now,
+        },
+        createdAt: now,
+      });
+      harness.runtimeSessions.push({
+        provider: ProviderDriverKind.make("codex"),
+        providerInstanceId,
+        status: "ready",
+        runtimeMode: "approval-required",
+        threadId,
+        resumeCursor: { opaque: "archived-stop" },
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      yield* harness.engine.dispatch({
+        type: "thread.archive",
+        commandId: CommandId.make("cmd-archive-before-stop"),
+        threadId,
+      });
+      const activeShell = yield* harness.snapshotQuery.getThreadShellById(threadId);
+      expect(Option.isNone(activeShell)).toBe(true);
+
+      yield* harness.engine.dispatch({
+        type: "thread.session.stop",
+        commandId: CommandId.make("cmd-stop-after-archive"),
+        threadId,
+        createdAt: "2026-01-01T00:00:01.000Z",
+      });
+
+      yield* Effect.promise(() => harness.drain());
+
+      expect(harness.stopSession).toHaveBeenCalledWith({ threadId });
+      expect(harness.runtimeSessions).toHaveLength(0);
+      const archived = yield* harness.snapshotQuery.getArchivedShellSnapshot();
+      const archivedThread = archived.threads.find((entry) => entry.id === threadId);
+      expect(archivedThread?.session).toMatchObject({
+        status: "stopped",
+        providerName: "codex",
+        providerInstanceId,
+        activeTurnId: null,
+      });
+    }),
+  );
+
   effectIt.effect("stops a ready provider session after automatic settlement", () =>
     Effect.gen(function* () {
       const sessionStopped = yield* Deferred.make<void>();
