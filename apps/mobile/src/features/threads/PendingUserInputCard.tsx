@@ -1,7 +1,7 @@
 import { RequestActionButton } from "./RequestActionButton";
 import { QuestionAttachments } from "./QuestionAttachments";
 import type { ApprovalRequestId, UserInputQuestion } from "@t3tools/contracts";
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { Platform, Pressable, ScrollView, View, type LayoutChangeEvent } from "react-native";
 import Animated, {
   Easing,
@@ -91,6 +91,10 @@ const CARD_LAYOUT_TRANSITION = LinearTransition.duration(200);
 
 export function PendingUserInputCard(props: PendingUserInputCardProps) {
   const questionCount = props.pendingUserInput.questions.length;
+  const [previewSelection, setPreviewSelection] = useState<{
+    questionId: string;
+    optionValue: string;
+  } | null>(null);
 
   const cardCoverage = props.cardCoverage;
   const barHeightRef = useRef(0);
@@ -259,6 +263,19 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
       >
         {props.pendingUserInput.questions.map((question) => {
           const draft = props.drafts[question.id];
+          const selectedPreviewOption = question.options.find((option) => {
+            const optionValue = option.value ?? option.label.trim();
+            return (
+              previewSelection?.questionId === question.id &&
+              previewSelection.optionValue === optionValue &&
+              Boolean(option.preview?.trim())
+            );
+          });
+          const firstOption = question.options[0];
+          const defaultPreviewOption =
+            firstOption && Boolean(firstOption.preview?.trim()) ? firstOption : undefined;
+          const previewOption = selectedPreviewOption ?? defaultPreviewOption;
+          const previewText = previewOption?.preview?.trim() ? previewOption.preview : null;
           return (
             <View key={question.id} className="gap-2 pt-1">
               <Text className="font-t3-bold text-xs uppercase tracking-[1px] text-foreground-muted">
@@ -280,13 +297,14 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
                         "min-h-12 w-full rounded-2xl border px-3.5 py-3",
                         selected ? "border-primary bg-primary/10" : "border-border bg-input",
                       )}
-                      onPress={() =>
+                      onPress={() => {
+                        setPreviewSelection({ questionId: question.id, optionValue });
                         props.onSelectOption(
                           props.pendingUserInput.requestId,
                           question,
                           optionValue,
-                        )
-                      }
+                        );
+                      }}
                     >
                       <View className="min-w-0 flex-1 gap-0.5">
                         <Text
@@ -307,6 +325,19 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
                   );
                 })}
               </View>
+              {previewText ? (
+                <View className="rounded-2xl border border-border bg-subtle px-3.5 py-3">
+                  <Text className="mb-1.5 font-t3-bold text-2xs uppercase tracking-[1px] text-foreground-muted">
+                    Preview · {previewOption?.label}
+                  </Text>
+                  <Text
+                    selectable
+                    className="font-mono text-xs leading-5 text-foreground-secondary"
+                  >
+                    {previewText}
+                  </Text>
+                </View>
+              ) : null}
               <QuestionAttachments
                 requestId={props.pendingUserInput.requestId}
                 question={question}
