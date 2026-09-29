@@ -1296,17 +1296,17 @@ function trimmedString(value: unknown): string | undefined {
 }
 
 /**
- * SDK task usage ({total_tokens, tool_uses, duration_ms}, sometimes with
- * input/output/cache breakdowns) → the typed contract shape. Unknown or
- * malformed input yields undefined rather than a partial guess.
+ * Claude task_progress/task_notification `total_tokens` is the task's
+ * current context occupancy, not lifetime processed work. It can shrink after
+ * compaction, so expose it as contextTokens and never as cumulative totalTokens.
  */
 function normalizeTaskUsage(usage: unknown): RuntimeTaskUsage | undefined {
   if (typeof usage !== "object" || usage === null) {
     return undefined;
   }
   const record = usage as Record<string, unknown>;
-  const totalTokens = nonNegativeInt(record.total_tokens);
-  if (totalTokens === undefined) {
+  const contextTokens = nonNegativeInt(record.total_tokens);
+  if (contextTokens === undefined) {
     return undefined;
   }
   const inputTokens = nonNegativeInt(record.input_tokens);
@@ -1315,7 +1315,7 @@ function normalizeTaskUsage(usage: unknown): RuntimeTaskUsage | undefined {
   const toolUses = nonNegativeInt(record.tool_uses);
   const durationMs = nonNegativeInt(record.duration_ms);
   return {
-    totalTokens,
+    contextTokens,
     ...(inputTokens !== undefined ? { inputTokens } : {}),
     ...(cachedInputTokens !== undefined ? { cachedInputTokens } : {}),
     ...(outputTokens !== undefined ? { outputTokens } : {}),
