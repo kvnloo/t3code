@@ -177,22 +177,29 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   }
 
   const customAnswerActive = progress.customAnswer.trim().length > 0;
-  const focusedPreviewOption = activeQuestion.options.find((option) => {
+  const focusedOption =
+    previewOptionValue === null
+      ? undefined
+      : activeQuestion.options.find(
+          (option) => (option.value ?? option.label) === previewOptionValue,
+        );
+  const selectedOption = activeQuestion.options.find((option) => {
     const optionValue = option.value ?? option.label;
-    return optionValue === previewOptionValue && Boolean(option.preview?.trim());
-  });
-  const selectedPreviewOption = activeQuestion.options.find((option) => {
-    const optionValue = option.value ?? option.label;
-    return (
-      !customAnswerActive &&
-      progress.selectedOptionValues.includes(optionValue) &&
-      Boolean(option.preview?.trim())
-    );
+    return !customAnswerActive && progress.selectedOptionValues.includes(optionValue);
   });
   const firstOption = activeQuestion.options[0];
   const defaultPreviewOption =
     firstOption && Boolean(firstOption.preview?.trim()) ? firstOption : undefined;
-  const previewOption = focusedPreviewOption ?? selectedPreviewOption ?? defaultPreviewOption;
+  const previewOption =
+    previewOptionValue !== null
+      ? focusedOption?.preview?.trim()
+        ? focusedOption
+        : undefined
+      : selectedOption
+        ? selectedOption.preview?.trim()
+          ? selectedOption
+          : undefined
+        : defaultPreviewOption;
   const previewText = previewOption?.preview?.trim() ? previewOption.preview : null;
 
   return (
