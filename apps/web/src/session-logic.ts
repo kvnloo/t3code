@@ -474,7 +474,8 @@ export function deriveWorkLogEntries(
     ) {
       continue;
     }
-    if (activity.kind === "tool.started") continue;
+    // tool.started is already durable evidence that work exists. Keep it in
+    // the work log; lifecycle collapse replaces it in place as updates arrive.
     // Agent task.started rows are CTA seeds: they carry the true spawn turn,
     // which is the batch key (completions of background subagents arrive
     // under later synthetic turns and must not start new batches). They
@@ -501,7 +502,9 @@ export function deriveWorkLogEntries(
       if (toolName === "Agent" || toolName === "Task") continue;
     }
     if (
-      (activity.kind === "tool.updated" || activity.kind === "tool.completed") &&
+      (activity.kind === "tool.started" ||
+        activity.kind === "tool.updated" ||
+        activity.kind === "tool.completed") &&
       entry.toolCallId &&
       agentLaunchToolIds.has(entry.toolCallId) &&
       entry.tone !== "error" &&
@@ -649,7 +652,9 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
     entry.toolCallId = toolCallId;
   }
   let toolLifecycleStatus = extractWorkLogToolLifecycleStatus(payload);
-  if (!toolLifecycleStatus && activity.kind === "tool.completed") {
+  if (!toolLifecycleStatus && activity.kind === "tool.started") {
+    toolLifecycleStatus = "inProgress";
+  } else if (!toolLifecycleStatus && activity.kind === "tool.completed") {
     toolLifecycleStatus = "completed";
   }
   if (toolLifecycleStatus) {
@@ -707,6 +712,7 @@ function agentSpawnGroupKey(entry: DerivedWorkLogEntry): string {
 
 function toolLifecycleCollapseMapKey(entry: DerivedWorkLogEntry): string | undefined {
   if (
+    entry.sourceActivityKind !== "tool.started" &&
     entry.sourceActivityKind !== "tool.updated" &&
     entry.sourceActivityKind !== "tool.completed"
   ) {
@@ -815,12 +821,17 @@ function shouldCollapseToolLifecycleEntries(
   next: DerivedWorkLogEntry,
 ): boolean {
   if (
+    previous.sourceActivityKind !== "tool.started" &&
     previous.sourceActivityKind !== "tool.updated" &&
     previous.sourceActivityKind !== "tool.completed"
   ) {
     return false;
   }
-  if (next.sourceActivityKind !== "tool.updated" && next.sourceActivityKind !== "tool.completed") {
+  if (
+    next.sourceActivityKind !== "tool.started" &&
+    next.sourceActivityKind !== "tool.updated" &&
+    next.sourceActivityKind !== "tool.completed"
+  ) {
     return false;
   }
   if (previous.turnId !== next.turnId) {
@@ -905,6 +916,7 @@ function deriveToolLifecycleCollapseKey(entry: DerivedWorkLogEntry): string | un
     return `task${entry.taskId}`;
   }
   if (
+    entry.sourceActivityKind !== "tool.started" &&
     entry.sourceActivityKind !== "tool.updated" &&
     entry.sourceActivityKind !== "tool.completed"
   ) {
