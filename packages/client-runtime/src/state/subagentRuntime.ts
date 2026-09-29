@@ -30,7 +30,10 @@ export type RuntimeSubagentStatus =
   | "interrupted";
 
 export interface SubagentUsage {
-  readonly totalTokens: number;
+  /** Cumulative attributable work; safe to sum across agents. */
+  readonly totalTokens?: number;
+  /** Current context occupancy; may shrink after compaction. */
+  readonly contextTokens?: number;
   readonly inputTokens?: number;
   readonly cachedInputTokens?: number;
   readonly outputTokens?: number;
@@ -152,18 +155,22 @@ function asUsage(value: unknown): SubagentUsage | undefined {
   }
   const record = value as Record<string, unknown>;
   const totalTokens = asCount(record.totalTokens);
-  if (totalTokens === undefined) {
+  const contextTokens = asCount(record.contextTokens);
+  if (totalTokens === undefined && contextTokens === undefined) {
     return undefined;
   }
   const usage: {
-    totalTokens: number;
+    totalTokens?: number;
+    contextTokens?: number;
     inputTokens?: number;
     cachedInputTokens?: number;
     outputTokens?: number;
     reasoningOutputTokens?: number;
     toolUses?: number;
     durationMs?: number;
-  } = { totalTokens };
+  } = {};
+  if (totalTokens !== undefined) usage.totalTokens = totalTokens;
+  if (contextTokens !== undefined) usage.contextTokens = contextTokens;
   const inputTokens = asCount(record.inputTokens);
   if (inputTokens !== undefined) usage.inputTokens = inputTokens;
   const cachedInputTokens = asCount(record.cachedInputTokens);
@@ -180,14 +187,10 @@ function asUsage(value: unknown): SubagentUsage | undefined {
 }
 
 /**
- * Provider-specific usage merge (#4779 semantics, verbatim):
- * - max-merge (Codex-style cumulative frames): field-wise maximum, idempotent
- *   under duplicate or late frames. Cumulative totals never shrink.
- * - accumulate (Claude-style activation deltas): not needed at this layer —
- *   Claude's task_progress usage is itself cumulative per task, so the fold
- *   also max-merges. The distinction matters when v2 sums activations.
- * Field-wise: a terminal payload carrying only totalTokens must not wipe a
- * known breakdown.
+ * Merge task usage without conflating two different quantities:
+ * - totalTokens and cumulative breakdowns max-merge for idempotency.
+ * - contextTokens is a latest snapshot and may shrink after compaction.
+ * A context-only frame also treats its token breakdown as a latest snapshot.
  */
 function mergeUsageMax(
   current: SubagentUsage | null,
@@ -199,28 +202,46 @@ function mergeUsageMax(
   if (!current) {
     return incoming;
   }
-  const pick = (a: number | undefined, b: number | undefined): number | undefined =>
+  const pickMax = (a: number | undefined, b: number | undefined): number | undefined =>
     a === undefined ? b : b === undefined ? a : Math.max(a, b);
+  const pickLatest = (a: number | undefined, b: number | undefined): number | undefined =>
+    b === undefined ? a : b;
+  const contextSnapshot =
+    incoming.contextTokens !== undefined && incoming.totalTokens === undefined;
+  const pickTokenBreakdown = contextSnapshot ? pickLatest : pickMax;
   const merged: {
-    totalTokens: number;
+    totalTokens?: number;
+    contextTokens?: number;
     inputTokens?: number;
     cachedInputTokens?: number;
     outputTokens?: number;
     reasoningOutputTokens?: number;
     toolUses?: number;
     durationMs?: number;
-  } = { totalTokens: Math.max(current.totalTokens, incoming.totalTokens) };
-  const inputTokens = pick(current.inputTokens, incoming.inputTokens);
+  } = {};
+
+  const totalTokens = pickMax(current.totalTokens, incoming.totalTokens);
+  if (totalTokens !== undefined) merged.totalTokens = totalTokens;
+  const contextTokens = pickLatest(current.contextTokens, incoming.contextTokens);
+  if (contextTokens !== undefined) merged.contextTokens = contextTokens;
+
+  const inputTokens = pickTokenBreakdown(current.inputTokens, incoming.inputTokens);
   if (inputTokens !== undefined) merged.inputTokens = inputTokens;
-  const cachedInputTokens = pick(current.cachedInputTokens, incoming.cachedInputTokens);
+  const cachedInputTokens = pickTokenBreakdown(
+    current.cachedInputTokens,
+    incoming.cachedInputTokens,
+  );
   if (cachedInputTokens !== undefined) merged.cachedInputTokens = cachedInputTokens;
-  const outputTokens = pick(current.outputTokens, incoming.outputTokens);
+  const outputTokens = pickTokenBreakdown(current.outputTokens, incoming.outputTokens);
   if (outputTokens !== undefined) merged.outputTokens = outputTokens;
-  const reasoningOutputTokens = pick(current.reasoningOutputTokens, incoming.reasoningOutputTokens);
+  const reasoningOutputTokens = pickTokenBreakdown(
+    current.reasoningOutputTokens,
+    incoming.reasoningOutputTokens,
+  );
   if (reasoningOutputTokens !== undefined) merged.reasoningOutputTokens = reasoningOutputTokens;
-  const toolUses = pick(current.toolUses, incoming.toolUses);
+  const toolUses = pickMax(current.toolUses, incoming.toolUses);
   if (toolUses !== undefined) merged.toolUses = toolUses;
-  const durationMs = pick(current.durationMs, incoming.durationMs);
+  const durationMs = pickMax(current.durationMs, incoming.durationMs);
   if (durationMs !== undefined) merged.durationMs = durationMs;
   return merged;
 }
@@ -703,6 +724,7 @@ export interface AgentPanelModel {
   readonly idleCount: number;
   readonly settledCount: number;
   readonly totalTokens: number;
+  readonly contextTokens: number;
   readonly hasAgents: boolean;
   readonly liveCount: number;
 }
@@ -715,6 +737,7 @@ const EMPTY_PANEL_MODEL: AgentPanelModel = {
   idleCount: 0,
   settledCount: 0,
   totalTokens: 0,
+  contextTokens: 0,
   hasAgents: false,
   liveCount: 0,
 };
@@ -831,6 +854,7 @@ export function deriveAgentPanelModel({
   let idleCount = 0;
   let settledCount = 0;
   let totalTokens = 0;
+  let contextTokens = 0;
   for (const agent of source) {
     // A workflow coordinator with members is a container for those members, not
     // work of its own: it reports running for the whole run and aggregates their
@@ -842,6 +866,7 @@ export function deriveAgentPanelModel({
     else if (agent.status === "idle") idleCount += 1;
     else settledCount += 1;
     totalTokens += agent.usage?.totalTokens ?? 0;
+    contextTokens += agent.usage?.contextTokens ?? 0;
   }
 
   return {
@@ -856,6 +881,7 @@ export function deriveAgentPanelModel({
     idleCount,
     settledCount,
     totalTokens,
+    contextTokens,
     hasAgents: true,
     liveCount: runningCount + waitingCount,
   };
@@ -878,6 +904,20 @@ export function formatSubagentModelLabel(
     .replace(/-\d{8}$/, "")
     .replace(/-latest$/, "");
   return effort ? `${compact} · ${effort}` : compact;
+}
+
+export function formatSubagentUsageLabel(usage: SubagentUsage | null): string | null {
+  if (!usage) {
+    return null;
+  }
+  const parts: string[] = [];
+  if (usage.totalTokens !== undefined) {
+    parts.push(`${formatSubagentTokenCount(usage.totalTokens)} tok`);
+  }
+  if (usage.contextTokens !== undefined) {
+    parts.push(`${formatSubagentTokenCount(usage.contextTokens)} ctx`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 export function formatSubagentTokenCount(totalTokens: number): string {
