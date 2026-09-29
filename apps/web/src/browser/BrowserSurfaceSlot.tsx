@@ -60,20 +60,32 @@ export function BrowserSurfaceSlot(props: {
         );
       }
     };
+    let frameId = 0;
+    const scheduleUpdate = () => {
+      if (frameId !== 0) return;
+      frameId = window.requestAnimationFrame(() => {
+        frameId = 0;
+        update();
+      });
+    };
+
     updateRef.current = update;
     update();
-    const observer = new ResizeObserver(update);
+    const observer = new ResizeObserver(scheduleUpdate);
     observer.observe(element);
     // Inline panels animate their outer width while keeping the content at
     // full width. The slot moves without resizing, so measure on shell resizes too.
     const panel = element.closest('[data-preview-panel-mode="inline"]');
     if (panel) observer.observe(panel);
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, true);
+    // Captured scroll can fire for every descendant scroller. Geometry only
+    // needs one sample per paint, so coalesce layout reads to the next frame.
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("scroll", scheduleUpdate, true);
     return () => {
+      if (frameId !== 0) window.cancelAnimationFrame(frameId);
       observer.disconnect();
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update, true);
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("scroll", scheduleUpdate, true);
       if (updateRef.current === update) updateRef.current = null;
       lease.release();
     };
