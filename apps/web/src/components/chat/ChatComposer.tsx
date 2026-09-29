@@ -48,7 +48,10 @@ import {
   pastedTextDisposition,
   wouldTextPasteExceedLimit,
 } from "@t3tools/client-runtime/text-paste";
-import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
+import {
+  composerTriggerIsOnlyText,
+  serializeComposerFileLink,
+} from "@t3tools/shared/composerTrigger";
 import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
@@ -3640,7 +3643,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           }
           return;
         }
-        if (item.command.argumentMode === "none" && onProviderCommand) {
+        if (
+          item.command.argumentMode === "none" &&
+          onProviderCommand &&
+          composerTriggerIsOnlyText(snapshot.value, trigger.rangeStart, trigger.rangeEnd)
+        ) {
           const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
             expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
           });
