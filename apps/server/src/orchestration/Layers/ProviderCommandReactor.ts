@@ -1720,22 +1720,34 @@ const make = Effect.gen(function* () {
   const processSessionStopRequested = Effect.fn("processSessionStopRequested")(function* (
     event: Extract<ProviderIntentEvent, { type: "thread.session-stop-requested" }>,
   ) {
-    const thread = yield* resolveThreadShell(event.payload.threadId);
-    if (!thread) {
+    const threadId = event.payload.threadId;
+    const thread = yield* resolveThreadShell(threadId);
+    // Archived threads disappear from the active shell projection before their
+    // queued stop event necessarily reaches this reactor. ProviderService is
+    // the runtime authority: if it still owns a session for the thread, stop it
+    // even when the UI-facing shell is already gone.
+    const activeSession = yield* providerService
+      .listSessions()
+      .pipe(Effect.map((sessions) => sessions.find((session) => session.threadId === threadId)));
+    if (!thread && !activeSession) {
       return;
     }
 
+    const projectedSession = thread?.session;
     const now = event.payload.createdAt;
-    const wasCompacting = compactingThreadIds.has(thread.id);
-    stoppingThreadIds.add(thread.id);
-    const clearStopping = Effect.sync(() => void stoppingThreadIds.delete(thread.id));
+    const wasCompacting = compactingThreadIds.has(threadId);
+    stoppingThreadIds.add(threadId);
+    const clearStopping = Effect.sync(() => void stoppingThreadIds.delete(threadId));
     yield* cancelTurnsAfterCompaction(
-      thread.id,
+      threadId,
       "The session was stopped during context compaction. Send this message again to continue.",
     ).pipe(
       Effect.andThen(
-        thread.session && thread.session.status !== "stopped"
-          ? providerService.stopSession({ threadId: thread.id })
+        activeSession !== undefined ||
+          (projectedSession !== null &&
+            projectedSession !== undefined &&
+            projectedSession.status !== "stopped")
+          ? providerService.stopSession({ threadId })
           : Effect.void,
       ),
       Effect.matchCauseEffect({
@@ -1745,15 +1757,15 @@ const make = Effect.gen(function* () {
           }
           const detail = formatFailureDetail(cause);
           return Effect.sync(() => {
-            stoppingThreadIds.delete(thread.id);
-            return wasCompacting && !compactingThreadIds.has(thread.id);
+            stoppingThreadIds.delete(threadId);
+            return wasCompacting && !compactingThreadIds.has(threadId);
           }).pipe(
             Effect.flatMap((compactionSettled) =>
-              compactionSettled ? restoreCompaction(thread.id) : Effect.void,
+              compactionSettled ? restoreCompaction(threadId) : Effect.void,
             ),
             Effect.andThen(
               appendProviderFailureActivity({
-                threadId: thread.id,
+                threadId,
                 kind: "provider.session.stop.failed",
                 summary: "Provider session stop failed",
                 detail,
@@ -1765,17 +1777,22 @@ const make = Effect.gen(function* () {
         },
         onSuccess: () =>
           setThreadSession({
-            threadId: thread.id,
+            threadId,
             session: {
-              threadId: thread.id,
+              threadId,
               status: "stopped",
-              providerName: thread.session?.providerName ?? null,
-              ...(thread.session?.providerInstanceId !== undefined
-                ? { providerInstanceId: thread.session.providerInstanceId }
+              providerName: projectedSession?.providerName ?? activeSession?.provider ?? null,
+              ...((projectedSession?.providerInstanceId ?? activeSession?.providerInstanceId) !==
+              undefined
+                ? {
+                    providerInstanceId:
+                      projectedSession?.providerInstanceId ?? activeSession?.providerInstanceId!,
+                  }
                 : {}),
-              runtimeMode: thread.session?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
+              runtimeMode:
+                projectedSession?.runtimeMode ?? activeSession?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
               activeTurnId: null,
-              lastError: thread.session?.lastError ?? null,
+              lastError: projectedSession?.lastError ?? null,
               updatedAt: now,
             },
             createdAt: now,
