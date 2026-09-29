@@ -3,9 +3,30 @@
 #import "T3ContextChip.h"
 #include <react/renderer/components/view/ViewShadowNode.h>
 #import <react/renderer/textlayoutmanager/RCTAttributedTextUtils.h>
+#import <Foundation/Foundation.h>
 
 #include <algorithm>
 #include <cmath>
+
+@interface T3MarkdownTextMeasureCacheEntry : NSObject
+@property(nonatomic, copy) NSAttributedString *attributedString;
+@property(nonatomic, assign) CGRect usedRect;
+@end
+
+@implementation T3MarkdownTextMeasureCacheEntry
+@end
+
+static NSCache<NSString *, T3MarkdownTextMeasureCacheEntry *> *T3MarkdownTextMeasureCache()
+{
+  static NSCache<NSString *, T3MarkdownTextMeasureCacheEntry *> *cache = nil;
+  static dispatch_once_t onceToken;
+  dispatch_once(&onceToken, ^{
+    cache = [[NSCache alloc] init];
+    cache.countLimit = 512;
+    cache.totalCostLimit = 8 * 1024 * 1024;
+  });
+  return cache;
+}
 
 namespace facebook::react {
 
@@ -258,27 +279,58 @@ Size T3MarkdownTextShadowNode::measureContent(
     const CGFloat maximumWidth = std::isfinite(layoutConstraints.maximumSize.width)
         ? layoutConstraints.maximumSize.width
         : CGFLOAT_MAX;
-    NSTextStorage *textStorage =
-        [[NSTextStorage alloc] initWithAttributedString:convertedAttributedString];
-    NSLayoutManager *layoutManager = [[NSLayoutManager alloc] init];
-    layoutManager.usesFontLeading = NO;
-    NSTextContainer *textContainer =
-        [[NSTextContainer alloc] initWithSize:CGSizeMake(maximumWidth, CGFLOAT_MAX)];
-    textContainer.lineFragmentPadding = 0;
-    textContainer.maximumNumberOfLines = baseProps.numberOfLines;
+    NSLineBreakMode lineBreakMode = NSLineBreakByClipping;
     if (baseProps.ellipsizeMode == T3MarkdownTextEllipsizeMode::Head) {
-      textContainer.lineBreakMode = NSLineBreakByTruncatingHead;
+      lineBreakMode = NSLineBreakByTruncatingHead;
     } else if (baseProps.ellipsizeMode == T3MarkdownTextEllipsizeMode::Middle) {
-      textContainer.lineBreakMode = NSLineBreakByTruncatingMiddle;
+      lineBreakMode = NSLineBreakByTruncatingMiddle;
     } else if (baseProps.ellipsizeMode == T3MarkdownTextEllipsizeMode::Tail) {
-      textContainer.lineBreakMode = NSLineBreakByTruncatingTail;
-    } else {
-      textContainer.lineBreakMode = NSLineBreakByClipping;
+      lineBreakMode = NSLineBreakByTruncatingTail;
     }
-    [layoutManager addTextContainer:textContainer];
-    [textStorage addLayoutManager:layoutManager];
-    [layoutManager ensureLayoutForTextContainer:textContainer];
-    const CGRect usedRect = [layoutManager usedRectForTextContainer:textContainer];
+
+    // React commits can ask Yoga to measure unchanged markdown repeatedly while
+    // neighboring streamed rows update. The attributed string already captures
+    // text, scaled typography, paragraph styles and attachment geometry; width,
+    // line count and truncation are the remaining TextKit layout inputs.
+    //
+    // The hash keeps the lookup key small. We still verify exact attributed
+    // string equality on a hit, so a hash collision can only become a miss,
+    // never a wrong measurement.
+    NSString *measureCacheKey = [NSString stringWithFormat:
+        @"%lu|%.17g|%ld|%ld",
+        (unsigned long)convertedAttributedString.hash,
+        (double)maximumWidth,
+        (long)baseProps.numberOfLines,
+        (long)lineBreakMode];
+    T3MarkdownTextMeasureCacheEntry *cachedMeasure =
+        [T3MarkdownTextMeasureCache() objectForKey:measureCacheKey];
+
+    CGRect usedRect = CGRectZero;
+    if (cachedMeasure != nil &&
+        [cachedMeasure.attributedString isEqualToAttributedString:convertedAttributedString]) {
+      usedRect = cachedMeasure.usedRect;
+    } else {
+      NSTextStorage *textStorage =
+          [[NSTextStorage alloc] initWithAttributedString:convertedAttributedString];
+      NSLayoutManager *layoutManager = [[NSLayoutManager alloc] init];
+      layoutManager.usesFontLeading = NO;
+      NSTextContainer *textContainer =
+          [[NSTextContainer alloc] initWithSize:CGSizeMake(maximumWidth, CGFLOAT_MAX)];
+      textContainer.lineFragmentPadding = 0;
+      textContainer.maximumNumberOfLines = baseProps.numberOfLines;
+      textContainer.lineBreakMode = lineBreakMode;
+      [layoutManager addTextContainer:textContainer];
+      [textStorage addLayoutManager:layoutManager];
+      [layoutManager ensureLayoutForTextContainer:textContainer];
+      usedRect = [layoutManager usedRectForTextContainer:textContainer];
+
+      T3MarkdownTextMeasureCacheEntry *entry = [[T3MarkdownTextMeasureCacheEntry alloc] init];
+      entry.attributedString = [convertedAttributedString copy];
+      entry.usedRect = usedRect;
+      const NSUInteger approximateCost =
+          MAX((NSUInteger)128, convertedAttributedString.length * sizeof(unichar));
+      [T3MarkdownTextMeasureCache() setObject:entry forKey:measureCacheKey cost:approximateCost];
+    }
 
     return {
         std::clamp(
