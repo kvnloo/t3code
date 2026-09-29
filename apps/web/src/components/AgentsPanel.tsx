@@ -19,6 +19,7 @@ import type {
 import {
   formatSubagentModelLabel,
   formatSubagentTokenCount,
+  formatSubagentUsageLabel,
 } from "@t3tools/client-runtime/state/subagentRuntime";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { Bot, Braces, Check, ChevronDown, ChevronRight, X } from "lucide-react";
@@ -149,7 +150,7 @@ function AgentRow({ agent }: { agent: RuntimeSubagent }) {
       : agent.role;
   const metadata = [
     modelLabel,
-    agent.usage ? `${formatSubagentTokenCount(agent.usage.totalTokens)} tok` : "— tok",
+    formatSubagentUsageLabel(agent.usage) ?? "— tok",
     agent.usage?.toolUses !== undefined ? `${agent.usage.toolUses} tools` : null,
     agent.activationCount > 1 ? `run ${agent.activationCount}` : null,
   ].filter((value): value is string => value !== null);
@@ -470,6 +471,10 @@ function CollapsedWorkflowSection({
     (sum, member) => sum + (member.usage?.totalTokens ?? 0),
     members.length === 0 ? (group.workflow.usage?.totalTokens ?? 0) : 0,
   );
+  const contextTokens = members.reduce(
+    (sum, member) => sum + (member.usage?.contextTokens ?? 0),
+    members.length === 0 ? (group.workflow.usage?.contextTokens ?? 0) : 0,
+  );
   const elapsed =
     group.workflow.startedAt && group.workflow.completedAt
       ? elapsedBetween(group.workflow.startedAt, group.workflow.completedAt)
@@ -489,7 +494,12 @@ function CollapsedWorkflowSection({
         <span className="ml-auto flex items-center gap-1.5 font-mono text-2xs text-muted-foreground/80">
           {failed > 0 ? <span className="text-destructive-foreground">{failed} failed</span> : null}
           <span>{members.length} agents</span>
-          <span className="tabular-nums">· {formatSubagentTokenCount(totalTokens)} tok</span>
+          {totalTokens > 0 ? (
+            <span className="tabular-nums">· {formatSubagentTokenCount(totalTokens)} tok</span>
+          ) : null}
+          {contextTokens > 0 ? (
+            <span className="tabular-nums">· {formatSubagentTokenCount(contextTokens)} ctx</span>
+          ) : null}
           {elapsed ? <span className="tabular-nums">· {elapsed}</span> : null}
           <ChevronRight aria-hidden className="size-3" />
         </span>
@@ -577,7 +587,16 @@ export function AgentsPanel({
           {model.idleCount > 0 ? <span>{model.idleCount} idle</span> : null}
           {model.settledCount > 0 ? <span>{model.settledCount} settled</span> : null}
         </span>
-        <span className="tabular-nums">Σ {formatSubagentTokenCount(model.totalTokens)} tok</span>
+        {model.totalTokens > 0 || model.contextTokens > 0 ? (
+          <span className="tabular-nums">
+            {model.totalTokens > 0
+              ? `Σ ${formatSubagentTokenCount(model.totalTokens)} tok`
+              : null}
+            {model.contextTokens > 0
+              ? `${model.totalTokens > 0 ? " · " : ""}${formatSubagentTokenCount(model.contextTokens)} ctx`
+              : null}
+          </span>
+        ) : null}
       </footer>
     </div>
   );
