@@ -152,7 +152,6 @@ export class ProviderSessionCommandError extends Schema.TaggedError<ProviderSess
   {
     threadId: ThreadId,
     command: Schema.Literals(["copy", "export", "share"]),
-    cause: Schema.optional(Schema.Defect()),
   },
 ) {
   override get message(): string {
