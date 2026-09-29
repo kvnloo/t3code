@@ -476,6 +476,7 @@ const UserInputQuestionOption = Schema.Struct({
   label: TrimmedNonEmptyStringSchema,
   description: Schema.String,
   value: Schema.optional(Schema.String),
+  preview: Schema.optional(Schema.String),
 });
 export type UserInputQuestionOption = typeof UserInputQuestionOption.Type;
 
