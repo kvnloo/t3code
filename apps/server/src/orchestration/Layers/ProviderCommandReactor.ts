@@ -1734,6 +1734,8 @@ const make = Effect.gen(function* () {
     }
 
     const projectedSession = thread?.session;
+    const providerInstanceId =
+      projectedSession?.providerInstanceId ?? activeSession?.providerInstanceId;
     const now = event.payload.createdAt;
     const wasCompacting = compactingThreadIds.has(threadId);
     stoppingThreadIds.add(threadId);
@@ -1782,13 +1784,7 @@ const make = Effect.gen(function* () {
               threadId,
               status: "stopped",
               providerName: projectedSession?.providerName ?? activeSession?.provider ?? null,
-              ...((projectedSession?.providerInstanceId ?? activeSession?.providerInstanceId) !==
-              undefined
-                ? {
-                    providerInstanceId:
-                      projectedSession?.providerInstanceId ?? activeSession?.providerInstanceId!,
-                  }
-                : {}),
+              ...(providerInstanceId !== undefined ? { providerInstanceId } : {}),
               runtimeMode:
                 projectedSession?.runtimeMode ?? activeSession?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
               activeTurnId: null,
