@@ -1157,7 +1157,6 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
         5_802_000_000,
         2_100_000,
       );
-      // Duplicate cumulative frames are idempotent.
       yield* childUsage(
         "evt-child-a-duplicate",
         "child-a",
@@ -1166,8 +1165,6 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
         5_802_000_000,
         2_100_000,
       );
-      // A later activation continues from the child's previous cumulative
-      // total rather than re-counting inherited history.
       yield* childUsage(
         "evt-child-a-2",
         "child-a",
@@ -1176,7 +1173,6 @@ lifecycleLayer("CodexAdapterLive lifecycle", (it) => {
         5_802_000_400,
         400,
       );
-      // Each child owns an independent inherited baseline.
       yield* childUsage(
         "evt-child-b-1",
         "child-b",
