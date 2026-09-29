@@ -140,3 +140,17 @@ export function replaceTextRange(
   const nextText = `${text.slice(0, safeStart)}${replacement}${text.slice(safeEnd)}`;
   return { text: nextText, cursor: safeStart + replacement.length };
 }
+
+
+/**
+ * True when removing the active autocomplete trigger leaves no other prompt text.
+ * Used by no-argument provider commands so selecting a command only auto-runs a
+ * standalone command and never discards surrounding draft text.
+ */
+export function composerTriggerIsOnlyText(
+  text: string,
+  rangeStart: number,
+  rangeEnd: number,
+): boolean {
+  return replaceTextRange(text, rangeStart, rangeEnd, "").text.trim().length === 0;
+}
