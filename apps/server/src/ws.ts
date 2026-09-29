@@ -2452,7 +2452,8 @@ const makeWsRpcLayer = (
                 (cause) =>
                   new ProviderSessionCommandError({
                     threadId: input.threadId,
-                    detail: cause.message,
+                    command: input.command,
+                    cause,
                   }),
               ),
             ),
