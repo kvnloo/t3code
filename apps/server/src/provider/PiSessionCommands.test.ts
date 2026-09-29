@@ -183,7 +183,9 @@ describe("Pi session utilities", () => {
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, harness.spawner),
         Effect.flip,
       );
-      assert.include(error.message, "gh auth login");
+      assert.equal(error.message, "Pi RPC share failed: GitHub CLI sharing failed..");
+      assert.notInclude(error.message, "gh auth login");
+      assert.isDefined(error.cause);
       assert.isFalse(yield* fs.exists(harness.exportPath()));
     }).pipe(Effect.provide(NodeServices.layer)),
   );
