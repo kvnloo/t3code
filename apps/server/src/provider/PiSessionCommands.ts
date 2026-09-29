@@ -68,10 +68,11 @@ export const runPiSessionCommand = Effect.fn("runPiSessionCommand")(function* (
     }),
   ).pipe(Effect.timeout("60 seconds"));
   if (result.code !== 0) {
+    const stderr = result.stderr.trim();
     return yield* new PiRpcError({
       operation: "share",
-      detail:
-        result.stderr.trim() || "GitHub CLI sharing failed. Run 'gh auth login' on the server.",
+      detail: "GitHub CLI sharing failed.",
+      ...(stderr.length > 0 ? { cause: new Error(stderr) } : {}),
     });
   }
   const match = /^https:\/\/gist\.github\.com\/(?:[^/\s]+\/)?([\da-f]+)\/?$/i.exec(
