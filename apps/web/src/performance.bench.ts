@@ -8,7 +8,7 @@ import {
 import { formatHourShort, formatRelativeHourShort } from "@t3tools/shared/usageFormat";
 import { bench, describe } from "vite-plus/test";
 
-import { deriveActivePlanState } from "./session-logic";
+import { deriveActivePlanState, deriveWorkLogEntries } from "./session-logic";
 
 const projectId = ProjectId.make("benchmark-project");
 const turnId = TurnId.make("benchmark-turn");
@@ -55,6 +55,9 @@ describe("client performance", () => {
   });
   bench("derive plan from 500 activities with 5 plan updates", () => {
     deriveActivePlanState(activities, turnId);
+  });
+  bench("derive work log from 500 ordered activities", () => {
+    deriveWorkLogEntries(activities);
   });
   bench("format 24 hourly usage labels and tooltips", () => {
     hours.map((hour) => [
