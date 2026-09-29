@@ -1,3 +1,5 @@
+import { frameInteractionCounters } from "../performance/frameInteractionCounters";
+
 /** Keep the latest pointer sample and flush at most once per presented frame. */
 export function createLatestPointerFrame(options: {
   readonly apply: (point: { readonly clientX: number; readonly clientY: number }) => void;
@@ -16,11 +18,14 @@ export function createLatestPointerFrame(options: {
   const flushPending = () => {
     const latest = pending;
     pending = null;
-    if (latest) options.apply(latest);
+    if (!latest) return;
+    frameInteractionCounters.note("viewportResizeStateUpdates");
+    options.apply(latest);
   };
 
   return {
     record(point: { readonly clientX: number; readonly clientY: number }) {
+      frameInteractionCounters.note("viewportResizePointerEvents");
       pending = { clientX: point.clientX, clientY: point.clientY };
       if (frame !== 0) return;
       const scheduledGeneration = generation;

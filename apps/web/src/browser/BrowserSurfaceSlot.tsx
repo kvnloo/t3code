@@ -2,6 +2,7 @@
 
 import { useLayoutEffect, useRef } from "react";
 
+import { frameInteractionCounters } from "../performance/frameInteractionCounters";
 import { acquireBrowserSurface, type BrowserSurfaceRect } from "./browserSurfaceStore";
 
 export type BrowserSurfaceSlotPresentation = {
@@ -41,6 +42,7 @@ export function presentBrowserSurfaceSlot(
   ) => boolean;
   release: () => void;
 } {
+  frameInteractionCounters.note("browserSurfacePresentations");
   const presented = lease.present(
     rect,
     presentation.visible && rect.width > 0 && rect.height > 0,
@@ -63,6 +65,7 @@ export function presentBrowserSurfaceSlot(
 
 /** Read slot geometry once; callers cache it across presentation-only updates. */
 export function measureBrowserSurfaceSlot(element: HTMLElement): BrowserSurfaceRect {
+  frameInteractionCounters.note("browserSurfaceMeasures");
   const rect = element.getBoundingClientRect();
   return {
     x: Math.round(rect.x),

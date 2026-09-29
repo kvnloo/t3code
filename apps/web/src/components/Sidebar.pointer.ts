@@ -2,6 +2,8 @@ import { useLayoutEffect, type PointerEvent as ReactPointerEvent } from "react";
 import { type SensorProps } from "@dnd-kit/core";
 import { getOwnerDocument, getWindow } from "@dnd-kit/utilities";
 
+import { frameInteractionCounters } from "../performance/frameInteractionCounters";
+
 // Search unmounts the drag context while its owning Sidebar remains mounted.
 export function SidebarDragLifecycle({ onUnmount }: { onUnmount: () => void }) {
   useLayoutEffect(() => onUnmount, [onUnmount]);
@@ -70,7 +72,9 @@ export class SidebarPointerSensor {
     }
     const coordinates = this.latestMove;
     this.latestMove = null;
-    if (coordinates) this.props.onMove(coordinates);
+    if (!coordinates) return;
+    frameInteractionCounters.note("sidebarDragOnMoves");
+    this.props.onMove(coordinates);
   };
 
   private cancelPendingMove = () => {
@@ -113,6 +117,7 @@ export class SidebarPointerSensor {
       // After activation, keep the latest coords and notify dnd-kit at most
       // once per presented frame so auto-scroll and drop targets stay current
       // without mutating on every high-rate pointer sample.
+      frameInteractionCounters.note("sidebarDragPointerEvents");
       this.latestMove = coordinates;
       if (this.moveFrame !== 0) return;
       this.moveFrame = this.window.requestAnimationFrame(this.flushMove);

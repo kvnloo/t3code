@@ -19,6 +19,7 @@ import * as Schedule from "effect/Schedule";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 
+import { frameInteractionCounters } from "../performance/frameInteractionCounters";
 import { randomUUID } from "./utils";
 
 const CLIENT_ID_STORAGE_KEY = "t3.backgroundActivity.clientId";
@@ -97,11 +98,13 @@ export function createFrameCoalescedInteraction(options: {
     },
     /** Continuous pointermove: keep latest intent, write once per presented frame. */
     notePointerMove() {
+      frameInteractionCounters.note("pointerMovesObserved");
       if (frame !== 0) return;
       const scheduledGeneration = generation;
       frame = schedule(() => {
         frame = 0;
         if (scheduledGeneration !== generation) return;
+        frameInteractionCounters.note("rafInteractionFlushes");
         options.onInteraction();
       });
     },
