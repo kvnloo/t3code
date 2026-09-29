@@ -149,10 +149,14 @@ export type ProviderSessionCommandResult = typeof ProviderSessionCommandResult.T
 
 export class ProviderSessionCommandError extends Schema.TaggedError<ProviderSessionCommandError>()(
   "ProviderSessionCommandError",
-  { threadId: ThreadId, detail: Schema.String },
+  {
+    threadId: ThreadId,
+    command: Schema.Literals(["copy", "export", "share"]),
+    cause: Schema.optional(Schema.Defect()),
+  },
 ) {
   override get message(): string {
-    return this.detail;
+    return `Failed to ${this.command} provider session.`;
   }
 }
 
