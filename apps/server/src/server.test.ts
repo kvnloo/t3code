@@ -6340,7 +6340,12 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         ),
       );
       assert.strictEqual(error._tag, "ProviderSessionCommandError");
-      assert.include(error.message, "gh auth login on the server");
+      if (error._tag === "ProviderSessionCommandError") {
+        assert.strictEqual(error.command, "share");
+        assert.strictEqual(error.message, "Failed to share provider session.");
+        assert.notInclude(error.message, "gh auth login on the server");
+        assert.isDefined(error.cause);
+      }
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
