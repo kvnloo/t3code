@@ -20,6 +20,7 @@ import {
   resolveBrowserViewportLayout,
   type BrowserViewportResizeDirection,
 } from "./browserViewportLayout";
+import { createLatestPointerFrame } from "./latestPointerFrame";
 
 interface ViewportDrag extends PreviewViewportSize {
   readonly sourceKey: string;
@@ -190,20 +191,12 @@ export function useBrowserViewportResize(options: {
     }
 
     const sourceChanged = () => sourceViewportKeyRef.current !== sourceViewportKey;
-    const move = (moveEvent: PointerEvent) => {
-      if (moveEvent.pointerId !== pointerId) return;
-      if (sourceChanged()) {
-        cleanup();
-        dragVersionRef.current += 1;
-        clearDrag();
-        return;
-      }
-      moveEvent.preventDefault();
+    const applyPoint = (point: { readonly clientX: number; readonly clientY: number }) => {
       const { width, height } = resizeBrowserViewportFromRail(
         { width: startWidth, height: startHeight },
         {
-          x: moveEvent.clientX - startX,
-          y: moveEvent.clientY - startY,
+          x: point.clientX - startX,
+          y: point.clientY - startY,
         },
         viewportContainerSize,
         dragZoomFactor,
@@ -213,11 +206,28 @@ export function useBrowserViewportResize(options: {
       latest = { width, height };
       setDragViewport({ sourceKey: sourceViewportKey, width, height, direction });
     };
-    function cleanup() {
+    // Pointer samples can arrive far above the display refresh rate. Keep the
+    // latest sample and compute/setDragViewport at most once per presented frame.
+    const pointerFrame = createLatestPointerFrame({ apply: applyPoint });
+    const move = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
+      if (sourceChanged()) {
+        cleanup(false);
+        dragVersionRef.current += 1;
+        clearDrag();
+        return;
+      }
+      moveEvent.preventDefault();
+      pointerFrame.record(moveEvent);
+    };
+    function cleanup(flushLatest: boolean) {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", finish);
       window.removeEventListener("pointercancel", cancel);
+      window.removeEventListener("lostpointercapture", lostCapture);
       dragCleanupRef.current = null;
+      if (flushLatest) pointerFrame.flush();
+      else pointerFrame.cancel();
       try {
         target.releasePointerCapture(pointerId);
       } catch {
@@ -226,7 +236,10 @@ export function useBrowserViewportResize(options: {
     }
     function finish(upEvent: PointerEvent) {
       if (upEvent.pointerId !== pointerId) return;
-      cleanup();
+      // Flush the release sample synchronously so the final dims match an
+      // unthrottled drag and are never lost behind a cancelled rAF.
+      pointerFrame.record(upEvent);
+      cleanup(true);
       if (sourceChanged() || (latest.width === startWidth && latest.height === startHeight)) {
         clearDrag();
         return;
@@ -239,14 +252,23 @@ export function useBrowserViewportResize(options: {
     }
     function cancel(cancelEvent: PointerEvent) {
       if (cancelEvent.pointerId !== pointerId) return;
-      cleanup();
+      cleanup(false);
       dragVersionRef.current += 1;
       clearDrag();
     }
-    dragCleanupRef.current = cleanup;
+    function lostCapture(lostEvent: PointerEvent) {
+      if (lostEvent.pointerId !== pointerId) return;
+      // Capture loss without an earlier finish should discard like cancel.
+      if (dragCleanupRef.current === null) return;
+      cleanup(false);
+      dragVersionRef.current += 1;
+      clearDrag();
+    }
+    dragCleanupRef.current = () => cleanup(false);
     window.addEventListener("pointermove", move, { passive: false });
     window.addEventListener("pointerup", finish);
     window.addEventListener("pointercancel", cancel);
+    window.addEventListener("lostpointercapture", lostCapture);
   };
 
   return {
