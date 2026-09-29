@@ -50,7 +50,7 @@ function ThreadQueueSender({ threadKey }: { threadKey: string }) {
     [activities],
   );
   const pendingRequests = useMemo(() => derivePendingRequests(activities ?? []), [activities]);
-  const phase = derivePhase(thread?.session ?? null);
+  const phase = derivePhase(thread?.session ?? null, thread?.latestTurn ?? null);
 
   // A send that starts a new turn leaves the thread idle until the server
   // picks it up. Hold the next message until then, as the composer does for
