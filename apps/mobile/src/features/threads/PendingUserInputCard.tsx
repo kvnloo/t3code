@@ -263,18 +263,15 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
       >
         {props.pendingUserInput.questions.map((question) => {
           const draft = props.drafts[question.id];
-          const selectedPreviewOption = question.options.find((option) => {
+          const selectedOption = question.options.find((option) => {
             const optionValue = option.value ?? option.label.trim();
             return (
               previewSelection?.questionId === question.id &&
-              previewSelection.optionValue === optionValue &&
-              Boolean(option.preview?.trim())
+              previewSelection.optionValue === optionValue
             );
           });
-          const firstOption = question.options[0];
-          const defaultPreviewOption =
-            firstOption && Boolean(firstOption.preview?.trim()) ? firstOption : undefined;
-          const previewOption = selectedPreviewOption ?? defaultPreviewOption;
+          const previewOption =
+            selectedOption?.preview?.trim() ? selectedOption : undefined;
           const previewText = previewOption?.preview?.trim() ? previewOption.preview : null;
           return (
             <View key={question.id} className="gap-2 pt-1">
