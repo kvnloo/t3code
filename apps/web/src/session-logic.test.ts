@@ -13,6 +13,7 @@ import {
   createMessageAttachmentPreviewProjector,
   deriveActiveWorkStartedAt,
   deriveActivePlanState,
+  derivePhase,
   deriveTimelineEntries,
   deriveTimelineEntriesWithState,
   deriveWorkLogEntries,
@@ -60,6 +61,28 @@ function makeActivity(overrides: {
     ...(overrides.sequence !== undefined ? { sequence: overrides.sequence } : {}),
   };
 }
+
+describe("derivePhase", () => {
+  const session = (
+    status: "ready" | "running" | "starting" | "stopped" | "interrupted" | "error",
+    activeTurnId: string | null,
+  ) =>
+    ({
+      status,
+      activeTurnId: activeTurnId === null ? null : TurnId.make(activeTurnId),
+    }) as Parameters<typeof derivePhase>[0];
+
+  it("stays running when canonical turn ownership outlives a stale ready status", () => {
+    expect(derivePhase(session("ready", "turn-1"))).toBe("running");
+    expect(derivePhase(session("ready", null), { state: "running" })).toBe("running");
+  });
+
+  it("keeps terminal and connecting session states authoritative", () => {
+    expect(derivePhase(session("starting", null), { state: "running" })).toBe("connecting");
+    expect(derivePhase(session("stopped", null), { state: "running" })).toBe("disconnected");
+    expect(derivePhase(session("ready", null), { state: "completed" })).toBe("ready");
+  });
+});
 
 describe("deriveActivePlanState", () => {
   it("orders plan snapshots by sequence while ignoring unrelated activities", () => {
