@@ -886,12 +886,21 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
       );
     };
 
+    let frameId = 0;
+    const schedulePositionUpdate = () => {
+      if (frameId !== 0) return;
+      frameId = window.requestAnimationFrame(() => {
+        frameId = 0;
+        updatePosition();
+      });
+    };
+
     updatePosition();
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
+    window.addEventListener("resize", schedulePositionUpdate);
+    window.addEventListener("scroll", schedulePositionUpdate, true);
 
     const observer =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(updatePosition);
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(schedulePositionUpdate);
     if (observer) {
       // The composer is centered and capped at a max width, so opening a side
       // panel slides it sideways without ever resizing it. Watching the anchor
@@ -904,9 +913,10 @@ function ComposerCommandMenuLayer(props: { anchor: HTMLElement | null; children:
     }
 
     return () => {
+      if (frameId !== 0) window.cancelAnimationFrame(frameId);
       observer?.disconnect();
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("resize", schedulePositionUpdate);
+      window.removeEventListener("scroll", schedulePositionUpdate, true);
     };
   }, [props.anchor]);
 
