@@ -25,16 +25,23 @@ const threads = Array.from({ length: 1_000 }, (_, index) => {
     unsettledAt: null,
   };
 });
-const activities: OrchestrationThreadActivity[] = Array.from({ length: 500 }, (_, index) => ({
-  id: EventId.make(`activity-${index}`),
-  turnId,
-  sequence: index,
-  createdAt: new Date(start + index * 1_000).toISOString(),
-  kind: index % 100 === 0 ? "turn.plan.updated" : "tool.completed",
-  summary: "Benchmark activity",
-  tone: "info",
-  payload: index % 100 === 0 ? { plan: [{ step: "Run checks", status: "inProgress" }] } : {},
-}));
+
+function makeActivities(count: number): OrchestrationThreadActivity[] {
+  return Array.from({ length: count }, (_, index) => ({
+    id: EventId.make(`activity-${index}`),
+    turnId,
+    sequence: index,
+    createdAt: new Date(start + index * 1_000).toISOString(),
+    kind: index % 100 === 0 ? "turn.plan.updated" : "tool.completed",
+    summary: "Benchmark activity",
+    tone: "info",
+    payload: index % 100 === 0 ? { plan: [{ step: "Run checks", status: "inProgress" }] } : {},
+  }));
+}
+
+const activities500 = makeActivities(500);
+const activities2000 = makeActivities(2_000);
+const activities2000Unordered = [...activities2000].reverse();
 const hours = Array.from({ length: 24 }, (_, index) =>
   new Date(start + index * 3_600_000).toISOString(),
 );
@@ -54,10 +61,19 @@ describe("client performance", () => {
     getLatestThreadForProject(threads, projectId, "updated_at");
   });
   bench("derive plan from 500 activities with 5 plan updates", () => {
-    deriveActivePlanState(activities, turnId);
+    deriveActivePlanState(activities500, turnId);
+  });
+  bench("derive plan from 2000 ordered activities", () => {
+    deriveActivePlanState(activities2000, turnId);
   });
   bench("derive work log from 500 ordered activities", () => {
-    deriveWorkLogEntries(activities);
+    deriveWorkLogEntries(activities500);
+  });
+  bench("derive work log from 2000 ordered activities", () => {
+    deriveWorkLogEntries(activities2000);
+  });
+  bench("derive work log from 2000 unordered activities (sort fallback)", () => {
+    deriveWorkLogEntries(activities2000Unordered);
   });
   bench("format 24 hourly usage labels and tooltips", () => {
     hours.map((hour) => [
