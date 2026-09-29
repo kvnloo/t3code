@@ -504,24 +504,60 @@ describe("deriveWorkLogEntries", () => {
     ]);
   });
 
-  it("omits tool started entries and keeps completed entries", () => {
-    const activities: OrchestrationThreadActivity[] = [
+  it("renders tool.started immediately and collapses later lifecycle updates in place", () => {
+    const startedOnly = deriveWorkLogEntries([
+      makeActivity({
+        id: "tool-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        turnId: "turn-1",
+        summary: "bash",
+        kind: "tool.started",
+        payload: {
+          itemType: "command_execution",
+          toolCallId: "call-1",
+        },
+      }),
+    ]);
+    expect(startedOnly).toMatchObject([
+      {
+        id: "tool-start",
+        toolCallId: "call-1",
+        toolLifecycleStatus: "inProgress",
+      },
+    ]);
+
+    const completed = deriveWorkLogEntries([
+      makeActivity({
+        id: "tool-start",
+        createdAt: "2026-02-23T00:00:01.000Z",
+        turnId: "turn-1",
+        summary: "bash",
+        kind: "tool.started",
+        payload: {
+          itemType: "command_execution",
+          toolCallId: "call-1",
+        },
+      }),
       makeActivity({
         id: "tool-complete",
         createdAt: "2026-02-23T00:00:03.000Z",
-        summary: "Tool call complete",
+        turnId: "turn-1",
+        summary: "bash completed",
         kind: "tool.completed",
+        payload: {
+          itemType: "command_execution",
+          toolCallId: "call-1",
+          status: "completed",
+        },
       }),
-      makeActivity({
-        id: "tool-start",
-        createdAt: "2026-02-23T00:00:02.000Z",
-        summary: "Tool call",
-        kind: "tool.started",
-      }),
-    ];
-
-    const entries = deriveWorkLogEntries(activities);
-    expect(entries.map((entry) => entry.id)).toEqual(["tool-complete"]);
+    ]);
+    expect(completed).toMatchObject([
+      {
+        id: "tool-complete",
+        toolCallId: "call-1",
+        toolLifecycleStatus: "completed",
+      },
+    ]);
   });
 
   it("omits routine setup updates before work starts and after later turn activity", () => {
