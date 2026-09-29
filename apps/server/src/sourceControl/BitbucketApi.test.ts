@@ -990,7 +990,6 @@ it.effect("cuts a response short rather than reading an unbounded diff into memo
   ),
 );
 
-
 it.effect("fails a wedged JSON request after the request timeout", () => {
   const { execute, layer } = makeLayer({
     response: () => Response.json({}),
