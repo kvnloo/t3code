@@ -503,20 +503,33 @@ const UserInputResolvedPayload = Schema.Struct({
 export type UserInputResolvedPayload = typeof UserInputResolvedPayload.Type;
 
 /**
- * Typed per-task usage rollup. Field names match the orchestration-v2 subagent
- * usage vocabulary (#4779) so the eventual migration is a rename, not a remap.
- * Claude reports per-activation deltas; Codex reports cumulative totals — the
- * merge strategy is provider-specific and lives in client-runtime.
+ * Typed per-task usage. `totalTokens` is cumulative work and is safe to
+ * max-merge and sum. `contextTokens` is current context occupancy: it may
+ * shrink after compaction and must never be added to cumulative totals.
+ *
+ * The union requires at least one token metric while keeping the common
+ * breakdown/tool fields provider-neutral.
  */
-export const RuntimeTaskUsage = Schema.Struct({
-  totalTokens: NonNegativeInt,
+const RuntimeTaskUsageCommonFields = {
   inputTokens: Schema.optional(NonNegativeInt),
   cachedInputTokens: Schema.optional(NonNegativeInt),
   outputTokens: Schema.optional(NonNegativeInt),
   reasoningOutputTokens: Schema.optional(NonNegativeInt),
   toolUses: Schema.optional(NonNegativeInt),
   durationMs: Schema.optional(NonNegativeInt),
-});
+};
+export const RuntimeTaskUsage = Schema.Union([
+  Schema.Struct({
+    ...RuntimeTaskUsageCommonFields,
+    totalTokens: NonNegativeInt,
+    contextTokens: Schema.optional(NonNegativeInt),
+  }),
+  Schema.Struct({
+    ...RuntimeTaskUsageCommonFields,
+    contextTokens: NonNegativeInt,
+    totalTokens: Schema.optional(NonNegativeInt),
+  }),
+]);
 export type RuntimeTaskUsage = typeof RuntimeTaskUsage.Type;
 
 export const TaskWorkflowPhase = Schema.Struct({
