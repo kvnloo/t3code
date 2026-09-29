@@ -4472,6 +4472,7 @@ export const makeClaudeAdapter = Effect.fn("makeClaudeAdapter")(function* (
               ? q.options.map((opt: Record<string, unknown>) => ({
                   label: typeof opt.label === "string" ? opt.label : "",
                   description: typeof opt.description === "string" ? opt.description : "",
+                  ...(typeof opt.preview === "string" ? { preview: opt.preview } : {}),
                 }))
               : [],
             multiSelect: typeof q.multiSelect === "boolean" ? q.multiSelect : false,
