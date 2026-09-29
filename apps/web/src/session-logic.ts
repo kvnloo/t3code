@@ -325,9 +325,10 @@ export function deriveActivePlanState(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
   latestTurnId: TurnId | undefined,
 ): ActivePlanState | null {
-  const allPlanActivities = activities
-    .filter((activity) => activity.kind === "turn.plan.updated")
-    .sort(compareActivitiesByOrder);
+  const allPlanActivities = activities.filter((activity) => activity.kind === "turn.plan.updated");
+  if (!activitiesAreCanonicallyOrdered(allPlanActivities)) {
+    allPlanActivities.sort(compareActivitiesByOrder);
+  }
   // Prefer plan from the current turn; fall back to the most recent plan from any turn
   // so that TodoWrite tasks persist across follow-up messages.
   const latest = Option.firstSomeOf([
@@ -451,7 +452,9 @@ function isAgentInternalActivity(activity: OrchestrationThreadActivity): boolean
 export function deriveWorkLogEntries(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
 ): WorkLogEntry[] {
-  const ordered = [...activities].toSorted(compareActivitiesByOrder);
+  const ordered = activitiesAreCanonicallyOrdered(activities)
+    ? activities
+    : [...activities].toSorted(compareActivitiesByOrder);
   // A launch tool and its task lifecycle describe the same run. Only hide
   // launch rows once their tool-use id has an agent row to replace them.
   const agentLaunchToolIds = new Set<string>();
@@ -1386,6 +1389,17 @@ function extractChangedFiles(payload: Record<string, unknown> | null): string[] 
   const seen = new Set<string>();
   collectChangedFiles(asRecord(payload?.data), changedFiles, seen, 0);
   return changedFiles;
+}
+
+function activitiesAreCanonicallyOrdered(
+  activities: ReadonlyArray<OrchestrationThreadActivity>,
+): boolean {
+  for (let index = 1; index < activities.length; index += 1) {
+    if (compareActivitiesByOrder(activities[index - 1]!, activities[index]!) > 0) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function compareActivitiesByOrder(
