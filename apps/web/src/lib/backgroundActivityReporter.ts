@@ -77,6 +77,43 @@ function resolveClientKind(): ClientActivityReportInput["clientKind"] {
   return window.desktopBridge ? "desktop-renderer" : "web";
 }
 
+/** Coalesce high-rate pointer moves to at most one interaction write per frame. */
+export function createFrameCoalescedInteraction(options: {
+  readonly onInteraction: () => void;
+  readonly requestAnimationFrame?: (callback: FrameRequestCallback) => number;
+  readonly cancelAnimationFrame?: (handle: number) => void;
+}) {
+  const schedule =
+    options.requestAnimationFrame ??
+    ((callback: FrameRequestCallback) => window.requestAnimationFrame(callback));
+  const cancel =
+    options.cancelAnimationFrame ?? ((handle: number) => window.cancelAnimationFrame(handle));
+  let frame = 0;
+  let generation = 0;
+  return {
+    /** Discrete actions (pointerdown/keydown/wheel) update immediately. */
+    noteImmediate() {
+      options.onInteraction();
+    },
+    /** Continuous pointermove: keep latest intent, write once per presented frame. */
+    notePointerMove() {
+      if (frame !== 0) return;
+      const scheduledGeneration = generation;
+      frame = schedule(() => {
+        frame = 0;
+        if (scheduledGeneration !== generation) return;
+        options.onInteraction();
+      });
+    },
+    dispose() {
+      generation += 1;
+      if (frame === 0) return;
+      cancel(frame);
+      frame = 0;
+    },
+  };
+}
+
 export function wasRecentlyInteracted(lastInteractionAtMs: number, observedAtMs: number): boolean {
   return (
     lastInteractionAtMs <= observedAtMs &&
@@ -211,6 +248,9 @@ export const backgroundActivityReporterLayer = Layer.effectDiscard(
       );
     }).pipe(Effect.withSpan("web.backgroundActivity.report"));
 
+    const pointerInteractions = createFrameCoalescedInteraction({
+      onInteraction: recordInteraction,
+    });
     yield* Effect.acquireRelease(
       Effect.sync(() => {
         retainedScopeListeners.add(requestReport);
@@ -218,22 +258,39 @@ export const backgroundActivityReporterLayer = Layer.effectDiscard(
         window.addEventListener("focus", requestReport);
         window.addEventListener("blur", requestReport);
         window.addEventListener("online", requestReport);
-        window.addEventListener("pointermove", recordInteraction);
-        window.addEventListener("keydown", recordInteraction);
-        window.addEventListener("wheel", recordInteraction, passiveListenerOptions);
-        window.addEventListener("touchstart", recordInteraction, passiveListenerOptions);
+        // High-polling-rate pointers can emit far more moves than we can paint.
+        // Presence only needs one timestamp write per presented frame.
+        window.addEventListener(
+          "pointermove",
+          pointerInteractions.notePointerMove,
+          passiveListenerOptions,
+        );
+        window.addEventListener(
+          "pointerdown",
+          pointerInteractions.noteImmediate,
+          passiveListenerOptions,
+        );
+        window.addEventListener("keydown", pointerInteractions.noteImmediate);
+        window.addEventListener("wheel", pointerInteractions.noteImmediate, passiveListenerOptions);
+        window.addEventListener(
+          "touchstart",
+          pointerInteractions.noteImmediate,
+          passiveListenerOptions,
+        );
       }),
       () =>
         Effect.sync(() => {
+          pointerInteractions.dispose();
           retainedScopeListeners.delete(requestReport);
           document.removeEventListener("visibilitychange", requestReport);
           window.removeEventListener("focus", requestReport);
           window.removeEventListener("blur", requestReport);
           window.removeEventListener("online", requestReport);
-          window.removeEventListener("pointermove", recordInteraction);
-          window.removeEventListener("keydown", recordInteraction);
-          window.removeEventListener("wheel", recordInteraction);
-          window.removeEventListener("touchstart", recordInteraction);
+          window.removeEventListener("pointermove", pointerInteractions.notePointerMove);
+          window.removeEventListener("pointerdown", pointerInteractions.noteImmediate);
+          window.removeEventListener("keydown", pointerInteractions.noteImmediate);
+          window.removeEventListener("wheel", pointerInteractions.noteImmediate);
+          window.removeEventListener("touchstart", pointerInteractions.noteImmediate);
         }),
     );
 
