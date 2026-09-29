@@ -7895,7 +7895,11 @@ describe("ClaudeAdapterLive", () => {
             question: "Which framework?",
             header: "Framework",
             options: [
-              { label: "React", description: "React.js" },
+              {
+                label: "React",
+                description: "React.js",
+                preview: "```tsx\nexport function App() { return <main>React</main>; }\n```",
+              },
               { label: "Vue", description: "Vue.js" },
             ],
             multiSelect: false,
@@ -7926,6 +7930,11 @@ describe("ClaudeAdapterLive", () => {
       // Regression for #2388: `id` must equal the full question text so the
       // UI's draft-answer key matches what the SDK looks up downstream.
       assert.equal(requestedEvent.value.payload.questions[0]?.id, "Which framework?");
+      assert.equal(
+        requestedEvent.value.payload.questions[0]?.options[0]?.preview,
+        "```tsx\nexport function App() { return <main>React</main>; }\n```",
+      );
+      assert.isUndefined(requestedEvent.value.payload.questions[0]?.options[1]?.preview);
       assert.deepEqual(requestedEvent.value.providerRefs, {
         providerItemId: ProviderItemId.make("tool-ask-1"),
       });
