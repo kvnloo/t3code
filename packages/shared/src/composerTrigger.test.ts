@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { detectComposerTrigger, serializeComposerFileLink } from "./composerTrigger.ts";
+import {
+  composerTriggerIsOnlyText,
+  detectComposerTrigger,
+  serializeComposerFileLink,
+} from "./composerTrigger.ts";
 
 describe("detectComposerTrigger", () => {
   it.each(["$", "€", "£", "¥", "₹", "₩", "₿", "𑿝"])(
@@ -15,6 +19,18 @@ describe("detectComposerTrigger", () => {
       });
     },
   );
+});
+
+describe("composerTriggerIsOnlyText", () => {
+  it("accepts a standalone slash-command trigger", () => {
+    expect(composerTriggerIsOnlyText("/com", 0, 4)).toBe(true);
+    expect(composerTriggerIsOnlyText("  /com  ", 2, 6)).toBe(true);
+  });
+
+  it("rejects a trigger when other draft text would remain", () => {
+    expect(composerTriggerIsOnlyText("/com keep this draft", 0, 4)).toBe(false);
+    expect(composerTriggerIsOnlyText("keep /com", 5, 9)).toBe(false);
+  });
 });
 
 describe("serializeComposerFileLink", () => {
