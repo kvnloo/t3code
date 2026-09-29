@@ -198,10 +198,6 @@ function codexCollabTokenUsageDelta(
   current: CodexCollabTokenUsage,
   last: CodexCollabTokenUsage | undefined,
 ): CodexCollabTokenUsage {
-  // Codex child totals include inherited history. The first observed `last`
-  // is the only provider reading attributable to the child itself. Later
-  // cumulative growth is safe to subtract. If Codex resets the cumulative
-  // counter, start the next segment from `last` instead of charging history.
   if (previous === undefined || current.totalTokens < previous.totalTokens) {
     return last ?? current;
   }
