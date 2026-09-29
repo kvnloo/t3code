@@ -79,10 +79,20 @@ export function shouldRefreshOnInterval(input: {
  * When each view last read, kept outside React because a mount is exactly what it has to outlive:
  * a reader who navigates away and straight back mounts a fresh hook, and a timestamp that started
  * at zero would call that first read due. Keyed by whatever the caller calls the view, because two
- * views on screen at once each owe their own reader an answer. Entries are one number and never
- * pruned; there is one per view the session ever read.
+ * views on screen at once each owe their own reader an answer. Entries are one number; a
+ * caller-supplied key names a view that outlives its mounts, so those entries are never pruned.
+ * The useId fallback names one mount only, so its entry is dropped when that mount unmounts —
+ * no later mount can look it up again, and keeping it would leak one entry per remount.
  */
 const lastRefreshedAtByView = new Map<string, number>();
+
+/**
+ * How many view identities currently hold a last-read timestamp. The map is
+ * module state, so this is exposed for tests to observe pruning.
+ */
+export function getLiveRefreshTrackedViewCount(): number {
+  return lastRefreshedAtByView.size;
+}
 
 /**
  * When the reader last did anything. Shared rather than per view: a person is present in the
@@ -129,6 +139,15 @@ export function useLiveRefresh(
   // Anything else is one view per place it appears, which is what the tree position already means.
   const fallbackViewId = useId();
   const viewId = key ?? fallbackViewId;
+
+  // A useId fallback identifies this mount only: unlike a caller-supplied key it
+  // can never be looked up again after unmount, so its entry is dropped when the
+  // mount dies instead of accumulating one stale number per remount.
+  useEffect(() => {
+    return () => {
+      if (key === undefined) lastRefreshedAtByView.delete(fallbackViewId);
+    };
+  }, [fallbackViewId, key]);
 
   useEffect(() => {
     if (!enabled) return;
