@@ -1377,6 +1377,66 @@ describe("applyThreadDetailEvent", () => {
       }
     });
 
+    it("fast-replaces an in-order live context-window snapshot after the activity index is warm", () => {
+      const contextWindowActivity = (id: string, sequence: number, usedTokens: number) => ({
+        id: EventId.make(id),
+        tone: "info" as const,
+        kind: "context-window.updated",
+        summary: "Context window updated",
+        payload: { usedTokens },
+        turnId: TurnId.make("turn-1"),
+        sequence,
+        createdAt: "2026-04-01T11:00:00.000Z",
+      });
+      const normalActivity = {
+        id: EventId.make("activity-normal"),
+        tone: "tool" as const,
+        kind: "command",
+        summary: "Ran command",
+        payload: {},
+        turnId: TurnId.make("turn-1"),
+        sequence: 1,
+        createdAt: "2026-04-01T11:00:00.000Z",
+      };
+      const eventFor = (sequence: number, activity: any) =>
+        ({
+          ...baseEventFields,
+          sequence,
+          occurredAt: "2026-04-01T11:02:00.000Z",
+          aggregateKind: "thread",
+          aggregateId: ThreadId.make("thread-1"),
+          type: "thread.activity-appended",
+          payload: { threadId: ThreadId.make("thread-1"), activity },
+        }) as const;
+
+      // First append repairs/indexes the snapshot-loaded array.
+      const indexed = applyThreadDetailEvent(
+        { ...baseThread, activities: [] },
+        eventFor(30, normalActivity),
+      );
+      expect(indexed.kind).toBe("updated");
+      if (indexed.kind !== "updated") return;
+
+      const firstContext = applyThreadDetailEvent(
+        indexed.thread,
+        eventFor(31, contextWindowActivity("activity-cw-1", 2, 1_000)),
+      );
+      expect(firstContext.kind).toBe("updated");
+      if (firstContext.kind !== "updated") return;
+
+      const secondContext = applyThreadDetailEvent(
+        firstContext.thread,
+        eventFor(32, contextWindowActivity("activity-cw-2", 3, 2_000)),
+      );
+      expect(secondContext.kind).toBe("updated");
+      if (secondContext.kind === "updated") {
+        expect(secondContext.thread.activities.map((activity) => activity.id)).toEqual([
+          "activity-normal",
+          "activity-cw-2",
+        ]);
+      }
+    });
+
     it("replaces earlier resolvable context-window updates for the same turn", () => {
       const contextWindowActivity = (id: string, sequence: number, usedTokens: unknown) => ({
         id: EventId.make(id),
