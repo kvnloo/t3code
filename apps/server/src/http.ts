@@ -7,6 +7,7 @@ import {
 import { isDevProxiedPath } from "@t3tools/shared/devProxy";
 import { decodeOtlpTraceRecords } from "@t3tools/shared/observability";
 import * as Data from "effect/Data";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -49,6 +50,9 @@ import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { browserApiCorsAllowedHeaders, browserApiCorsAllowedMethods } from "./httpCors.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
+// Generous for a typically-local collector; a stalled one must not park the
+// proxy fiber forever. Expiry reuses the warning + 502 contract below.
+const OTLP_TRACES_EXPORT_TIMEOUT = Duration.seconds(30);
 const LOOPBACK_HOSTNAMES = new Set(["127.0.0.1", "::1", "localhost"]);
 const DESKTOP_RENDERER_ORIGINS = ["t3code://app", "t3code-dev://app"];
 const SVG_CONTENT_SECURITY_POLICY = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
@@ -349,6 +353,7 @@ export const otlpTracesProxyRouteLayer = HttpRouter.add(
         headers: otlpHeaders,
       })
       .pipe(
+        Effect.timeout(OTLP_TRACES_EXPORT_TIMEOUT),
         Effect.flatMap(HttpClientResponse.filterStatusOk),
         Effect.as(HttpServerResponse.empty({ status: 204 })),
         Effect.tapError((cause) =>
