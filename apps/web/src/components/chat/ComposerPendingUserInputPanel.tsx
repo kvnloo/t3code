@@ -74,7 +74,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
     questionId: string;
     optionValue: string;
   } | null>(null);
-  const [previewOptionValue, setPreviewOptionValue] = useState<string | null>(null);
+  const [previewOptionIndex, setPreviewOptionIndex] = useState<number | null>(null);
   // Collapsing hides everything but the header so a tall prompt stops covering
   // the thread the user is trying to read. Scoped to a single question: the card
   // is keyed by request id so the next prompt starts expanded, and storing the
@@ -89,7 +89,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   }, [onAdvance]);
 
   useEffect(() => {
-    setPreviewOptionValue(null);
+    setPreviewOptionIndex(null);
   }, [activeQuestion?.id]);
 
   useEffect(() => {
@@ -178,27 +178,28 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
 
   const customAnswerActive = progress.customAnswer.trim().length > 0;
   const focusedOption =
-    previewOptionValue === null
-      ? undefined
-      : activeQuestion.options.find(
-          (option) => (option.value ?? option.label) === previewOptionValue,
+    previewOptionIndex === null ? undefined : activeQuestion.options[previewOptionIndex];
+  const selectedPreviewOptions = customAnswerActive
+    ? []
+    : activeQuestion.options.filter((option) => {
+        const optionValue = option.value ?? option.label;
+        return (
+          progress.selectedOptionValues.includes(optionValue) &&
+          Boolean(option.preview?.trim())
         );
-  const selectedOption = activeQuestion.options.find((option) => {
-    const optionValue = option.value ?? option.label;
-    return !customAnswerActive && progress.selectedOptionValues.includes(optionValue);
-  });
+      });
+  const selectedPreviewOption =
+    selectedPreviewOptions.length === 1 ? selectedPreviewOptions[0] : undefined;
   const firstOption = activeQuestion.options[0];
   const defaultPreviewOption =
     firstOption && Boolean(firstOption.preview?.trim()) ? firstOption : undefined;
   const previewOption =
-    previewOptionValue !== null
+    previewOptionIndex !== null
       ? focusedOption?.preview?.trim()
         ? focusedOption
         : undefined
-      : selectedOption
-        ? selectedOption.preview?.trim()
-          ? selectedOption
-          : undefined
+      : progress.selectedOptionValues.length > 0
+        ? selectedPreviewOption
         : defaultPreviewOption;
   const previewText = previewOption?.preview?.trim() ? previewOption.preview : null;
 
@@ -309,16 +310,16 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
                     key={`${activeQuestion.id}:${optionValue}`}
                     type="button"
                     disabled={isResponding}
-                    onMouseEnter={() => setPreviewOptionValue(optionValue)}
+                    onMouseEnter={() => setPreviewOptionIndex(index)}
                     onMouseLeave={() =>
-                      setPreviewOptionValue((current) => (current === optionValue ? null : current))
+                      setPreviewOptionIndex((current) => (current === index ? null : current))
                     }
-                    onFocus={() => setPreviewOptionValue(optionValue)}
+                    onFocus={() => setPreviewOptionIndex(index)}
                     onBlur={() =>
-                      setPreviewOptionValue((current) => (current === optionValue ? null : current))
+                      setPreviewOptionIndex((current) => (current === index ? null : current))
                     }
                     onClick={() => {
-                      setPreviewOptionValue(optionValue);
+                      setPreviewOptionIndex(index);
                       handleOptionSelection(activeQuestion.id, optionValue);
                     }}
                     className={className}
