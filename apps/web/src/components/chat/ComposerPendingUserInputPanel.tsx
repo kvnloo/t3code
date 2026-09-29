@@ -1,5 +1,7 @@
 import { type ApprovalRequestId } from "@t3tools/contracts";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { type PendingUserInput } from "../../session-logic";
 import {
   derivePendingUserInputProgress,
@@ -72,6 +74,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
     questionId: string;
     optionValue: string;
   } | null>(null);
+  const [previewOptionValue, setPreviewOptionValue] = useState<string | null>(null);
   // Collapsing hides everything but the header so a tall prompt stops covering
   // the thread the user is trying to read. Scoped to a single question: the card
   // is keyed by request id so the next prompt starts expanded, and storing the
@@ -84,6 +87,10 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   useEffect(() => {
     onAdvanceRef.current = onAdvance;
   }, [onAdvance]);
+
+  useEffect(() => {
+    setPreviewOptionValue(null);
+  }, [activeQuestion?.id]);
 
   useEffect(() => {
     if (!activeQuestion || activeQuestion.multiSelect || !optimisticSingleSelect) {
@@ -170,6 +177,23 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   }
 
   const customAnswerActive = progress.customAnswer.trim().length > 0;
+  const focusedPreviewOption = activeQuestion.options.find((option) => {
+    const optionValue = option.value ?? option.label;
+    return optionValue === previewOptionValue && Boolean(option.preview?.trim());
+  });
+  const selectedPreviewOption = activeQuestion.options.find((option) => {
+    const optionValue = option.value ?? option.label;
+    return (
+      !customAnswerActive &&
+      progress.selectedOptionValues.includes(optionValue) &&
+      Boolean(option.preview?.trim())
+    );
+  });
+  const firstOption = activeQuestion.options[0];
+  const defaultPreviewOption =
+    firstOption && Boolean(firstOption.preview?.trim()) ? firstOption : undefined;
+  const previewOption = focusedPreviewOption ?? selectedPreviewOption ?? defaultPreviewOption;
+  const previewText = previewOption?.preview?.trim() ? previewOption.preview : null;
 
   return (
     <Collapsible
@@ -278,7 +302,16 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
                     key={`${activeQuestion.id}:${optionValue}`}
                     type="button"
                     disabled={isResponding}
+                    onMouseEnter={() => setPreviewOptionValue(optionValue)}
+                    onMouseLeave={() =>
+                      setPreviewOptionValue((current) => (current === optionValue ? null : current))
+                    }
+                    onFocus={() => setPreviewOptionValue(optionValue)}
+                    onBlur={() =>
+                      setPreviewOptionValue((current) => (current === optionValue ? null : current))
+                    }
                     onClick={() => {
+                      setPreviewOptionValue(optionValue);
                       handleOptionSelection(activeQuestion.id, optionValue);
                     }}
                     className={className}
@@ -288,6 +321,19 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
                 );
               })}
             </div>
+            {previewText ? (
+              <div
+                data-pending-user-input-preview={previewOption?.label}
+                className="mt-2 rounded-md border border-border/60 bg-muted/25 p-2.5"
+              >
+                <div className="mb-1.5 text-3xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Preview · {previewOption?.label}
+                </div>
+                <div className="text-xs leading-relaxed text-foreground/90 [&_a]:underline [&_code]:font-mono [&_pre]:overflow-x-auto [&_pre]:whitespace-pre-wrap [&_pre]:rounded-md [&_pre]:bg-muted/45 [&_pre]:p-2">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{previewText}</ReactMarkdown>
+                </div>
+              </div>
+            ) : null}
           </ComposerBanner.Body>
         </ComposerBanner.Scroll>
       </CollapsiblePanel>
