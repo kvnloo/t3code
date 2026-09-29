@@ -4382,6 +4382,11 @@ describe("ClaudeAdapterLive", () => {
           "Code reviewer checked the migration edge cases.",
         );
         assert.equal(progressEvent.payload.description, "Running background teammate");
+        assert.deepEqual(progressEvent.payload.typedUsage, {
+          contextTokens: 123,
+          toolUses: 4,
+          durationMs: 987,
+        });
       }
     }).pipe(
       Effect.provideService(Random.Random, makeDeterministicRandomService()),
