@@ -221,6 +221,30 @@ describe("foldSubagentActivities", () => {
     expect(agents[0]!.usage).toEqual({ totalTokens: 900, inputTokens: 700 });
   });
 
+  it("context occupancy may shrink and is never added to cumulative totals", () => {
+    const agents = fold([
+      activity("task.started", { taskId: "claude-context", taskType: "local_agent" }),
+      activity("task.progress", {
+        taskId: "claude-context",
+        typedUsage: { contextTokens: 900, inputTokens: 700 },
+      }),
+      activity("task.progress", {
+        taskId: "claude-context",
+        typedUsage: { contextTokens: 500, inputTokens: 350 },
+      }),
+      activity("task.started", { taskId: "codex-total", taskType: "local_agent" }),
+      activity("task.progress", {
+        taskId: "codex-total",
+        typedUsage: { totalTokens: 1_200 },
+      }),
+    ]);
+
+    expect(agents[0]!.usage).toEqual({ contextTokens: 500, inputTokens: 350 });
+    const model = deriveAgentPanelModel({ agents });
+    expect(model.totalTokens).toBe(1_200);
+    expect(model.contextTokens).toBe(500);
+  });
+
   it("usage snapshots enrich an existing agent without changing its status", () => {
     const [agent] = fold([
       activity("task.started", { taskId: "usage-waiting", taskType: "local_agent" }),
