@@ -389,6 +389,70 @@ describe("buildThreadFeed", () => {
     expect(nextRows.some((row) => row.type === "activity-group")).toBe(true);
   });
 
+  it("reuses historical activity rows when a streamed append replaces the activities array", () => {
+    const turnA = TurnId.make("turn-a");
+    const turnB = TurnId.make("turn-b");
+    const firstActivity = makeActivity({
+      id: EventId.make("first-work"),
+      kind: "runtime.warning",
+      summary: "First notice",
+      createdAt: "2026-04-01T00:00:01.000Z",
+      turnId: turnA,
+    });
+    const secondActivity = makeActivity({
+      id: EventId.make("second-work"),
+      kind: "runtime.warning",
+      summary: "Second notice",
+      createdAt: "2026-04-01T00:00:03.000Z",
+      turnId: turnB,
+    });
+    const message = {
+      id: MessageId.make("separator-message"),
+      role: "assistant" as const,
+      text: "Between work groups",
+      streaming: false,
+      turnId: null,
+      createdAt: "2026-04-01T00:00:02.000Z",
+      updatedAt: "2026-04-01T00:00:02.000Z",
+    };
+    const thread = makeThread({
+      id: ThreadId.make("feed-stream-append-reuse"),
+      projectId: ProjectId.make("project-1"),
+      title: "Stream append reuse",
+      messages: [message],
+      activities: [firstActivity, secondActivity],
+    });
+    const initial = buildThreadFeed(thread);
+    const appendedActivity = makeActivity({
+      id: EventId.make("third-work"),
+      kind: "runtime.warning",
+      summary: "Third notice",
+      createdAt: "2026-04-01T00:00:04.000Z",
+      turnId: turnB,
+    });
+    const next = buildThreadFeed({
+      ...thread,
+      activities: [...thread.activities, appendedActivity],
+    });
+
+    expect(initial.map((row) => row.id)).toEqual([
+      "first-work",
+      "separator-message",
+      "second-work",
+    ]);
+    expect(next.map((row) => row.id)).toEqual([
+      "first-work",
+      "separator-message",
+      "second-work",
+    ]);
+    expect(next[0]).toBe(initial[0]);
+    expect(next[1]).toBe(initial[1]);
+    expect(next[2]).not.toBe(initial[2]);
+    expect(next[2]).toMatchObject({
+      activities: [{ id: "second-work" }, { id: "third-work" }],
+    });
+  });
+
   it("regroups cached activities for message changes and pagination", () => {
     const messages = [2, 4].map((second) => ({
       id: MessageId.make(`message-${second}`),
