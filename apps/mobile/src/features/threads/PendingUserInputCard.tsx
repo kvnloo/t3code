@@ -92,8 +92,9 @@ const CARD_LAYOUT_TRANSITION = LinearTransition.duration(200);
 export function PendingUserInputCard(props: PendingUserInputCardProps) {
   const questionCount = props.pendingUserInput.questions.length;
   const [previewSelection, setPreviewSelection] = useState<{
+    requestId: ApprovalRequestId;
     questionId: string;
-    optionValue: string;
+    optionIndex: number;
   } | null>(null);
 
   const cardCoverage = props.cardCoverage;
@@ -263,13 +264,11 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
       >
         {props.pendingUserInput.questions.map((question) => {
           const draft = props.drafts[question.id];
-          const selectedOption = question.options.find((option) => {
-            const optionValue = option.value ?? option.label.trim();
-            return (
-              previewSelection?.questionId === question.id &&
-              previewSelection.optionValue === optionValue
-            );
-          });
+          const selectedOption =
+            previewSelection?.requestId === props.pendingUserInput.requestId &&
+            previewSelection.questionId === question.id
+              ? question.options[previewSelection.optionIndex]
+              : undefined;
           const previewOption =
             selectedOption?.preview?.trim() ? selectedOption : undefined;
           const previewText = previewOption?.preview?.trim() ? previewOption.preview : null;
@@ -282,7 +281,7 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
                 {question.question}
               </Text>
               <View className="gap-2">
-                {question.options.map((option) => {
+                {question.options.map((option, optionIndex) => {
                   const optionValue = option.value ?? option.label.trim();
                   const selected = isPendingUserInputOptionSelected(question, draft, optionValue);
                   const description =
@@ -295,7 +294,11 @@ export function PendingUserInputCard(props: PendingUserInputCardProps) {
                         selected ? "border-primary bg-primary/10" : "border-border bg-input",
                       )}
                       onPress={() => {
-                        setPreviewSelection({ questionId: question.id, optionValue });
+                        setPreviewSelection({
+                          requestId: props.pendingUserInput.requestId,
+                          questionId: question.id,
+                          optionIndex,
+                        });
                         props.onSelectOption(
                           props.pendingUserInput.requestId,
                           question,
