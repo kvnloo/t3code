@@ -91,9 +91,17 @@ const lastRefreshedAtByView = new Map<string, number>();
  */
 let lastInteractedAt = 0;
 let interactionWatchers = 0;
-const INTERACTION_EVENTS = ["pointerdown", "pointermove", "keydown", "wheel"] as const;
+let pointerInteractionFrame = 0;
+const IMMEDIATE_INTERACTION_EVENTS = ["pointerdown", "keydown", "wheel"] as const;
 const noteInteraction = () => {
   lastInteractedAt = Date.now();
+};
+const notePointerInteraction = () => {
+  if (pointerInteractionFrame !== 0) return;
+  pointerInteractionFrame = window.requestAnimationFrame(() => {
+    pointerInteractionFrame = 0;
+    noteInteraction();
+  });
 };
 
 function watchInteraction(): () => void {
@@ -101,16 +109,24 @@ function watchInteraction(): () => void {
     // Arriving is itself the reader doing something, and it is what makes the first interval tick
     // after a mount count.
     lastInteractedAt = Date.now();
-    for (const event of INTERACTION_EVENTS) {
+    for (const event of IMMEDIATE_INTERACTION_EVENTS) {
       document.addEventListener(event, noteInteraction, { passive: true });
     }
+    // High-polling-rate pointers can emit far more moves than the UI can paint.
+    // Presence only needs one timestamp per frame.
+    document.addEventListener("pointermove", notePointerInteraction, { passive: true });
   }
   interactionWatchers += 1;
   return () => {
     interactionWatchers -= 1;
     if (interactionWatchers > 0) return;
-    for (const event of INTERACTION_EVENTS) {
+    for (const event of IMMEDIATE_INTERACTION_EVENTS) {
       document.removeEventListener(event, noteInteraction);
+    }
+    document.removeEventListener("pointermove", notePointerInteraction);
+    if (pointerInteractionFrame !== 0) {
+      window.cancelAnimationFrame(pointerInteractionFrame);
+      pointerInteractionFrame = 0;
     }
   };
 }
