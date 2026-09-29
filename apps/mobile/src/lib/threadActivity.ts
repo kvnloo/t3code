@@ -238,6 +238,17 @@ const activityEntriesCache = new WeakMap<
   ReadonlyArray<OrchestrationThreadActivity>,
   ReadonlyArray<Extract<RawThreadFeedEntry, { readonly type: "activity" }>>
 >();
+// Live reducers replace the activities array on every streamed event but keep
+// unchanged activity objects. Cache the expensive presentation projection at
+// that durable identity so only the changed/new activity is re-derived.
+const derivedWorkLogEntryByActivity = new WeakMap<
+  OrchestrationThreadActivity,
+  DerivedWorkLogEntry
+>();
+const activityEntryByDerivedWorkLogEntry = new WeakMap<
+  DerivedWorkLogEntry,
+  Extract<RawThreadFeedEntry, { readonly type: "activity" }>
+>();
 const messageEntriesCache = new WeakMap<
   OrchestrationThread["messages"][number],
   Extract<RawThreadFeedEntry, { readonly type: "message" }>
@@ -423,7 +434,17 @@ function isAgentTaskStartedActivity(activity: OrchestrationThreadActivity): bool
 function deriveWorkLogEntries(
   activities: ReadonlyArray<OrchestrationThreadActivity>,
 ): DerivedWorkLogEntry[] {
-  const ordered = Arr.sort(activities, activityOrder);
+  // Streaming arrays produced by threadReducer are already ordered. Snapshot
+  // arrays are not guaranteed to be, so detect the common fast path rather
+  // than sorting the full history on every appended event.
+  let alreadyOrdered = true;
+  for (let index = 1; index < activities.length; index += 1) {
+    if (activityOrder(activities[index - 1]!, activities[index]!) > 0) {
+      alreadyOrdered = false;
+      break;
+    }
+  }
+  const ordered = alreadyOrdered ? activities : Arr.sort(activities, activityOrder);
   const entries: DerivedWorkLogEntry[] = [];
   for (const activity of foldUserInputActivities(ordered)) {
     // The setup card owns its snapshot, including failed and cancelled outcomes.
@@ -476,6 +497,10 @@ function isPlanBoundaryToolActivity(activity: OrchestrationThreadActivity): bool
 const decodeQuestionAttachmentAnswer = Schema.decodeUnknownOption(UserInputAttachmentAnswerPayload);
 
 function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWorkLogEntry {
+  const cachedEntry = derivedWorkLogEntryByActivity.get(activity);
+  if (cachedEntry) {
+    return cachedEntry;
+  }
   const payload =
     activity.payload && typeof activity.payload === "object"
       ? (activity.payload as Record<string, unknown>)
@@ -630,6 +655,7 @@ function toDerivedWorkLogEntry(activity: OrchestrationThreadActivity): DerivedWo
   if (collapseKey) {
     entry.collapseKey = collapseKey;
   }
+  derivedWorkLogEntryByActivity.set(activity, entry);
   return entry;
 }
 
@@ -2459,6 +2485,10 @@ function getThreadFeedActivityEntries(activities: ReadonlyArray<OrchestrationThr
 function toThreadFeedActivityEntry(
   entry: DerivedWorkLogEntry,
 ): Extract<RawThreadFeedEntry, { readonly type: "activity" }> {
+  const cachedEntry = activityEntryByDerivedWorkLogEntry.get(entry);
+  if (cachedEntry) {
+    return cachedEntry;
+  }
   const summary = workEntryHeading(entry);
   const detail = workEntryPreview(entry);
   const getFullDetail = memoizeValue(() => buildWorkEntryExpandedBody(entry));
@@ -2478,7 +2508,7 @@ function toThreadFeedActivityEntry(
       })
       .join("\n");
   });
-  return {
+  const feedEntry: Extract<RawThreadFeedEntry, { readonly type: "activity" }> = {
     type: "activity",
     id: entry.id,
     createdAt: entry.createdAt,
@@ -2499,4 +2529,6 @@ function toThreadFeedActivityEntry(
       workEntry: entry,
     },
   };
+  activityEntryByDerivedWorkLogEntry.set(entry, feedEntry);
+  return feedEntry;
 }
