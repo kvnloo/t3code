@@ -26,6 +26,8 @@ export class SidebarPointerSensor {
   ];
   autoScrollEnabled = true;
   private phase: "pending" | "dragging" | "finished" = "pending";
+  private latestMove: { x: number; y: number } | null = null;
+  private moveFrame = 0;
   private readonly pointer: PointerEvent;
   private readonly document: Document;
   private readonly window: Window;
@@ -60,6 +62,25 @@ export class SidebarPointerSensor {
   };
   private clearSelection = () => this.document.getSelection()?.removeAllRanges();
 
+  private flushMove = () => {
+    this.moveFrame = 0;
+    if (this.phase !== "dragging") {
+      this.latestMove = null;
+      return;
+    }
+    const coordinates = this.latestMove;
+    this.latestMove = null;
+    if (coordinates) this.props.onMove(coordinates);
+  };
+
+  private cancelPendingMove = () => {
+    if (this.moveFrame !== 0) {
+      this.window.cancelAnimationFrame(this.moveFrame);
+      this.moveFrame = 0;
+    }
+    this.latestMove = null;
+  };
+
   private move = (event: PointerEvent) => {
     if (this.phase === "finished" || event.pointerId !== this.pointer.pointerId) return;
     // A release outside the window can be missed. Never activate or continue
@@ -89,12 +110,21 @@ export class SidebarPointerSensor {
     }
     if (this.phase === "dragging") {
       if (event.cancelable) event.preventDefault();
-      this.props.onMove(coordinates);
+      // After activation, keep the latest coords and notify dnd-kit at most
+      // once per presented frame so auto-scroll and drop targets stay current
+      // without mutating on every high-rate pointer sample.
+      this.latestMove = coordinates;
+      if (this.moveFrame !== 0) return;
+      this.moveFrame = this.window.requestAnimationFrame(this.flushMove);
     }
   };
 
   private end = (event: PointerEvent) => {
-    if (event.pointerId === this.pointer.pointerId) this.finish(false);
+    if (event.pointerId !== this.pointer.pointerId) return;
+    if (this.phase === "dragging") {
+      this.latestMove = { x: event.clientX, y: event.clientY };
+    }
+    this.finish(false);
   };
   private pointerCancel = (event: PointerEvent) => {
     if (event.pointerId === this.pointer.pointerId) this.cancel();
@@ -110,6 +140,11 @@ export class SidebarPointerSensor {
   private finish(cancelled: boolean) {
     if (this.phase === "finished") return;
     const aborted = this.phase === "pending";
+    const wasDragging = this.phase === "dragging";
+    // pointerup must deliver the final sample before onEnd; cancel drops it.
+    // Flush while still "dragging" so the phase guard in flushMove accepts it.
+    if (wasDragging && !cancelled) this.flushMove();
+    else this.cancelPendingMove();
     this.phase = "finished";
     this.document.removeEventListener("pointermove", this.move, { capture: true });
     this.document.removeEventListener("pointerup", this.end, { capture: true });

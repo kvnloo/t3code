@@ -49,7 +49,24 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   document = new TestDocument();
-  window = Object.assign(new EventTarget(), { setTimeout });
+  const frames = new Map<number, FrameRequestCallback>();
+  let nextFrame = 1;
+  window = Object.assign(new EventTarget(), {
+    setTimeout,
+    requestAnimationFrame: (callback: FrameRequestCallback) => {
+      const id = nextFrame++;
+      frames.set(id, callback);
+      return id;
+    },
+    cancelAnimationFrame: (id: number) => {
+      frames.delete(id);
+    },
+    flushAnimationFrames: () => {
+      const pending = [...frames.entries()];
+      frames.clear();
+      for (const [, callback] of pending) callback(0);
+    },
+  });
   vi.stubGlobal("document", document);
   vi.stubGlobal("window", window);
 });
@@ -196,5 +213,58 @@ describe("sidebar pointer lifecycle", () => {
     expect(previous.onCancel).toHaveBeenCalledOnce();
     expect(previous.onEnd).not.toHaveBeenCalled();
     expect(next.onEnd).toHaveBeenCalledOnce();
+  });
+
+  it("keeps under-threshold moves pending and starts at the original point", () => {
+    const drag = gesture();
+    document.dispatchEvent(pointer("pointermove", { clientX: 12, clientY: 12 }));
+    expect(drag.onStart).not.toHaveBeenCalled();
+    document.dispatchEvent(pointer("pointermove", { clientX: 10, clientY: 17 }));
+    expect(drag.onStart).toHaveBeenCalledExactlyOnceWith({ x: 10, y: 10 });
+    expect(drag.onMove).not.toHaveBeenCalled();
+  });
+
+  it("coalesces post-activation moves to at most one onMove per frame", () => {
+    const drag = gesture();
+    document.dispatchEvent(pointer("pointermove", { clientY: 20 }));
+    expect(drag.onStart).toHaveBeenCalledOnce();
+
+    for (let i = 0; i < 500; i += 1) {
+      document.dispatchEvent(pointer("pointermove", { clientX: 10 + i, clientY: 30 + i }));
+    }
+    expect(drag.onMove).not.toHaveBeenCalled();
+    (window as typeof window & { flushAnimationFrames: () => void }).flushAnimationFrames();
+    expect(drag.onMove).toHaveBeenCalledExactlyOnceWith({ x: 509, y: 529 });
+
+    for (let i = 0; i < 200; i += 1) {
+      document.dispatchEvent(pointer("pointermove", { clientX: 600 + i, clientY: 700 }));
+    }
+    (window as typeof window & { flushAnimationFrames: () => void }).flushAnimationFrames();
+    expect(drag.onMove).toHaveBeenCalledTimes(2);
+    expect(drag.onMove).toHaveBeenLastCalledWith({ x: 799, y: 700 });
+  });
+
+  it("flushes the final move on pointerup before onEnd", () => {
+    const drag = gesture();
+    const order: string[] = [];
+    drag.onMove.mockImplementation(() => order.push("move"));
+    drag.onEnd.mockImplementation(() => order.push("end"));
+
+    document.dispatchEvent(pointer("pointermove", { clientY: 20 }));
+    document.dispatchEvent(pointer("pointermove", { clientX: 40, clientY: 80 }));
+    document.dispatchEvent(pointer("pointerup", { buttons: 0, clientX: 55, clientY: 90 }));
+
+    expect(drag.onMove).toHaveBeenCalledExactlyOnceWith({ x: 55, y: 90 });
+    expect(order).toEqual(["move", "end"]);
+  });
+
+  it("drops a pending move on cancel so no stale onMove runs", () => {
+    const drag = gesture();
+    document.dispatchEvent(pointer("pointermove", { clientY: 20 }));
+    document.dispatchEvent(pointer("pointermove", { clientX: 40, clientY: 80 }));
+    drag.sensor.cancel();
+    (window as typeof window & { flushAnimationFrames: () => void }).flushAnimationFrames();
+    expect(drag.onMove).not.toHaveBeenCalled();
+    expect(drag.onCancel).toHaveBeenCalledOnce();
   });
 });
