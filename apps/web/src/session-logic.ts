@@ -1735,7 +1735,10 @@ export function inferCheckpointTurnCountByTurnId(
   return result;
 }
 
-export function derivePhase(session: ThreadSession | null): SessionPhase {
+export function derivePhase(
+  session: ThreadSession | null,
+  latestTurn: Pick<OrchestrationLatestTurn, "state"> | null = null,
+): SessionPhase {
   if (
     !session ||
     session.status === "stopped" ||
@@ -1745,6 +1748,12 @@ export function derivePhase(session: ThreadSession | null): SessionPhase {
     return "disconnected";
   }
   if (session.status === "starting") return "connecting";
-  if (session.status === "running") return "running";
+  if (
+    session.status === "running" ||
+    session.activeTurnId !== null ||
+    latestTurn?.state === "running"
+  ) {
+    return "running";
+  }
   return "ready";
 }
