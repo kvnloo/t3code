@@ -504,6 +504,35 @@ describe("deriveWorkLogEntries", () => {
     ]);
   });
 
+  it("matches canonical work-log output for out-of-order snapshots", () => {
+    const activities = Object.freeze([
+      makeActivity({
+        id: "first",
+        kind: "tool.completed",
+        summary: "Read files",
+        sequence: 1,
+      }),
+      makeActivity({
+        id: "second",
+        kind: "tool.completed",
+        summary: "Updated files",
+        sequence: 2,
+      }),
+      makeActivity({
+        id: "third",
+        kind: "tool.completed",
+        summary: "Ran tests",
+        sequence: 3,
+      }),
+    ]);
+
+    const canonical = deriveWorkLogEntries(activities);
+    const outOfOrder = deriveWorkLogEntries([...activities].reverse());
+
+    expect(outOfOrder).toEqual(canonical);
+    expect(activities.map((activity) => activity.id)).toEqual(["first", "second", "third"]);
+  });
+
   it("omits tool started entries and keeps completed entries", () => {
     const activities: OrchestrationThreadActivity[] = [
       makeActivity({
