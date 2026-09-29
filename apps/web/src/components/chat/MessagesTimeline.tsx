@@ -41,7 +41,7 @@ import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments"
 import {
   emptyAgentPanelModel,
   formatSubagentModelLabel,
-  formatSubagentTokenCount,
+  formatSubagentUsageLabel,
   isActiveSubagentStatus,
   isTerminalSubagentStatus,
 } from "@t3tools/client-runtime/state/subagentRuntime";
@@ -4608,9 +4608,7 @@ function AgentSpawnMemberRow({
       : null;
   const meta = [
     durationMs !== null && durationMs >= 0 ? formatDuration(durationMs) : null,
-    agent.usage && agent.usage.totalTokens > 0
-      ? `${formatSubagentTokenCount(agent.usage.totalTokens)} tok`
-      : null,
+    formatSubagentUsageLabel(agent.usage),
   ]
     .filter(Boolean)
     .join(" · ");
