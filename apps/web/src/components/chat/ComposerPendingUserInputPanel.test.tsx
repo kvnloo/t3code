@@ -14,7 +14,11 @@ const prompt: PendingUserInput = {
       header: "Approach",
       question: "Which approach should the migration take?",
       options: [
-        { label: "Incremental", description: "Move one module at a time" },
+        {
+          label: "Incremental",
+          description: "Move one module at a time",
+          preview: "**Safe rollout**\n\n```ts\nconst batchSize = 1;\n```",
+        },
         { label: "Big bang", description: "Move everything in one release" },
       ],
       multiSelect: false,
@@ -66,5 +70,13 @@ describe("ComposerPendingUserInputPanel", () => {
     expect(markup).toContain("Which approach should the migration take?");
     expect(markup).toContain("Incremental");
     expect(markup).toContain("Big bang");
+  });
+
+  it("renders the initially focused option preview as markdown", () => {
+    const markup = renderPanel();
+
+    expect(markup).toContain('data-pending-user-input-preview="Incremental"');
+    expect(markup).toContain("<strong>Safe rollout</strong>");
+    expect(markup).toContain("const batchSize = 1;");
   });
 });
