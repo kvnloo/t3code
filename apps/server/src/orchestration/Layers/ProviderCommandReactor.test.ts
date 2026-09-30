@@ -184,6 +184,7 @@ describe("ProviderCommandReactor", () => {
     readonly compactThreadEffect?: () => Effect.Effect<void, ProviderAdapterRequestError>;
     readonly interruptTurnEffect?: () => Effect.Effect<void, ProviderAdapterRequestError>;
     readonly stopSessionEffect?: () => Effect.Effect<void, ProviderAdapterRequestError>;
+    readonly listSessionsEffect?: ProviderServiceShape["listSessions"];
     readonly startSessionEffect?: (
       session: ProviderSession,
     ) => Effect.Effect<ProviderSession, ProviderServiceError>;
@@ -365,7 +366,7 @@ describe("ProviderCommandReactor", () => {
       respondToRequest: respondToRequest as ProviderServiceShape["respondToRequest"],
       respondToUserInput: respondToUserInput as ProviderServiceShape["respondToUserInput"],
       stopSession: stopSession as ProviderServiceShape["stopSession"],
-      listSessions: () => Effect.succeed(runtimeSessions),
+      listSessions: input?.listSessionsEffect ?? (() => Effect.succeed(runtimeSessions)),
       getCapabilities: (_provider) =>
         Effect.succeed({
           sessionModelSwitch: input?.sessionModelSwitch ?? "in-session",
@@ -4386,7 +4387,12 @@ describe("ProviderCommandReactor", () => {
 
   effectIt.effect("stops a live provider session after the thread is archived", () =>
     Effect.gen(function* () {
-      const harness = yield* Effect.promise(() => createHarness());
+      const harness = yield* Effect.promise(() =>
+        createHarness({
+          listSessionsEffect: () =>
+            Effect.die("archived stop must not depend on global provider inventory"),
+        }),
+      );
       const threadId = ThreadId.make("thread-1");
       const now = "2026-01-01T00:00:00.000Z";
       const providerInstanceId = ProviderInstanceId.make("codex_work");
