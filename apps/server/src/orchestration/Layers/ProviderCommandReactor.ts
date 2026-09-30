@@ -1726,10 +1726,23 @@ const make = Effect.gen(function* () {
     // queued stop event necessarily reaches this reactor. ProviderService is
     // the runtime authority: if it still owns a session for the thread, stop it
     // even when the UI-facing shell is already gone.
-    const activeSession = yield* providerService
-      .listSessions()
-      .pipe(Effect.map((sessions) => sessions.find((session) => session.threadId === threadId)));
-    if (!thread && !activeSession) {
+    const sessionInventory = yield* providerService.listSessions().pipe(
+      Effect.map((sessions) => ({
+        available: true as const,
+        session: sessions.find((session) => session.threadId === threadId),
+      })),
+      Effect.catchAll(() =>
+        Effect.succeed({
+          available: false as const,
+          session: undefined,
+        }),
+      ),
+    );
+    const activeSession = sessionInventory.session;
+    // If inventory is healthy and proves an archived thread has no live session, there is
+    // nothing to stop. If inventory itself failed, fail closed and still attempt the
+    // thread-scoped stop; ProviderService.stopSession resolves only that thread.
+    if (!thread && sessionInventory.available && !activeSession) {
       return;
     }
 
@@ -1745,7 +1758,8 @@ const make = Effect.gen(function* () {
       "The session was stopped during context compaction. Send this message again to continue.",
     ).pipe(
       Effect.andThen(
-        activeSession !== undefined ||
+        !thread ||
+          activeSession !== undefined ||
           (projectedSession !== null &&
             projectedSession !== undefined &&
             projectedSession.status !== "stopped")
@@ -1788,7 +1802,7 @@ const make = Effect.gen(function* () {
               runtimeMode:
                 projectedSession?.runtimeMode ?? activeSession?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
               activeTurnId: null,
-              lastError: projectedSession?.lastError ?? null,
+              lastError: projectedSession?.lastError ?? activeSession?.lastError ?? null,
               updatedAt: now,
             },
             createdAt: now,
