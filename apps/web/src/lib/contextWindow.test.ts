@@ -70,6 +70,15 @@ describe("contextWindow", () => {
     expect(formatContextWindowTokens(258_000)).toBe("258k");
   });
 
+  it("promotes a rounded-up boundary into the next unit instead of printing 1000k", () => {
+    expect(formatContextWindowTokens(999_499)).toBe("999k");
+    expect(formatContextWindowTokens(999_500)).toBe("1m");
+    expect(formatContextWindowTokens(999_999)).toBe("1m");
+    expect(formatContextWindowTokens(999_999_499)).toBe("1b");
+    expect(formatContextWindowTokens(1_500_000_000)).toBe("1.5b");
+    expect(formatContextWindowTokens(-999_500)).toBe("-1m");
+  });
+
   it("includes total processed tokens when available", () => {
     const snapshot = deriveLatestContextWindowSnapshot([
       makeActivity("activity-1", "context-window.updated", {

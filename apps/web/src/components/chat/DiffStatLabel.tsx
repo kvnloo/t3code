@@ -5,18 +5,35 @@ export function hasNonZeroStat(stat: { additions: number; deletions: number }): 
   return stat.additions > 0 || stat.deletions > 0;
 }
 
-function formatCompactDiffCount(value: number): string {
-  if (value < 1000) return String(value);
-  if (value < 1_000_000) {
-    const k = value / 1000;
-    return `${k < 10 ? k.toFixed(1).replace(/\.0$/, "") : Math.round(k)}k`;
+const DIFF_COUNT_UNITS = [
+  [1_000_000_000, "b"],
+  [1_000_000, "m"],
+  [1_000, "k"],
+] as const;
+
+function compactDiffCountText(value: number, scale: number): string {
+  // Round the magnitude so a negative count mirrors its positive twin.
+  const scaled = Math.abs(value) / scale;
+  const text = scaled < 10 ? scaled.toFixed(1).replace(/\.0$/, "") : `${Math.round(scaled)}`;
+  return value < 0 ? `-${text}` : text;
+}
+
+export function formatCompactDiffCount(value: number): string {
+  const abs = Math.abs(value);
+  if (abs < 1000) return String(value);
+  for (let i = 0; i < DIFF_COUNT_UNITS.length; i++) {
+    const [scale, suffix] = DIFF_COUNT_UNITS[i];
+    if (abs < scale) continue;
+    const text = compactDiffCountText(value, scale);
+    // Rounding can push the count into the next unit: 999.5k additions read
+    // as "1m", not "1000k".
+    if ((text === "1000" || text === "-1000") && i > 0) {
+      const [nextScale, nextSuffix] = DIFF_COUNT_UNITS[i - 1];
+      return `${compactDiffCountText(value, nextScale)}${nextSuffix}`;
+    }
+    return `${text}${suffix}`;
   }
-  if (value < 1_000_000_000) {
-    const m = value / 1_000_000;
-    return `${m < 10 ? m.toFixed(1).replace(/\.0$/, "") : Math.round(m)}m`;
-  }
-  const b = value / 1_000_000_000;
-  return `${b < 10 ? b.toFixed(1).replace(/\.0$/, "") : Math.round(b)}b`;
+  return String(value);
 }
 
 export const DiffStatLabel = memo(function DiffStatLabel(props: {
