@@ -1722,33 +1722,23 @@ const make = Effect.gen(function* () {
   ) {
     const threadId = event.payload.threadId;
     const thread = yield* resolveThreadShell(threadId);
-    // Archived threads disappear from the active shell projection before their
-    // queued stop event necessarily reaches this reactor. ProviderService is
-    // the runtime authority: if it still owns a session for the thread, stop it
-    // even when the UI-facing shell is already gone.
-    const sessionInventory = yield* providerService.listSessions().pipe(
-      Effect.map((sessions) => ({
-        available: true as const,
-        session: sessions.find((session) => session.threadId === threadId),
-      })),
-      Effect.catchAll(() =>
-        Effect.succeed({
-          available: false as const,
-          session: undefined,
-        }),
-      ),
-    );
-    const activeSession = sessionInventory.session;
-    // If inventory is healthy and proves an archived thread has no live session, there is
-    // nothing to stop. If inventory itself failed, fail closed and still attempt the
-    // thread-scoped stop; ProviderService.stopSession resolves only that thread.
-    if (!thread && sessionInventory.available && !activeSession) {
+    // Archive removes the thread from the active projection before a queued stop event
+    // necessarily reaches this reactor. Read that one archived projection directly
+    // instead of calling ProviderService.listSessions(), whose global inventory can fail
+    // because of an unrelated session binding.
+    const archivedThread = thread
+      ? undefined
+      : yield* projectionSnapshotQuery.getArchivedShellSnapshot().pipe(
+          Effect.map((snapshot) => snapshot.threads.find((entry) => entry.id === threadId)),
+          Effect.orElseSucceed(() => undefined),
+        );
+    const projectedThread = thread ?? archivedThread;
+    if (!projectedThread) {
       return;
     }
 
-    const projectedSession = thread?.session;
-    const providerInstanceId =
-      projectedSession?.providerInstanceId ?? activeSession?.providerInstanceId;
+    const projectedSession = projectedThread.session;
+    const providerInstanceId = projectedSession?.providerInstanceId;
     const now = event.payload.createdAt;
     const wasCompacting = compactingThreadIds.has(threadId);
     stoppingThreadIds.add(threadId);
@@ -1758,11 +1748,9 @@ const make = Effect.gen(function* () {
       "The session was stopped during context compaction. Send this message again to continue.",
     ).pipe(
       Effect.andThen(
-        !thread ||
-          activeSession !== undefined ||
-          (projectedSession !== null &&
-            projectedSession !== undefined &&
-            projectedSession.status !== "stopped")
+        projectedSession !== null &&
+          projectedSession !== undefined &&
+          projectedSession.status !== "stopped"
           ? providerService.stopSession({ threadId })
           : Effect.void,
       ),
@@ -1797,12 +1785,12 @@ const make = Effect.gen(function* () {
             session: {
               threadId,
               status: "stopped",
-              providerName: projectedSession?.providerName ?? activeSession?.provider ?? null,
+              providerName: projectedSession?.providerName ?? null,
               ...(providerInstanceId !== undefined ? { providerInstanceId } : {}),
               runtimeMode:
-                projectedSession?.runtimeMode ?? activeSession?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
+                projectedSession?.runtimeMode ?? DEFAULT_RUNTIME_MODE,
               activeTurnId: null,
-              lastError: projectedSession?.lastError ?? activeSession?.lastError ?? null,
+              lastError: projectedSession?.lastError ?? null,
               updatedAt: now,
             },
             createdAt: now,
