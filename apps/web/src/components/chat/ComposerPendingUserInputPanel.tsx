@@ -179,17 +179,16 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
   const customAnswerActive = progress.customAnswer.trim().length > 0;
   const focusedOption =
     previewOptionIndex === null ? undefined : activeQuestion.options[previewOptionIndex];
-  const selectedPreviewOptions = customAnswerActive
-    ? []
-    : activeQuestion.options.filter((option) => {
-        const optionValue = option.value ?? option.label;
-        return (
-          progress.selectedOptionValues.includes(optionValue) &&
-          Boolean(option.preview?.trim())
-        );
-      });
+  const lastSelectedOptionValue = customAnswerActive
+    ? undefined
+    : progress.selectedOptionValues.at(-1);
+  const lastSelectedOption = lastSelectedOptionValue
+    ? activeQuestion.options.find(
+        (option) => (option.value ?? option.label) === lastSelectedOptionValue,
+      )
+    : undefined;
   const selectedPreviewOption =
-    selectedPreviewOptions.length === 1 ? selectedPreviewOptions[0] : undefined;
+    lastSelectedOption?.preview?.trim() ? lastSelectedOption : undefined;
   const firstOption = activeQuestion.options[0];
   const defaultPreviewOption =
     firstOption && Boolean(firstOption.preview?.trim()) ? firstOption : undefined;
@@ -311,9 +310,12 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
                     type="button"
                     disabled={isResponding}
                     onMouseEnter={() => setPreviewOptionIndex(index)}
-                    onMouseLeave={() =>
-                      setPreviewOptionIndex((current) => (current === index ? null : current))
-                    }
+                    onMouseLeave={(event) => {
+                      // Pointer exit must not erase the preview while keyboard focus is
+                      // still on this option.
+                      if (document.activeElement === event.currentTarget) return;
+                      setPreviewOptionIndex((current) => (current === index ? null : current));
+                    }}
                     onFocus={() => setPreviewOptionIndex(index)}
                     onBlur={() =>
                       setPreviewOptionIndex((current) => (current === index ? null : current))
@@ -338,7 +340,16 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
                   Preview · {previewOption?.label}
                 </div>
                 <div className="text-xs leading-relaxed text-foreground/90 [&_a]:underline [&_code]:font-mono [&_pre]:overflow-x-auto [&_pre]:whitespace-pre-wrap [&_pre]:rounded-md [&_pre]:bg-muted/45 [&_pre]:p-2">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{previewText}</ReactMarkdown>
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    components={{
+                      // Provider-authored previews are untrusted text. Never let Markdown
+                      // image syntax trigger a browser request to an arbitrary remote URL.
+                      img: () => null,
+                    }}
+                  >
+                    {previewText}
+                  </ReactMarkdown>
                 </div>
               </div>
             ) : null}
