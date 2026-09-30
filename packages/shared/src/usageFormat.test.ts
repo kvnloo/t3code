@@ -7,8 +7,22 @@ import {
   formatHourShort,
   formatPercent,
   formatRelativeHourShort,
+  formatTokens,
   makeWindow,
 } from "./usageFormat.ts";
+
+describe("formatTokens", () => {
+  it("promotes a rounded-up boundary into the next unit instead of printing 1000K", () => {
+    expect(formatTokens(999_499)).toBe("999K");
+    expect(formatTokens(999_500)).toBe("1M");
+    expect(formatTokens(999_999)).toBe("1M");
+    expect(formatTokens(999_999_999)).toBe("1B");
+    expect(formatTokens(1_500_000)).toBe("1.50M");
+    expect(formatTokens(-999_500)).toBe("-1M");
+    expect(formatTokens(804)).toBe("804");
+    expect(formatTokens(76_700_000)).toBe("76.7M");
+  });
+});
 
 describe("formatPercent", () => {
   it("distinguishes a small positive share from zero", () => {
