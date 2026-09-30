@@ -21,17 +21,18 @@ function compactDiffCountText(value: number, scale: number): string {
 export function formatCompactDiffCount(value: number): string {
   const abs = Math.abs(value);
   if (abs < 1000) return String(value);
-  for (let i = 0; i < DIFF_COUNT_UNITS.length; i++) {
-    const [scale, suffix] = DIFF_COUNT_UNITS[i];
-    if (abs < scale) continue;
-    const text = compactDiffCountText(value, scale);
-    // Rounding can push the count into the next unit: 999.5k additions read
-    // as "1m", not "1000k".
-    if ((text === "1000" || text === "-1000") && i > 0) {
-      const [nextScale, nextSuffix] = DIFF_COUNT_UNITS[i - 1];
-      return `${compactDiffCountText(value, nextScale)}${nextSuffix}`;
+  let larger: { scale: number; suffix: string } | undefined;
+  for (const [scale, suffix] of DIFF_COUNT_UNITS) {
+    if (abs >= scale) {
+      const text = compactDiffCountText(value, scale);
+      // Rounding can push the count into the next unit: 999.5k additions
+      // read as "1m", not "1000k".
+      if ((text === "1000" || text === "-1000") && larger !== undefined) {
+        return `${compactDiffCountText(value, larger.scale)}${larger.suffix}`;
+      }
+      return `${text}${suffix}`;
     }
-    return `${text}${suffix}`;
+    larger = { scale, suffix };
   }
   return String(value);
 }
