@@ -560,6 +560,13 @@ describe("formatSubagentTokenCount", () => {
     expect(formatSubagentTokenCount(247000)).toBe("247k");
     expect(formatSubagentTokenCount(1_400_000)).toBe("1.4M");
   });
+
+  it("promotes a k value that rounds to 1000 into the M unit", () => {
+    expect(formatSubagentTokenCount(999_499)).toBe("999k");
+    expect(formatSubagentTokenCount(999_500)).toBe("1.0M");
+    expect(formatSubagentTokenCount(999_950)).toBe("1.0M");
+    expect(formatSubagentTokenCount(999_999)).toBe("1.0M");
+  });
 });
 
 describe("model and effort attribution", () => {
