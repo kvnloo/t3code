@@ -17,7 +17,7 @@ const prompt: PendingUserInput = {
         {
           label: "Incremental",
           description: "Move one module at a time",
-          preview: "**Safe rollout**\n\n```ts\nconst batchSize = 1;\n```",
+          preview: "**Safe rollout**\n\n```ts\nconst batchSize = 1;\n```\n\n![remote](https://tracker.invalid/pixel.png)",
         },
         { label: "Big bang", description: "Move everything in one release" },
       ],
@@ -27,12 +27,15 @@ const prompt: PendingUserInput = {
   dismissible: true,
 };
 
-function renderPanel(pendingUserInput: PendingUserInput = prompt) {
+function renderPanel(
+  pendingUserInput: PendingUserInput = prompt,
+  answers: Record<string, { selectedOptionValues?: string[]; customAnswer?: string }> = {},
+) {
   return renderToStaticMarkup(
     <ComposerPendingUserInputPanel
       pendingUserInputs={[pendingUserInput]}
       respondingRequestIds={[]}
-      answers={{}}
+      answers={answers}
       questionIndex={0}
       onToggleOption={() => {}}
       onAdvance={() => {}}
@@ -78,5 +81,19 @@ describe("ComposerPendingUserInputPanel", () => {
     expect(markup).toContain('data-pending-user-input-preview="Incremental"');
     expect(markup).toContain("<strong>Safe rollout</strong>");
     expect(markup).toContain("const batchSize = 1;");
+    expect(markup).not.toContain("<img");
+    expect(markup).not.toContain("tracker.invalid");
+  });
+
+  it("keeps the preview clear when the last selected multi-option has no preview", () => {
+    const multiPrompt: PendingUserInput = {
+      ...prompt,
+      questions: [{ ...prompt.questions[0]!, multiSelect: true }],
+    };
+    const markup = renderPanel(multiPrompt, {
+      "question-1": { selectedOptionValues: ["Incremental", "Big bang"] },
+    });
+
+    expect(markup).not.toContain("data-pending-user-input-preview");
   });
 });
