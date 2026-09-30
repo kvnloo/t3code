@@ -434,9 +434,14 @@ export const make = Effect.gen(function* () {
     return token;
   });
 
-  const clear = secrets
-    .remove(CLOUD_CLI_OAUTH_TOKEN_SECRET)
-    .pipe(Effect.mapError((cause) => new CloudCliCredentialRemovalError({ cause })));
+  // clear takes the same gate as every other credential op: a refresh holds
+  // the permit across its token exchange, and removing the secret underneath
+  // it lets the refresh's persist resurrect the credential after sign-out.
+  const clear = semaphore.withPermits(1)(
+    secrets
+      .remove(CLOUD_CLI_OAUTH_TOKEN_SECRET)
+      .pipe(Effect.mapError((cause) => new CloudCliCredentialRemovalError({ cause }))),
+  );
 
   const read = Effect.fn("cloud.cli_token.read")(function* () {
     const encoded = yield* secrets.get(CLOUD_CLI_OAUTH_TOKEN_SECRET);
