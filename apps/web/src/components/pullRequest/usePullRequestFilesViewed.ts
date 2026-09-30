@@ -1,5 +1,5 @@
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, PullRequestRef } from "@t3tools/contracts";
+import type { EnvironmentId, PullRequestFileViewedState, PullRequestRef } from "@t3tools/contracts";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { pullRequestEnvironment } from "~/state/pullRequests";
@@ -16,7 +16,6 @@ import {
   toFileViewedBatch,
   toFileViewedStates,
   type FileViewedOverlay,
-  type FileViewedStates,
 } from "./pullRequestFilesViewed.logic";
 
 /**
@@ -93,10 +92,12 @@ export function usePullRequestFilesViewed(options: {
   const scopeKey = `${environmentId} ${reference.projectId} ${reference.repository} ${reference.number}`;
   const scope = useRef(scopeKey);
 
-  // The host's answer as it stood when a completed write was acknowledged, per path. The first
-  // answer that differs from it is the first read that could have seen the write, which is what
-  // retires the press rather than the host happening to agree with it.
-  const answeredFrom = useRef<Map<string, FileViewedStates | null>>(new Map());
+  // The host's answer for each path as it stood when a completed write was acknowledged. The
+  // first read whose answer for the path differs from it is the first read that could have seen
+  // the write, which is what retires the press rather than the host happening to agree with it.
+  // Compared by value, not by read: every read arrives as a fresh object, so a reference check
+  // would retire the press on a read that landed before the host applied the write.
+  const answeredFrom = useRef<Map<string, PullRequestFileViewedState | null>>(new Map());
   const statesRef = useRef(states);
   statesRef.current = states;
 
@@ -104,7 +105,7 @@ export function usePullRequestFilesViewed(options: {
     const pending = new Set([...queued.current.keys(), ...sentBy.current.keys()]);
     const answered = new Set<string>();
     for (const [path, from] of answeredFrom.current) {
-      if (pending.has(path) || from === states) continue;
+      if (pending.has(path) || from === (states?.get(path) ?? null)) continue;
       answered.add(path);
       answeredFrom.current.delete(path);
     }
@@ -142,7 +143,8 @@ export function usePullRequestFilesViewed(options: {
       }
       // Answered for from the next read on, whatever it says. A push landing between the write
       // and that read comes back as `dismissed`, and the press must not stand over it.
-      for (const path of mine) answeredFrom.current.set(path, statesRef.current);
+      for (const path of mine)
+        answeredFrom.current.set(path, statesRef.current?.get(path) ?? null);
       refresh();
     });
   }, [environmentId, reference, refresh, setFilesViewed]);
