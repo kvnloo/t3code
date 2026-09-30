@@ -62,7 +62,16 @@ export class FileSaveCoordinator<A = unknown, E = unknown> {
 
     this.saving = false;
     if (revision === this.latestRevision) {
-      if (succeeded) this.options.onPendingChange(false);
+      if (succeeded) {
+        this.options.onPendingChange(false);
+        return;
+      }
+      // A failed close-time flush must not be dropped: with the editor gone no
+      // newer revision will ever trigger a retry, so re-arm the debounce timer.
+      // The pending indicator stays up until the write lands.
+      if (this.disposed) {
+        this.schedule(this.options.debounceMs);
+      }
       return;
     }
 
