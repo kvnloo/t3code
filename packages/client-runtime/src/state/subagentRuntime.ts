@@ -886,6 +886,10 @@ export function formatSubagentTokenCount(totalTokens: number): string {
   }
   if (totalTokens < 1_000_000) {
     const value = totalTokens / 1000;
+    // The unit is chosen after rounding: 999,500 rounds up to a million, never "1000k".
+    if (Math.round(value) >= 1000) {
+      return `${(totalTokens / 1_000_000).toFixed(1)}M`;
+    }
     return `${value >= 100 ? Math.round(value) : value.toFixed(1)}k`;
   }
   return `${(totalTokens / 1_000_000).toFixed(1)}M`;
