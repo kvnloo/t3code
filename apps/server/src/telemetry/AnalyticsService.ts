@@ -11,6 +11,7 @@ import type { ClientOs } from "@t3tools/contracts";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -43,6 +44,10 @@ const TelemetryEnvConfig = Config.all({
   ),
   wslDistroName: Config.String("WSL_DISTRO_NAME").pipe(Config.option),
 });
+
+// A telemetry endpoint that accepts the connection but never responds must
+// not park the flush loop or stall shutdown; telemetry stays best-effort.
+const ANALYTICS_SEND_TIMEOUT = Duration.seconds(10);
 
 export class AnalyticsService extends Context.Service<
   AnalyticsService,
@@ -151,6 +156,7 @@ export const make = Effect.gen(function* () {
     yield* HttpClientRequest.post(`${telemetryConfig.posthogHost}/batch/`).pipe(
       HttpClientRequest.bodyJson(payload),
       Effect.flatMap(httpClient.execute),
+      Effect.timeout(ANALYTICS_SEND_TIMEOUT),
       Effect.flatMap(HttpClientResponse.filterStatusOk),
     );
   });
