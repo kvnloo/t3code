@@ -1819,11 +1819,21 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
 
     case "thread.conversation.revert":
     case "thread.checkpoint.revert": {
-      yield* requireThread({
+      const thread = yield* requireThread({
         readModel,
         command,
         threadId: command.threadId,
       });
+      // A revert rewrites the conversation and working tree underneath a live
+      // turn. The client blocks this, but a stale client or a direct command
+      // can still reach the server. Reject while the session is alive.
+      const sessionStatus = thread.session?.status;
+      if (sessionStatus === "starting" || sessionStatus === "running") {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `thread ${command.threadId} has an active session (${sessionStatus}); interrupt the turn before reverting`,
+        });
+      }
       return {
         ...(yield* withEventBase({
           aggregateKind: "thread",
