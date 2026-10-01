@@ -295,6 +295,10 @@ describe("CheckpointReactor", () => {
     readonly checkpointLookupFailure?: (
       cwd: string,
     ) => VcsProcessTimeoutError | VcsProcessSpawnError | undefined;
+    readonly captureCheckpointHook?: (input: {
+      readonly cwd: string;
+      readonly checkpointRef: CheckpointRef;
+    }) => Effect.Effect<void>;
     readonly workspaceRefresh?: (cwd: string) => Effect.Effect<void>;
     readonly hasSession?: boolean;
     readonly seedFilesystemCheckpoints?: boolean;
@@ -386,6 +390,10 @@ describe("CheckpointReactor", () => {
                 const failure = options?.checkpointLookupFailure?.(input.cwd);
                 return failure ? Effect.fail(failure) : store.hasCheckpointRef(input);
               },
+              captureCheckpoint: (input) =>
+                (options?.captureCheckpointHook?.(input) ?? Effect.void).pipe(
+                  Effect.andThen(() => store.captureCheckpoint(input)),
+                ),
             })),
           ),
         ).pipe(Layer.provide(VcsDriverRegistry.layer)),
@@ -854,6 +862,110 @@ describe("CheckpointReactor", () => {
           "README.md",
         ),
       ).toBe("v2\n");
+    }),
+  );
+
+  effectIt.effect("recomputes the turn count when a concurrent turn claims it mid-capture", () =>
+    Effect.gen(function* () {
+      const createdAt = "2026-01-01T00:00:00.000Z";
+      const threadId = ThreadId.make("thread-1");
+      let harness: Awaited<ReturnType<typeof createHarness>> | undefined;
+      let placeholderInjected = false;
+      const inner = yield* Effect.promise(() =>
+        createHarness({
+          seedFilesystemCheckpoints: false,
+          captureCheckpointHook: (input) =>
+            Effect.gen(function* () {
+              // Only the completion capture for turn-1 races: while its slow
+              // git capture runs, a provider diff for turn-2 commits a
+              // placeholder claiming turn count 1.
+              if (placeholderInjected || !String(input.checkpointRef).endsWith("/turn/1")) {
+                return;
+              }
+              placeholderInjected = true;
+              if (harness === undefined) {
+                return yield* Effect.die(
+                  new Error("checkpoint hook ran before the harness was ready"),
+                );
+              }
+              yield* harness.engine.dispatch({
+                type: "thread.turn.diff.complete",
+                commandId: CommandId.make("cmd-race-placeholder"),
+                threadId,
+                turnId: asTurnId("turn-2"),
+                completedAt: createdAt,
+                checkpointRef: CheckpointRef.make("provider-diff:evt-race"),
+                status: "missing",
+                files: [],
+                assistantMessageId: MessageId.make("assistant:turn-2"),
+                checkpointTurnCount: 1,
+                createdAt,
+              });
+            }),
+        }),
+      );
+      harness = inner;
+
+      yield* harness.engine.dispatch({
+        type: "thread.session.set",
+        commandId: CommandId.make("cmd-session-set-race"),
+        threadId,
+        session: {
+          threadId,
+          status: "ready",
+          providerName: "codex",
+          runtimeMode: "approval-required",
+          activeTurnId: null,
+          lastError: null,
+          updatedAt: createdAt,
+        },
+        createdAt,
+      });
+
+      harness.provider.emit({
+        type: "turn.started",
+        eventId: EventId.make("evt-race-started-1"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt,
+        threadId,
+        turnId: asTurnId("turn-1"),
+      });
+      expect(yield* harness.nextReceipt).toMatchObject({
+        type: "checkpoint.baseline.captured",
+        checkpointTurnCount: 0,
+      });
+      yield* Effect.promise(harness.drain);
+
+      NodeFS.writeFileSync(NodePath.join(harness.cwd, "README.md"), "v2\n", "utf8");
+      harness.provider.emit({
+        type: "turn.completed",
+        eventId: EventId.make("evt-race-completed-1"),
+        provider: ProviderDriverKind.make("codex"),
+        createdAt,
+        threadId,
+        turnId: asTurnId("turn-1"),
+        payload: { state: "completed" },
+      });
+
+      expect(yield* harness.nextReceipt).toMatchObject({
+        type: "checkpoint.diff.finalized",
+        turnId: "turn-1",
+        checkpointTurnCount: 2,
+      });
+      yield* Effect.promise(harness.drain);
+      const thread = (yield* Effect.promise(harness.readModel)).threads.find(
+        (entry) => entry.id === "thread-1",
+      );
+      const counts = (thread?.checkpoints ?? []).map((entry) => entry.checkpointTurnCount);
+      expect(counts).toContain(1);
+      expect(counts).toContain(2);
+      expect(new Set(counts).size).toBe(counts.length);
+      expect(
+        thread?.checkpoints.find((entry) => entry.checkpointTurnCount === 2)?.turnId,
+      ).toBe("turn-1");
+      expect(
+        gitRefExists(harness.cwd, checkpointRefForThreadTurn(threadId, 2)),
+      ).toBe(true);
     }),
   );
 

@@ -7,6 +7,7 @@ import {
   ThreadId,
   TurnId,
   type OrchestrationEvent,
+  type OrchestrationCheckpointSummary,
   type ProviderRuntimeEvent,
   type VcsStatusLocalResult,
 } from "@t3tools/contracts";
@@ -239,6 +240,36 @@ const make = Effect.gen(function* () {
     return cwd;
   });
 
+  // The placeholder checkpoint for a turn, if provider diff ingestion recorded
+  // one mid-turn. Captures reuse its turn count instead of incrementing past it.
+  const findTurnPlaceholder = (
+    checkpoints: ReadonlyArray<OrchestrationCheckpointSummary>,
+    turnId: TurnId,
+  ) =>
+    checkpoints.find(
+      (checkpoint) => checkpoint.turnId === turnId && checkpoint.status === "missing",
+    );
+
+  // The next checkpoint turn count for a turn: reuse the turn's placeholder
+  // count when one exists, otherwise one past the current maximum. Computed
+  // both before the (slow) git capture and again after it, so a concurrent
+  // turn that committed in between gets a fresh count instead of a collision.
+  const nextCheckpointTurnCount = (
+    checkpoints: ReadonlyArray<OrchestrationCheckpointSummary>,
+    turnId: TurnId,
+  ) => {
+    const existingPlaceholder = findTurnPlaceholder(checkpoints, turnId);
+    if (existingPlaceholder !== undefined) {
+      return existingPlaceholder.checkpointTurnCount;
+    }
+    return (
+      checkpoints.reduce(
+        (maxTurnCount, checkpoint) => Math.max(maxTurnCount, checkpoint.checkpointTurnCount),
+        0,
+      ) + 1
+    );
+  };
+
   // Capture the completed turn's files, then publish its summary and receipts.
   const captureAndDispatchCheckpoint = Effect.fn("captureAndDispatchCheckpoint")(function* (input: {
     readonly threadId: ThreadId;
@@ -256,9 +287,41 @@ const make = Effect.gen(function* () {
     readonly assistantMessageId: MessageId | undefined;
     readonly createdAt: string;
   }) {
-    const fromTurnCount = Math.max(0, input.turnCount - 1);
+    const checkpointRefForTurnCount = (turnCount: number) =>
+      checkpointRefForThreadTurn(input.threadId, turnCount);
+
+    yield* checkpointStore.captureCheckpoint({
+      cwd: input.cwd,
+      checkpointRef: checkpointRefForTurnCount(input.turnCount),
+    });
+
+    // Refresh the workspace entry index so the @-mention file picker
+    // reflects files created or deleted during this turn.
+    yield* refreshWorkspaceEntries(input.cwd);
+
+    // The git capture above is slow: a concurrent turn may have claimed the
+    // same count while it ran. Recompute from a fresh read and re-capture at
+    // the fresh ref so two turns never share a count (and its git ref). The
+    // decider rejects any residual collision at commit time.
+    const freshCheckpointContext = yield* projectionSnapshotQuery
+      .getThreadCheckpointContext(input.threadId)
+      .pipe(Effect.map(Option.getOrUndefined));
+    const freshTurnCount = nextCheckpointTurnCount(
+      freshCheckpointContext?.checkpoints ?? [],
+      input.turnId,
+    );
+    let turnCount = input.turnCount;
+    if (freshTurnCount !== turnCount) {
+      turnCount = freshTurnCount;
+      yield* checkpointStore.captureCheckpoint({
+        cwd: input.cwd,
+        checkpointRef: checkpointRefForTurnCount(turnCount),
+      });
+    }
+
+    const fromTurnCount = Math.max(0, turnCount - 1);
     const fromCheckpointRef = checkpointRefForThreadTurn(input.threadId, fromTurnCount);
-    const targetCheckpointRef = checkpointRefForThreadTurn(input.threadId, input.turnCount);
+    const targetCheckpointRef = checkpointRefForTurnCount(turnCount);
 
     const fromCheckpointExists = yield* checkpointStore
       .hasCheckpointRef({
@@ -281,15 +344,6 @@ const make = Effect.gen(function* () {
         fromTurnCount,
       });
     }
-
-    yield* checkpointStore.captureCheckpoint({
-      cwd: input.cwd,
-      checkpointRef: targetCheckpointRef,
-    });
-
-    // Refresh the workspace entry index so the @-mention file picker
-    // reflects files created or deleted during this turn.
-    yield* refreshWorkspaceEntries(input.cwd);
 
     // Git may have been initialized during this turn, leaving no pre-turn
     // snapshot. Keep the completion checkpoint for future turns, but do not
@@ -326,7 +380,7 @@ const make = Effect.gen(function* () {
         Effect.logWarning("failed to derive checkpoint file summary", {
           threadId: input.threadId,
           turnId: input.turnId,
-          turnCount: input.turnCount,
+          turnCount,
           detail: error.message,
         }).pipe(Effect.as([])),
       ),
@@ -349,14 +403,14 @@ const make = Effect.gen(function* () {
       status: input.status,
       files,
       assistantMessageId,
-      checkpointTurnCount: input.turnCount,
+      checkpointTurnCount: turnCount,
       createdAt: input.createdAt,
     });
     yield* receiptBus.publish({
       type: "checkpoint.diff.finalized",
       threadId: input.threadId,
       turnId: input.turnId,
-      checkpointTurnCount: input.turnCount,
+      checkpointTurnCount: turnCount,
       checkpointRef: targetCheckpointRef,
       status: input.status,
       createdAt: input.createdAt,
@@ -365,7 +419,7 @@ const make = Effect.gen(function* () {
       type: "turn.processing.quiesced",
       threadId: input.threadId,
       turnId: input.turnId,
-      checkpointTurnCount: input.turnCount,
+      checkpointTurnCount: turnCount,
       createdAt: input.createdAt,
     });
 
@@ -379,7 +433,7 @@ const make = Effect.gen(function* () {
         kind: "checkpoint.captured",
         summary: "Checkpoint captured",
         payload: {
-          turnCount: input.turnCount,
+          turnCount,
           status: input.status,
         },
         turnId: input.turnId,
@@ -429,19 +483,7 @@ const make = Effect.gen(function* () {
         return;
       }
 
-      // If a placeholder checkpoint exists for this turn, reuse its turn count
-      // instead of incrementing past it.
-      const existingPlaceholder = thread.checkpoints.find(
-        (checkpoint) => checkpoint.turnId === turnId && checkpoint.status === "missing",
-      );
-      const currentTurnCount = thread.checkpoints.reduce(
-        (maxTurnCount, checkpoint) => Math.max(maxTurnCount, checkpoint.checkpointTurnCount),
-        0,
-      );
-      const nextTurnCount = existingPlaceholder
-        ? existingPlaceholder.checkpointTurnCount
-        : currentTurnCount + 1;
-
+      const nextTurnCount = nextCheckpointTurnCount(thread.checkpoints, turnId);
       yield* captureAndDispatchCheckpoint({
         threadId: thread.id,
         turnId,
@@ -452,7 +494,8 @@ const make = Effect.gen(function* () {
           event.type === "turn.aborted"
             ? "ready"
             : checkpointStatusFromRuntime(event.payload.state),
-        assistantMessageId: existingPlaceholder?.assistantMessageId ?? undefined,
+        assistantMessageId:
+          findTurnPlaceholder(thread.checkpoints, turnId)?.assistantMessageId ?? undefined,
         createdAt: event.createdAt,
       });
     },
