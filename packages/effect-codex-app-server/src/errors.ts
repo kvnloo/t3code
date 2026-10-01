@@ -265,6 +265,18 @@ export class CodexAppServerInputStreamEndedError extends Schema.TaggedError<Code
   }
 }
 
+export class CodexAppServerRequestTimeoutError extends Schema.TaggedError<CodexAppServerRequestTimeoutError>()(
+  "CodexAppServerRequestTimeoutError",
+  {
+    method: Schema.String,
+    requestId: Schema.String,
+  },
+) {
+  override get message() {
+    return `Codex App Server request '${this.method}' (id ${this.requestId}) timed out waiting for a response.`;
+  }
+}
+
 export class CodexAppServerRequestError extends Schema.TaggedError<CodexAppServerRequestError>()(
   "CodexAppServerRequestError",
   {
@@ -417,6 +429,7 @@ export class CodexAppServerRequestError extends Schema.TaggedError<CodexAppServe
 
 export const CodexAppServerError = Schema.Union([
   CodexAppServerRequestError,
+  CodexAppServerRequestTimeoutError,
   CodexAppServerSpawnError,
   CodexAppServerProcessExitedError,
   CodexAppServerProtocolParseError,

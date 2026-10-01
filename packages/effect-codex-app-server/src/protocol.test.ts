@@ -8,6 +8,7 @@ import * as Stream from "effect/Stream";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
+import * as TestClock from "effect/testing/TestClock";
 
 import * as CodexError from "./errors.ts";
 import * as CodexProtocol from "./protocol.ts";
@@ -289,6 +290,63 @@ it.layer(NodeServices.layer)("effect-codex-app-server protocol", (it) => {
           },
         });
       }),
+  );
+
+  it.effect("fails requests that never receive a response when a timeout is set", () =>
+    Effect.gen(function* () {
+      const { stdio, input, output } = yield* makeInMemoryStdio();
+      const transport = yield* CodexProtocol.makeCodexAppServerPatchedProtocol({ stdio });
+
+      const fiber = yield* Effect.forkScoped(
+        transport.request("x/test", {}, { timeout: "50 millis" }).pipe(
+          Effect.catch((error) => Effect.succeed(error)),
+        ),
+      );
+      assert.deepEqual(yield* decodeJson(yield* Queue.take(output)), {
+        id: 1,
+        method: "x/test",
+        params: {},
+      });
+
+      // Advance the test clock past the deadline: the request itself fails
+      // with a timeout error instead of hanging on the wedged peer.
+      yield* TestClock.adjust("100 millis");
+      const error = yield* Fiber.join(fiber);
+      assert.instanceOf(error, CodexError.CodexAppServerRequestTimeoutError);
+      assert.strictEqual(error.method, "x/test");
+      assert.strictEqual(error.requestId, "1");
+      assert.match(error.message, /timed out/);
+
+      // A late response for the timed-out request is ignored, and the next
+      // request still routes by id — the pending entry was dropped.
+      yield* Queue.offer(input, encodeJsonl({ id: 1, result: { stale: true } }));
+      const pending = yield* transport.request("x/test", {}).pipe(Effect.forkScoped);
+      assert.deepEqual(yield* decodeJson(yield* Queue.take(output)), {
+        id: 2,
+        method: "x/test",
+        params: {},
+      });
+      yield* Queue.offer(input, encodeJsonl({ id: 2, result: { ok: true } }));
+      assert.deepEqual(yield* Fiber.join(pending), { ok: true });
+    }),
+  );
+
+  it.effect("keeps requests unbounded by default", () =>
+    Effect.gen(function* () {
+      const { stdio, input, output } = yield* makeInMemoryStdio();
+      const transport = yield* CodexProtocol.makeCodexAppServerPatchedProtocol({ stdio });
+
+      // No timeout option: the existing behavior — waits until the peer
+      // answers, however long that takes.
+      const pending = yield* transport.request("x/test", {}).pipe(Effect.forkScoped);
+      assert.deepEqual(yield* decodeJson(yield* Queue.take(output)), {
+        id: 1,
+        method: "x/test",
+        params: {},
+      });
+      yield* Queue.offer(input, encodeJsonl({ id: 1, result: { ok: true } }));
+      assert.deepEqual(yield* Fiber.join(pending), { ok: true });
+    }),
   );
 
   it.effect("routes a large notification fragmented across thousands of input chunks", () =>
