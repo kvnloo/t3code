@@ -2,7 +2,12 @@ import * as NodeAssert from "node:assert/strict";
 
 import { it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Cause from "effect/Cause";
+import * as Deferred from "effect/Deferred";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Schema from "effect/Schema";
+import * as TestClock from "effect/testing/TestClock";
 import { describe } from "vite-plus/test";
 import { DEFAULT_MODEL, ThreadId } from "@t3tools/contracts";
 import * as CodexErrors from "effect-codex-app-server/errors";
@@ -24,6 +29,7 @@ import {
   readCodexThread,
   rollbackCodexThread,
   toMcpElicitationResponse,
+  uploadCodexFeedback,
 } from "./CodexSessionRuntime.ts";
 const isCodexAppServerRequestError = Schema.is(CodexErrors.CodexAppServerRequestError);
 
@@ -1066,6 +1072,39 @@ describe("openCodexThread", () => {
 
       NodeAssert.ok(isCodexAppServerRequestError(error));
       NodeAssert.equal(error.errorMessage, "timed out waiting for server");
+    }),
+  );
+});
+
+describe("uploadCodexFeedback", () => {
+  it.effect("fails a wedged feedback/upload instead of awaiting forever", () =>
+    Effect.gen(function* () {
+      const entered = yield* Deferred.make<void>();
+      const client: Parameters<typeof uploadCodexFeedback>[0] = {
+        raw: {
+          request: () => Effect.die("raw requests are unused by uploadCodexFeedback"),
+        },
+        request: () => Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never)),
+      };
+      const fiber = yield* uploadCodexFeedback(client, "thread-1", "crash report").pipe(
+        Effect.forkChild,
+      );
+      // Spawn gate: the bound must not trip before the request is parked.
+      yield* Deferred.await(entered);
+      yield* TestClock.adjust("61 seconds");
+      const polled = yield* Effect.sync(() => fiber.pollUnsafe());
+      NodeAssert.ok(
+        polled !== undefined,
+        "a wedged app server must not park the feedback upload forever",
+      );
+      const exit = polled;
+      NodeAssert.ok(Exit.isFailure(exit));
+      const failure = Cause.findErrorOption(exit.cause);
+      NodeAssert.ok(failure._tag === "Some");
+      NodeAssert.ok(isCodexAppServerRequestError(failure.value));
+      NodeAssert.equal(failure.value.method, "feedback/upload");
+      NodeAssert.match(failure.value.errorMessage, /timed out/);
+      yield* Fiber.interrupt(fiber);
     }),
   );
 });
