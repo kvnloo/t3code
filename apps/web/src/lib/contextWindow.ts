@@ -74,18 +74,41 @@ export function deriveLatestContextWindowSnapshot(
   return null;
 }
 
+/** One decimal, trailing ".0" stripped: `1.4`, `10`, `49.9`. */
+function compactOneDecimal(scaled: number): string {
+  return scaled.toFixed(1).replace(/\.0$/, "");
+}
+
 export function formatContextWindowTokens(value: number | null): string {
   if (value === null || !Number.isFinite(value)) {
     return "0";
   }
-  if (value < 1_000) {
+  // Token counts are never negative; compact the magnitude so a hypothetical
+  // negative mirrors its positive twin.
+  const sign = value < 0 ? "-" : "";
+  const abs = Math.abs(value);
+  if (abs < 1_000) {
     return `${Math.round(value)}`;
   }
-  if (value < 10_000) {
-    return `${(value / 1_000).toFixed(1).replace(/\.0$/, "")}k`;
+  if (abs < 10_000) {
+    return `${sign}${compactOneDecimal(abs / 1_000)}k`;
   }
-  if (value < 1_000_000) {
-    return `${Math.round(value / 1_000)}k`;
+  if (abs < 1_000_000) {
+    const thousands = Math.round(abs / 1_000);
+    // Rounding pushes 999.5k to a four-digit count; promote it into the next
+    // unit so the meter reads "1m" instead of "1000k".
+    if (thousands >= 1000) {
+      return `${sign}${compactOneDecimal(abs / 1_000_000)}m`;
+    }
+    return `${sign}${thousands}k`;
   }
-  return `${(value / 1_000_000).toFixed(1).replace(/\.0$/, "")}m`;
+  if (abs < 1_000_000_000) {
+    const millions = compactOneDecimal(abs / 1_000_000);
+    // Same promotion at the millions boundary: 999_999_500 reads "1b".
+    if (millions === "1000") {
+      return `${sign}${compactOneDecimal(abs / 1_000_000_000)}b`;
+    }
+    return `${sign}${millions}m`;
+  }
+  return `${sign}${compactOneDecimal(abs / 1_000_000_000)}b`;
 }
