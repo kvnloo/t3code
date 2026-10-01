@@ -5885,6 +5885,33 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
+  it.effect("returns 502 when the OTLP collector stalls instead of hanging the export", () =>
+    Effect.gen(function* () {
+      const exportStarted = yield* Deferred.make<void>();
+      yield* buildAppUnderTest({
+        config: { otlpTracesUrl: "http://collector.test/v1/traces" },
+        layers: {
+          httpClient: HttpClient.make(() =>
+            Deferred.succeed(exportStarted, undefined).pipe(Effect.andThen(Effect.never)),
+          ),
+        },
+      });
+      const cookie = yield* getAuthenticatedSessionCookieHeader();
+
+      const posting = yield* HttpClient.post("/api/observability/v1/traces", {
+        headers: { cookie, "content-type": "application/json" },
+        body: yield* HttpBody.json({ resourceSpans: [] }),
+      }).pipe(Effect.forkChild({ startImmediately: true }));
+      // Wait until the collector forward is in flight; advancing the clock
+      // earlier would trip unrelated timeouts and pass vacuously.
+      yield* Deferred.await(exportStarted);
+      yield* TestClock.adjust(Duration.seconds(31));
+      const response = yield* Fiber.join(posting);
+
+      assert.equal(response.status, 502);
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
   it.effect("routes websocket rpc server.upsertKeybinding", () =>
     Effect.gen(function* () {
       const rule: KeybindingRule = {
