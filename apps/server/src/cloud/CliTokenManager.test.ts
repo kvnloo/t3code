@@ -1,6 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
+import * as Crypto from "effect/Crypto";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -15,6 +16,8 @@ import * as TestClock from "effect/testing/TestClock";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 
+import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
+import * as ExternalLauncher from "../process/externalLauncher.ts";
 import * as CliTokenManager from "./CliTokenManager.ts";
 
 // pk_test_<base64 of "clerk.example.test$">
@@ -325,3 +328,132 @@ it.layer(NodeServices.layer)("CliTokenManager.deviceAuthorizationLogin", (it) =>
     }),
   );
 });
+
+it.effect(
+  "clear waits for an in-flight credential refresh instead of letting it resurrect the credential",
+  () =>
+    Effect.gen(function* () {
+      // In-memory secret store standing in for the file-backed ServerSecretStore.
+      const secrets = new Map<string, Uint8Array>();
+      const secretsLayer = Layer.succeed(ServerSecretStore.ServerSecretStore, {
+        get: (name) =>
+          Effect.sync(() => {
+            const value = secrets.get(name);
+            return value === undefined ? Option.none<Uint8Array>() : Option.some(value);
+          }),
+        set: (name, value) =>
+          Effect.sync(() => {
+            secrets.set(name, value);
+          }),
+        create: (name, value) =>
+          Effect.sync(() => {
+            secrets.set(name, value);
+          }),
+        getOrCreateRandom: (name, bytes) =>
+          Effect.sync(() => {
+            const existing = secrets.get(name);
+            if (existing !== undefined) return existing;
+            const fresh = new Uint8Array(bytes);
+            secrets.set(name, fresh);
+            return fresh;
+          }),
+        remove: (name) =>
+          Effect.gen(function* () {
+            secrets.delete(name);
+            yield* Deferred.succeed(removeExecuted, undefined);
+          }),
+      });
+
+      // Gate the Clerk refresh_token exchange on Deferreds: the exchange
+      // signals when it is in-flight, then waits for the test to release it.
+      // This injects the exact interleaving deterministically — no sleeps.
+      const refreshStarted = yield* Deferred.make<void>();
+      const releaseRefresh = yield* Deferred.make<void>();
+      // Fires when the secret store's remove actually executes, so the test
+      // can tell whether clear ran while the refresh was still in-flight.
+      const removeExecuted = yield* Deferred.make<void>();
+      const refreshLayer = Layer.succeed(
+        HttpClient.HttpClient,
+        HttpClient.make((request) =>
+          Effect.gen(function* () {
+            const body =
+              request.body._tag === "Uint8Array"
+                ? new TextDecoder().decode(request.body.body)
+                : "";
+            const params = new URLSearchParams(body);
+            if (
+              request.url.endsWith("/oauth/token") &&
+              params.get("grant_type") === "refresh_token"
+            ) {
+              yield* Deferred.succeed(refreshStarted, undefined);
+              yield* Deferred.await(releaseRefresh);
+            }
+            return HttpClientResponse.fromWeb(
+              request,
+              new Response(tokenGranted.body, {
+                status: 200,
+                headers: { "content-type": "application/json" },
+              }),
+            );
+          }),
+        ),
+      );
+
+      const queue = yield* Queue.make<Terminal.UserInput>();
+      const testCrypto = Crypto.make({
+        randomBytes: (size) => new Uint8Array(size).fill(7),
+        digest: (_algorithm, data) => Effect.succeed(data),
+      });
+
+      const manager = yield* CliTokenManager.make.pipe(
+        Effect.provide(refreshLayer),
+        Effect.provide(secretsLayer),
+        Effect.provide(Layer.succeed(Terminal.Terminal, makeTestTerminal(queue))),
+        Effect.provide(
+          Layer.succeed(ExternalLauncher.ExternalLauncher, {
+            resolveAvailableEditors: () => Effect.succeed([]),
+            resolveFileManagerRevealKind: () => Effect.succeed(undefined),
+            launchBrowser: () => Effect.void,
+            launchEditor: () => Effect.void,
+          }),
+        ),
+        Effect.provideService(Crypto.Crypto, testCrypto),
+      );
+
+      // Seed an expired credential so getExisting takes the refresh path and
+      // holds the credential semaphore across the token exchange.
+      yield* manager.store({
+        accessToken: "expired-access-token",
+        refreshToken: "refresh-token-1",
+        expiresAtEpochMs: 0,
+        identity: "theo@example.test",
+      });
+      assert.isTrue(yield* manager.hasCredential);
+
+      // Start the refresh; it holds the semaphore while the exchange is in-flight.
+      const refreshFiber = yield* Effect.forkChild(manager.getExisting);
+      yield* Deferred.await(refreshStarted);
+
+      // The user signs out while the refresh is in-flight.
+      const clearFiber = yield* Effect.forkChild(manager.clear);
+      // Let the clear fiber run if it isn't blocked on the credential gate.
+      // The refresh fiber is suspended on releaseRefresh, so on a correct
+      // implementation the clear fiber must be stuck on the semaphore here.
+      yield* Effect.yieldNow;
+      const clearBypassedGate = yield* Deferred.isDone(removeExecuted);
+
+      yield* Deferred.succeed(releaseRefresh, undefined);
+      yield* Fiber.join(refreshFiber);
+      yield* Fiber.join(clearFiber);
+
+      // The sign-out must go through the same credential gate as every other
+      // op: it must not remove the credential while a refresh is in-flight
+      // and let the refresh's persist resurrect it afterwards.
+      assert.isFalse(clearBypassedGate);
+      assert.isFalse(yield* manager.hasCredential);
+    }).pipe(
+      // cloudCliOAuthConfig is read when the manager ops execute, not when
+      // the manager is built, so the ConfigProvider must cover the whole test.
+      provideTestEnv,
+    ),
+);
