@@ -1,3 +1,6 @@
+import * as NodeFS from "node:fs";
+import * as NodeModule from "node:module";
+import * as NodePath from "node:path";
 import { describe, expect, it } from "vitest";
 import withAndroidFbjniVersion from "./withAndroidFbjniVersion.cjs";
 
@@ -34,6 +37,24 @@ describe("Android fbjni version generation", () => {
       "resolutionStrategy.force 'com.facebook.fbjni:fbjni:0.7.0'",
     );
     expect(await transform(generated)).toBe(generated);
+  });
+
+
+  it("keeps the forced native library aligned with the installed React Native runtime", async () => {
+    const require = NodeModule.createRequire(import.meta.url);
+    const reactNativeRoot = NodePath.dirname(require.resolve("react-native/package.json"));
+    const versions = NodeFS.readFileSync(
+      NodePath.join(reactNativeRoot, "gradle/libs.versions.toml"),
+      "utf8",
+    );
+    const reactNativeFbjni = versions.match(/^fbjni\s*=\s*"([^"]+)"/m)?.[1];
+    expect(reactNativeFbjni).toBeDefined();
+
+    const generated = await transform(buildGradle);
+    const forcedFbjni = generated.match(
+      /resolutionStrategy\.force 'com\.facebook\.fbjni:fbjni:([^']+)'/,
+    )?.[1];
+    expect(forcedFbjni).toBe(reactNativeFbjni);
   });
 
   it("fails visibly if Expo switches the project build file away from Groovy", async () => {
