@@ -395,13 +395,21 @@ export const make = (dependencies: Dependencies) => {
       Effect.flatMap((project): Effect.Effect<void, PullRequestError> => {
         const write = project.api.setFilesViewed;
         if (project.api.capabilities.viewedFiles === "host" && write) {
-          return write({
-            cwd: project.project.workspaceRoot,
-            repository: project.repository,
-            host: project.host,
-            number: input.number,
-            files: input.files,
-          }).pipe(Effect.mapError(toPullRequestError("setFilesViewed")));
+          // Host writes serialize through the same per-change-request gate as environment
+          // writes: the first press pays the node-id lookup while later presses hit the
+          // cache, so without ordering a slow earlier press can land after a later press
+          // and restore stale state on the host.
+          return inFilesViewedOrder(
+            project,
+            input.number,
+            write({
+              cwd: project.project.workspaceRoot,
+              repository: project.repository,
+              host: project.host,
+              number: input.number,
+              files: input.files,
+            }).pipe(Effect.mapError(toPullRequestError("setFilesViewed"))),
+          );
         }
         if (project.api.capabilities.viewedFiles === "environment") {
           return inFilesViewedOrder(
