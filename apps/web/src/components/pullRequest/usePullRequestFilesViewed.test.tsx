@@ -130,6 +130,41 @@ describe("a mark whose file was pushed to before the read that followed it", () 
   });
 });
 
+describe("a mark whose post-write read lands before the host applies it", () => {
+  it("holds the press until a read that could have seen the write", async () => {
+    view().setViewed("a.ts", true);
+    await act(async () => vi.advanceTimersByTimeAsync(500));
+    expect(setFilesViewed).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: { ...reference, files: [{ path: "a.ts", viewed: true }] },
+    });
+    expect(host.refresh).toHaveBeenCalled();
+
+    // The write was acknowledged, but the host had not applied it when this read landed: the
+    // same answer as before, in a fresh object, as every real read is. It says nothing about
+    // the write, so the press must stand.
+    await reads("unviewed");
+    expect(view().isViewed("a.ts")).toBe(true);
+
+    // The next read saw the write, so the press retires onto the host's answer.
+    await reads("viewed");
+    expect(view().isViewed("a.ts")).toBe(true);
+  });
+
+  it("still gives way when the first differing read disagrees with the press", async () => {
+    view().setViewed("a.ts", true);
+    await act(async () => vi.advanceTimersByTimeAsync(500));
+
+    // A lagging read keeps the press...
+    await reads("unviewed");
+    expect(view().isViewed("a.ts")).toBe(true);
+
+    // ...but a read that genuinely differs from the at-ack answer retires it.
+    await reads("dismissed");
+    expect(view().isViewed("a.ts")).toBe(false);
+    expect(view().isStale("a.ts")).toBe(true);
+  });
+});
 describe("a mark the host has not answered for yet", () => {
   it("holds the press while the write is still out", async () => {
     let land = (_result: unknown) => {};
