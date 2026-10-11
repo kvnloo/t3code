@@ -4,6 +4,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
@@ -24,6 +25,8 @@ const runtimeMock = {
     authHeaders: [] as Array<string | null>,
     closeCalls: [] as string[],
     sessionCreateCalls: 0,
+    sessionCreateSignals: [] as Array<AbortSignal | undefined>,
+    promptSignals: [] as Array<AbortSignal | undefined>,
     connectionError: undefined as Error | undefined,
     sessionCreateError: undefined as unknown,
     sessionResult: undefined as { data?: { id: string } } | undefined,
@@ -39,6 +42,8 @@ const runtimeMock = {
     this.state.authHeaders.length = 0;
     this.state.closeCalls.length = 0;
     this.state.sessionCreateCalls = 0;
+    this.state.sessionCreateSignals.length = 0;
+    this.state.promptSignals.length = 0;
     this.state.connectionError = undefined;
     this.state.sessionCreateError = undefined;
     this.state.sessionResult = undefined;
@@ -95,14 +100,19 @@ const OpenCodeRuntimeTestDouble: OpenCodeRuntime.OpenCodeRuntime["Service"] = {
   createOpenCodeSdkClient: ({ baseUrl, serverPassword }) =>
     ({
       session: {
-        create: async () => {
+        create: async (_input: unknown, options?: { readonly signal?: AbortSignal }) => {
           runtimeMock.state.sessionCreateCalls += 1;
+          runtimeMock.state.sessionCreateSignals.push(options?.signal);
           if (runtimeMock.state.sessionCreateError !== undefined) {
             throw runtimeMock.state.sessionCreateError;
           }
           return runtimeMock.state.sessionResult ?? { data: { id: `${baseUrl}/session` } };
         },
-        prompt: async (input: { readonly parts: ReadonlyArray<unknown> }) => {
+        prompt: async (
+          input: { readonly parts: ReadonlyArray<unknown> },
+          options?: { readonly signal?: AbortSignal },
+        ) => {
+          runtimeMock.state.promptSignals.push(options?.signal);
           runtimeMock.state.promptUrls.push(baseUrl);
           runtimeMock.state.promptParts.push(input.parts);
           runtimeMock.state.authHeaders.push(
@@ -538,6 +548,51 @@ it.layer(layerOpenCodeTextGenerationTest)("OpenCodeTextGeneration", (it) => {
       }),
     ),
   );
+  it.effect("aborts stalled session creation at the three-minute deadline", () =>
+    withOpenCodeTextGeneration(DEFAULT_OPENCODE_SETTINGS, (textGeneration) =>
+      Effect.gen(function* () {
+        runtimeMock.state.sessionResult = new Promise(() => {}) as unknown as NonNullable<
+          typeof runtimeMock.state.sessionResult
+        >;
+
+        const child = yield* textGeneration
+          .generateCommitMessage(DEFAULT_COMMIT_MESSAGE_INPUT)
+          .pipe(Effect.forkChild);
+        while (runtimeMock.state.sessionCreateCalls === 0) {
+          yield* Effect.yieldNow;
+        }
+        yield* TestClock.adjust(Duration.seconds(181));
+        const error = yield* Fiber.join(child).pipe(Effect.flip);
+        expect(error).toBeInstanceOf(TextGenerationError);
+        expect(error.detail).toContain("timed out");
+        expect(runtimeMock.state.sessionCreateSignals.at(-1)?.aborted).toBe(true);
+        expect(runtimeMock.state.promptUrls).toEqual([]);
+      }),
+    ).pipe(Effect.provide(TestClock.layer())),
+  );
+
+  it.effect("aborts a stalled prompt at the three-minute deadline", () =>
+    withOpenCodeTextGeneration(DEFAULT_OPENCODE_SETTINGS, (textGeneration) =>
+      Effect.gen(function* () {
+        runtimeMock.state.promptResult = new Promise(() => {}) as unknown as NonNullable<
+          typeof runtimeMock.state.promptResult
+        >;
+
+        const child = yield* textGeneration
+          .generateCommitMessage(DEFAULT_COMMIT_MESSAGE_INPUT)
+          .pipe(Effect.forkChild);
+        while (runtimeMock.state.promptUrls.length === 0) {
+          yield* Effect.yieldNow;
+        }
+        yield* TestClock.adjust(Duration.seconds(181));
+        const error = yield* Fiber.join(child).pipe(Effect.flip);
+        expect(error).toBeInstanceOf(TextGenerationError);
+        expect(error.detail).toContain("timed out");
+        expect(runtimeMock.state.promptSignals.at(-1)?.aborted).toBe(true);
+      }),
+    ).pipe(Effect.provide(TestClock.layer())),
+  );
+
 });
 
 it.layer(layerOpenCodeTextGenerationExistingServerTest)(
