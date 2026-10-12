@@ -10,7 +10,8 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { ChildProcess, ChildProcessSpawner } from "effect/process";
+import { ChildProcess } from "effect/process";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
 import * as ServerConfig from "../../config.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
@@ -150,8 +151,14 @@ describe("Codex shared session recovery", () => {
             );
           }
           const exit = yield* Effect.exit(handle.exitCode);
-          assert.equal(Exit.isFailure(exit), termination === "SIGKILL");
-          if (Exit.isSuccess(exit)) assert.equal(Number(exit.value), 7);
+          if (termination === "exit code") {
+            assert.isTrue(Exit.isSuccess(exit));
+            if (Exit.isSuccess(exit)) assert.equal(Number(exit.value), 7);
+          } else if (Exit.isSuccess(exit)) {
+            // Windows may report a nonzero exit code after SIGKILL instead of
+            // failing the exitCode Effect, unlike POSIX.
+            assert.notEqual(Number(exit.value), 0);
+          }
 
           // Await committed failures, rather than guessing when the event pump ran.
           yield* eventSink
