@@ -1,0 +1,31 @@
+name: Fork QA - Pi CUA stdio
+
+on:
+  pull_request:
+    branches:
+      - review/base-t3-pi-cua-20261012
+
+permissions:
+  contents: read
+
+jobs:
+  pi-cua-stdio:
+    name: Pi CUA stdio single-flight
+    runs-on: ubuntu-24.04
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1
+        with:
+          node-version-file: package.json
+          cache: false
+          run-install: true
+      - name: Pi CUA generated-extension integration test
+        working-directory: apps/server
+        run: vp test run src/orchestration-v2/Adapters/piT3McpExtensionSource.test.ts --testTimeout 30000
