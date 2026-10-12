@@ -57,3 +57,104 @@ describe("Pi upstream output-budget workaround", () => {
     );
   });
 });
+
+
+describe("Cua stdio restart single flight", () => {
+  it("reconnects two simultaneous Pi tool calls with one child and one handshake", async () => {
+    const children: Array<{ emitExit: () => void }> = [];
+    let initializations = 0;
+
+    // Isolate the actual emitted Pi stdio client, replacing only child_process
+    // with a deterministic in-memory pipe. The await preserves the start race.
+    const beginning = PI_T3_MCP_EXTENSION_SOURCE.indexOf("function createStdioMcpClient(");
+    const end = PI_T3_MCP_EXTENSION_SOURCE.indexOf("\nfunction cuaSpec(", beginning);
+    assert.isAtLeast(beginning, 0);
+    assert.isAbove(end, beginning);
+    const clientSource = PI_T3_MCP_EXTENSION_SOURCE.slice(beginning, end);
+    const spawnStatement = 'const { spawn } = await import("node:child_process");';
+    assert.include(clientSource, spawnStatement);
+
+    const spawn = () => {
+      const stdoutListeners: Array<(chunk: string) => void> = [];
+      const exitListeners: Array<() => void> = [];
+      const child = {
+        stdout: {
+          setEncoding: (_encoding: string) => undefined,
+          on: (event: string, callback: (chunk: string) => void) => {
+            if (event === "data") stdoutListeners.push(callback);
+          },
+        },
+        stdin: {
+          write: (line: string) => {
+            const request = JSON.parse(line) as {
+              readonly id?: number;
+              readonly method: string;
+              readonly params?: { readonly name?: string };
+            };
+            if (request.method === "initialize") initializations += 1;
+            if (request.id === undefined) return;
+            const result =
+              request.method === "tools/call"
+                ? { content: [{ type: "text", text: request.params?.name ?? "" }] }
+                : {};
+            queueMicrotask(() => {
+              const reply = JSON.stringify({ jsonrpc: "2.0", id: request.id, result }) + "\n";
+              for (const listener of stdoutListeners) listener(reply);
+            });
+          },
+        },
+        on: (event: string, callback: () => void) => {
+          if (event === "exit") exitListeners.push(callback);
+        },
+        kill: () => {
+          for (const callback of exitListeners) callback();
+        },
+        emitExit: () => {
+          for (const callback of exitListeners) callback();
+        },
+      };
+      children.push(child);
+      return child;
+    };
+
+    const source = NodeModule.stripTypeScriptTypes(
+      clientSource.replace(
+        spawnStatement,
+        "const { spawn } = await Promise.resolve(__fakeChildProcess);",
+      ),
+    );
+    const makeClient = NodeVM.runInNewContext(source + "\ncreateStdioMcpClient", {
+      __fakeChildProcess: { spawn },
+      process: { env: {} },
+      PROTOCOL: "2025-06-18",
+      AbortSignal,
+      Promise,
+    }) as (spec: { command: string; args: string[]; env: Record<string, string> }) => {
+      connect(): Promise<void>;
+      callTool(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<unknown>;
+      close(): void;
+    };
+
+    const client = makeClient({ command: "fake-driver", args: [], env: {} });
+    await client.connect();
+    assert.equal(children.length, 1);
+    assert.equal(initializations, 1);
+
+    children[0]!.emitExit();
+    const [one, two] = await Promise.all([
+      client.callTool("list_apps", {}, AbortSignal.timeout(1_000)),
+      client.callTool("get_window_state", {}, AbortSignal.timeout(1_000)),
+    ]);
+    assert.equal(children.length, 2, "concurrent reconnect must not spawn two children");
+    assert.equal(initializations, 2, "reconnect must initialize exactly once");
+    assert.equal(
+      (one as { content: Array<{ text: string }> }).content[0]?.text,
+      "list_apps",
+    );
+    assert.equal(
+      (two as { content: Array<{ text: string }> }).content[0]?.text,
+      "get_window_state",
+    );
+    client.close();
+  });
+});

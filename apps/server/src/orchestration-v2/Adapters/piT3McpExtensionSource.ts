@@ -234,6 +234,9 @@ function mcpImages(result: unknown): ToolContent[] {
 function createStdioMcpClient(spec: { command: string; args: string[]; env: Record<string, string> }) {
   let nextId = 1;
   let child: ChildProcess | undefined;
+  let starting: Promise<void> | undefined;
+  let connecting: Promise<void> | undefined;
+  let connected = false;
   const waiting = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
 
   const failAll = (error: Error) => {
@@ -274,13 +277,27 @@ function createStdioMcpClient(spec: { command: string; args: string[]; env: Reco
     const stopped = () => {
       if (child !== current) return;
       child = undefined;
+      connected = false;
       failAll(new Error("Cua Driver stopped. Call the tool again to start a new session."));
     };
     current.on("exit", stopped);
     current.on("error", stopped);
   };
+  // Importing node:child_process is async; share the pending start so concurrent
+  // Pi tool calls cannot spawn two clients and orphan the first child process.
+  const ensureStarted = async () => {
+    if (child !== undefined) return;
+    if (starting === undefined) {
+      const attempt = start();
+      starting = attempt;
+      void attempt.finally(() => {
+        if (starting === attempt) starting = undefined;
+      }).catch(() => undefined);
+    }
+    await starting;
+  };
   const request = async (method: string, params?: unknown, signal?: AbortSignal) => {
-    if (child === undefined) await start();
+    await ensureStarted();
     return new Promise<unknown>((resolve, reject) => {
       const id = nextId++;
       waiting.set(id, { resolve, reject });
@@ -294,13 +311,25 @@ function createStdioMcpClient(spec: { command: string; args: string[]; env: Reco
     child?.stdin?.write(JSON.stringify({ jsonrpc: "2.0", method, params }) + "\\n");
   };
 
-  const connect = async (signal?: AbortSignal) => {
-    await request(
-      "initialize",
-      { protocolVersion: PROTOCOL, capabilities: {}, clientInfo: { name: "t3-pi-mcp", version: "1.0.0" } },
-      signal,
-    );
-    notify("notifications/initialized", {});
+  const connect = (signal?: AbortSignal): Promise<void> => {
+    if (child !== undefined && connected) return Promise.resolve();
+    if (connecting !== undefined) return connecting;
+    // The replacement driver needs one handshake, even if concurrent tool
+    // calls hit the reconnect boundary on the same event loop tick.
+    const attempt = (async () => {
+      await request(
+        "initialize",
+        { protocolVersion: PROTOCOL, capabilities: {}, clientInfo: { name: "t3-pi-mcp", version: "1.0.0" } },
+        signal,
+      );
+      notify("notifications/initialized", {});
+      connected = true;
+    })();
+    connecting = attempt;
+    void attempt.finally(() => {
+      if (connecting === attempt) connecting = undefined;
+    }).catch(() => undefined);
+    return attempt;
   };
 
   return {
@@ -311,12 +340,13 @@ function createStdioMcpClient(spec: { command: string; args: string[]; env: Reco
     },
     async callTool(name: string, args: Record<string, unknown>, signal?: AbortSignal) {
       // A driver that exited (the session ended) starts again and needs a handshake.
-      if (child === undefined) await connect(signal);
+      if (child === undefined || !connected) await connect(signal);
       return request("tools/call", { name, arguments: args }, signal);
     },
     close() {
       const current = child;
       child = undefined;
+      connected = false;
       current?.kill();
       failAll(new Error("Cua Driver stopped. Call the tool again to start a new session."));
     },
