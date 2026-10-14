@@ -664,10 +664,10 @@ function RootStackLayout(props: {
           >
             {props.children}
             <HardwareKeyboardCommandOverlay />
+            {process.env.EXPO_PUBLIC_T3_ASSISTANT_PREVIEW === "1" ? (
+              <AssistantQuickActionsPreview />
+            ) : null}
           </AdaptiveWorkspaceLayout>
-          {process.env.EXPO_PUBLIC_T3_ASSISTANT_PREVIEW === "1" ? (
-            <AssistantQuickActionsPreview />
-          ) : null}
         </AndroidWorkspaceTabsProvider>
       </ExistingThreadSettingsRouteProvider>
     </HardwareKeyboardCommandProvider>
