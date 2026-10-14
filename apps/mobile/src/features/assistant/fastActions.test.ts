@@ -3,6 +3,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   admitAssistantJevNavigation,
   findUniqueVisibleAssistantThread,
+  findVisibleAssistantThreadMatches,
   resolveAssistantFastAction,
 } from "./fastActions";
 
@@ -82,6 +83,11 @@ describe("app assistant fast actions", () => {
       action: { kind: "find-thread", title: "fix android" },
     });
     expect(findUniqueVisibleAssistantThread("Fix Android", [first])).toEqual(first);
+    expect(findVisibleAssistantThreadMatches("fix android", [first, second])).toEqual([
+      first,
+      second,
+    ]);
+    expect(findVisibleAssistantThreadMatches("unavailable", [first, second])).toEqual([]);
     expect(findUniqueVisibleAssistantThread("fix android", [first, second])).toBeNull();
     expect(findUniqueVisibleAssistantThread("unavailable", [first])).toBeNull();
   });
