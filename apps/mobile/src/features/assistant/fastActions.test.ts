@@ -27,10 +27,15 @@ describe("app assistant fast actions", () => {
   });
 
   it("keeps inspection read-only and sends complex requests to the agent", () => {
-    expect(resolveAssistantFastAction("What's waiting on me?")).toEqual({
+    expect(resolveAssistantFastAction("Show approvals")).toEqual({
       kind: "action",
       source: "rule",
       action: { kind: "inspect", queue: "approvals" },
+    });
+    expect(resolveAssistantFastAction("What's waiting on me?")).toEqual({
+      kind: "action",
+      source: "rule",
+      action: { kind: "inspect", queue: "needs-me" },
     });
     expect(resolveAssistantFastAction("show working agents")).toEqual({
       kind: "action",
