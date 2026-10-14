@@ -80,6 +80,54 @@ describe("assistant attention snapshot", () => {
     });
   });
 
+  it("surfaces hidden delegated requests on the visible parent without mislabeling work", () => {
+    const snapshot = buildAssistantAttentionSnapshot(
+      [live],
+      [
+        thread({
+          threadId: "approval-child",
+          needsAnswer: true,
+          working: true,
+          pendingSubagentRequest: "approval",
+        }),
+        thread({
+          threadId: "approval-sole",
+          working: true,
+          pendingSubagentRequest: "approval",
+        }),
+        thread({
+          threadId: "question-child",
+          working: true,
+          pendingSubagentRequest: "user_input",
+        }),
+        thread({ threadId: "working-none", working: true, pendingSubagentRequest: null }),
+        thread({
+          threadId: "offline-child",
+          environmentId: "offline",
+          pendingSubagentRequest: "approval",
+        }),
+      ],
+    );
+    expect(snapshot.items.map((item) => [item.threadId, item.kind])).toEqual([
+      ["approval-child", "approval"],
+      ["approval-sole", "approval"],
+      ["question-child", "question"],
+      ["working-none", "working"],
+    ]);
+    expect(snapshot.counts).toEqual({
+      approval: 2,
+      question: 1,
+      plan: 0,
+      failed: 0,
+      working: 1,
+    });
+    expect(
+      filterAssistantAttentionItems(snapshot.items, "approvals").map((item) => item.threadId),
+    ).toEqual(["approval-child", "approval-sole"]);
+    expect(filterAssistantAttentionItems(snapshot.items, "needs-me")).toHaveLength(3);
+    expect(filterAssistantAttentionItems(snapshot.items, "working")).toHaveLength(1);
+  });
+
   it("does not claim cached, disabled, reconnecting, or unsynchronized environments are live", () => {
     const snapshot = buildAssistantAttentionSnapshot(
       [
