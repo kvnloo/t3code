@@ -68,7 +68,9 @@ export function createAssistantReadOnlyVoiceGate(config: {
 }) {
   const seen = new Set<string>();
   let closed = false;
-  const refused = (reason: Extract<AssistantVoiceAdmission, { kind: "refused" }>["reason"]): AssistantVoiceAdmission => ({
+  const refused = (
+    reason: Extract<AssistantVoiceAdmission, { kind: "refused" }>["reason"],
+  ): AssistantVoiceAdmission => ({
     kind: "refused",
     reason,
   });
@@ -77,7 +79,10 @@ export function createAssistantReadOnlyVoiceGate(config: {
     close(): void {
       closed = true;
     },
-    admitFinal(input: { readonly utteranceId: unknown; readonly transcript: unknown }): AssistantVoiceAdmission {
+    admitFinal(input: {
+      readonly utteranceId: unknown;
+      readonly transcript: unknown;
+    }): AssistantVoiceAdmission {
       if (closed || config.signal?.aborted) return refused("closed");
       if (typeof input.utteranceId !== "string" || !UTTERANCE_ID.test(input.utteranceId)) {
         return refused("invalid-id");
