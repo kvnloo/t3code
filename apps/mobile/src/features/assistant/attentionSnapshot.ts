@@ -48,6 +48,19 @@ export interface AssistantAttentionSnapshot {
   readonly unavailableEnvironments: ReadonlyArray<string>;
 }
 
+export type AssistantAttentionFilter = "all" | "needs-me" | "approvals" | "working";
+
+/** Exact read-only filtering; approvals must never include other blockers. */
+export function filterAssistantAttentionItems(
+  items: ReadonlyArray<AssistantAttentionItem>,
+  filter: AssistantAttentionFilter,
+): ReadonlyArray<AssistantAttentionItem> {
+  if (filter === "all") return items;
+  if (filter === "approvals") return items.filter((item) => item.kind === "approval");
+  if (filter === "working") return items.filter((item) => item.kind === "working");
+  return items.filter((item) => item.kind !== "working");
+}
+
 const PRIORITY: Readonly<Record<AssistantAttentionKind, number>> = {
   approval: 0,
   question: 1,

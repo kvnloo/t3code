@@ -23,6 +23,8 @@ import { useAndroidWorkspaceSelection } from "../workspace/useAndroidWorkspaceSe
 import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
 import {
   buildAssistantAttentionSnapshot,
+  filterAssistantAttentionItems,
+  type AssistantAttentionFilter,
   type AssistantAttentionKind,
   type AssistantAttentionItem,
 } from "./attentionSnapshot";
@@ -48,8 +50,6 @@ const liveShellsAtom = Atom.make((get) => {
   return readiness;
 }).pipe(Atom.withLabel("mobile:assistant:live-shell-readiness"));
 
-type AttentionFilter = "all" | "needs-me" | "working";
-
 const LABELS: Readonly<Record<AssistantAttentionKind, string>> = {
   approval: "Approval needed",
   question: "Answer needed",
@@ -57,10 +57,6 @@ const LABELS: Readonly<Record<AssistantAttentionKind, string>> = {
   failed: "Failed",
   working: "Working",
 };
-
-function isNeedsMe(kind: AssistantAttentionKind): boolean {
-  return kind === "approval" || kind === "question" || kind === "plan" || kind === "failed";
-}
 
 /** Opt-in downstream text experiment, not a voice or autonomous executor. */
 export function AssistantQuickActionsPreview() {
@@ -110,7 +106,7 @@ function AssistantQuickActionsContent(props: { readonly onClose: () => void }) {
   const [input, setInput] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [matches, setMatches] = useState<ReadonlyArray<VisibleAssistantThread>>([]);
-  const [filter, setFilter] = useState<AttentionFilter>("all");
+  const [filter, setFilter] = useState<AssistantAttentionFilter>("all");
   const threads = useNavigationThreadShells();
   const { connectedEnvironments } = useRemoteConnectionStatus();
   const shellLive = useAtomValue(liveShellsAtom);
@@ -211,7 +207,7 @@ function AssistantQuickActionsContent(props: { readonly onClose: () => void }) {
       return;
     }
     if (result.action.kind === "inspect") {
-      setFilter(result.action.queue === "working" ? "working" : "needs-me");
+      setFilter(result.action.queue);
       setNotice(null);
       setInput("");
       return;
@@ -236,9 +232,7 @@ function AssistantQuickActionsContent(props: { readonly onClose: () => void }) {
     setNotice("No live thread has that exact title. Search Chats for other titles.");
   }, [input, liveIds, navigate, openThread, threads]);
 
-  const visibleItems = attention.items.filter((item) =>
-    filter === "all" ? true : filter === "working" ? item.kind === "working" : isNeedsMe(item.kind),
-  );
+  const visibleItems = filterAssistantAttentionItems(attention.items, filter);
   const shownItems = visibleItems.slice(0, 24);
   const needsMeCount =
     attention.counts.approval +
@@ -282,10 +276,11 @@ function AssistantQuickActionsContent(props: { readonly onClose: () => void }) {
             {notice}
           </Text>
         ) : null}
-        <View className="flex-row gap-2">
+        <View className="flex-row flex-wrap gap-2">
           {([
             ["all", "All", attention.items.length],
             ["needs-me", "Needs me", needsMeCount],
+            ["approvals", "Approvals", attention.counts.approval],
             ["working", "Working", attention.counts.working],
           ] as const).map(([nextFilter, label, count]) => (
             <Pressable
@@ -345,7 +340,13 @@ function AssistantQuickActionsContent(props: { readonly onClose: () => void }) {
           ) : null}
           {shownItems.length === 0 ? (
             <Text className="py-4 text-sm text-foreground-muted">
-              No current {filter === "working" ? "working threads" : "attention items"} from live environments.
+              No current{" "}
+              {filter === "working"
+                ? "working threads"
+                : filter === "approvals"
+                  ? "approvals"
+                  : "attention items"}{" "}
+              from live environments.
             </Text>
           ) : (
             shownItems.map((item: AssistantAttentionItem) => (
