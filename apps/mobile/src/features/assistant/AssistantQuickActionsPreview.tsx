@@ -324,24 +324,25 @@ function AssistantQuickActionsContent(props: { readonly onClose: () => void }) {
           style={{ flexShrink: 1 }}
           keyboardShouldPersistTaps="handled"
         >
-        {matches.length > 0 ? (
-              <View className="gap-1">
-                {matches.map((match) => (
-                  <Pressable
-                    key={JSON.stringify([match.environmentId, match.threadId])}
-                    accessibilityRole="button"
-                    className="rounded-lg bg-subtle px-3 py-2 active:opacity-70"
-                    onPress={() => openThread(match.environmentId, match.threadId)}
-                  >
-                    <Text numberOfLines={2} className="text-sm text-foreground">
-                      {match.title} · {connectedEnvironments.find(
-                        (environment) => String(environment.environmentId) === match.environmentId,
-                      )?.environmentLabel ?? "Unknown environment"}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            ) : null}
+          {matches.length > 0 ? (
+            <View className="gap-1">
+              {matches.map((match) => (
+                <Pressable
+                  key={JSON.stringify([match.environmentId, match.threadId])}
+                  accessibilityRole="button"
+                  className="rounded-lg bg-subtle px-3 py-2 active:opacity-70"
+                  onPress={() => openThread(match.environmentId, match.threadId)}
+                >
+                  <Text numberOfLines={2} className="text-sm text-foreground">
+                    {match.title} ·{" "}
+                    {connectedEnvironments.find(
+                      (environment) => String(environment.environmentId) === match.environmentId,
+                    )?.environmentLabel ?? "Unknown environment"}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
           {shownItems.length === 0 ? (
             <Text className="py-4 text-sm text-foreground-muted">
               No current {filter === "working" ? "working threads" : "attention items"} from live environments.
