@@ -20,6 +20,8 @@ export interface AssistantAttentionFacts {
   readonly updatedAt: string;
   readonly needsApproval: boolean;
   readonly needsAnswer: boolean;
+  /** Request inherited by a visible parent from its delegated subagents. */
+  readonly pendingSubagentRequest?: "approval" | "user_input" | null;
   readonly needsPlanReview: boolean;
   readonly failed: boolean;
   readonly working: boolean;
@@ -70,8 +72,8 @@ const PRIORITY: Readonly<Record<AssistantAttentionKind, number>> = {
 };
 
 function kindFor(thread: AssistantAttentionFacts): AssistantAttentionKind | null {
-  if (thread.needsApproval) return "approval";
-  if (thread.needsAnswer) return "question";
+  if (thread.needsApproval || thread.pendingSubagentRequest === "approval") return "approval";
+  if (thread.needsAnswer || thread.pendingSubagentRequest === "user_input") return "question";
   if (thread.needsPlanReview && !thread.working) return "plan";
   if (thread.working) return "working";
   if (thread.failed) return "failed";
