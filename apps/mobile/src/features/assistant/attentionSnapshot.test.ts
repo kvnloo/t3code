@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 
 import {
   buildAssistantAttentionSnapshot,
+  filterAssistantAttentionItems,
   type AssistantAttentionEnvironment,
   type AssistantAttentionFacts,
 } from "./attentionSnapshot";
@@ -31,6 +32,26 @@ function thread(
 }
 
 describe("assistant attention snapshot", () => {
+  it("keeps approvals exact while needs-me also includes questions, plans and failures", () => {
+    const snapshot = buildAssistantAttentionSnapshot(
+      [live],
+      [
+        thread({ threadId: "approval", needsApproval: true }),
+        thread({ threadId: "question", needsAnswer: true }),
+        thread({ threadId: "plan", needsPlanReview: true }),
+        thread({ threadId: "failure", failed: true }),
+        thread({ threadId: "working", working: true }),
+      ],
+    );
+    const ids = (filter: "approvals" | "needs-me" | "working" | "all") =>
+      filterAssistantAttentionItems(snapshot.items, filter).map((item) => item.threadId);
+
+    expect(ids("approvals")).toEqual(["approval"]);
+    expect(ids("needs-me")).toEqual(["approval", "question", "plan", "failure"]);
+    expect(ids("working")).toEqual(["working"]);
+    expect(ids("all")).toEqual(["approval", "question", "plan", "failure", "working"]);
+  });
+
   it("ranks human decisions above failures and working; chooses one state per thread", () => {
     const snapshot = buildAssistantAttentionSnapshot(
       [live],
