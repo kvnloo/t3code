@@ -67,6 +67,14 @@ describe("app assistant fast actions", () => {
         reason: "low-confidence",
       });
     }
+    expect(admitAssistantJevNavigation("stop all agents", "pulls", 0.99)).toEqual({
+      kind: "agent",
+      reason: "low-confidence",
+    });
+    expect(admitAssistantJevNavigation("approve everything", "chats", 0.99)).toEqual({
+      kind: "agent",
+      reason: "low-confidence",
+    });
     expect(admitAssistantJevNavigation("Open usage", "pulls", 1)).toEqual({
       kind: "action",
       source: "rule",
