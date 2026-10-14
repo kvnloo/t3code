@@ -27,8 +27,9 @@ import {
   type AssistantAttentionItem,
 } from "./attentionSnapshot";
 import {
-  findUniqueVisibleAssistantThread,
+  findVisibleAssistantThreadMatches,
   resolveAssistantFastAction,
+  type VisibleAssistantThread,
   type AssistantDestination,
 } from "./fastActions";
 
@@ -108,6 +109,7 @@ function AssistantQuickActionsContent(props: { readonly onClose: () => void }) {
   const insets = useSafeAreaInsets();
   const [input, setInput] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const [matches, setMatches] = useState<ReadonlyArray<VisibleAssistantThread>>([]);
   const [filter, setFilter] = useState<AttentionFilter>("all");
   const threads = useNavigationThreadShells();
   const { connectedEnvironments } = useRemoteConnectionStatus();
@@ -198,6 +200,7 @@ function AssistantQuickActionsContent(props: { readonly onClose: () => void }) {
   );
 
   const submit = useCallback(() => {
+    setMatches([]);
     const result = resolveAssistantFastAction(input);
     if (result.kind !== "action") {
       setNotice("Conversation mode is not connected yet. Only read-only quick actions work.");
@@ -220,14 +223,17 @@ function AssistantQuickActionsContent(props: { readonly onClose: () => void }) {
         threadId: String(thread.id),
         title: thread.title,
       }));
-    const match = findUniqueVisibleAssistantThread(result.action.title, candidates);
-    if (match !== null) {
-      openThread(match.environmentId, match.threadId);
+    const matches = findVisibleAssistantThreadMatches(result.action.title, candidates);
+    if (matches.length === 1) {
+      openThread(matches[0]!.environmentId, matches[0]!.threadId);
       return;
     }
-    setNotice(
-      "No unique live thread has that title. Select a thread from Chats to disambiguate.",
-    );
+    if (matches.length > 1) {
+      setMatches(matches.slice(0, 8));
+      setNotice("Several live threads share that title. Choose the intended environment below.");
+      return;
+    }
+    setNotice("No live thread has that exact title. Search Chats for other titles.");
   }, [input, liveIds, navigate, openThread, threads]);
 
   const visibleItems = attention.items.filter((item) =>
@@ -264,13 +270,35 @@ function AssistantQuickActionsContent(props: { readonly onClose: () => void }) {
           placeholderTextColor="#999999"
           returnKeyType="go"
           value={input}
-          onChangeText={setInput}
+          onChangeText={(next) => {
+            setInput(next);
+            setMatches([]);
+            setNotice(null);
+          }}
           onSubmitEditing={submit}
         />
         {notice !== null ? (
           <Text accessibilityRole="alert" className="text-sm text-foreground-muted">
             {notice}
           </Text>
+        ) : null}
+        {matches.length > 0 ? (
+          <View className="gap-1">
+            {matches.map((match) => (
+              <Pressable
+                key={JSON.stringify([match.environmentId, match.threadId])}
+                accessibilityRole="button"
+                className="rounded-lg bg-subtle px-3 py-2 active:opacity-70"
+                onPress={() => openThread(match.environmentId, match.threadId)}
+              >
+                <Text numberOfLines={2} className="text-sm text-foreground">
+                  {match.title} · {connectedEnvironments.find(
+                    (environment) => String(environment.environmentId) === match.environmentId,
+                  )?.environmentLabel ?? "Unknown environment"}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
         ) : null}
         <View className="flex-row gap-2">
           {([
