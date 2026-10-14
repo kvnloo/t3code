@@ -134,6 +134,7 @@ import {
   SettingsLegalDocumentExternalHeaderButton,
 } from "./features/settings/components/SettingsLegalDocumentRouteScreen";
 import { useAppShortcuts } from "./features/shortcuts/useAppShortcuts";
+import { AssistantQuickActionsPreview } from "./features/assistant/AssistantQuickActionsPreview";
 import { useIncomingShare } from "./features/sharing/IncomingShareProvider";
 import {
   EMPTY_INCOMING_SHARE_PRESENTATION_STATE,
@@ -664,6 +665,9 @@ function RootStackLayout(props: {
             {props.children}
             <HardwareKeyboardCommandOverlay />
           </AdaptiveWorkspaceLayout>
+          {process.env.EXPO_PUBLIC_T3_ASSISTANT_PREVIEW === "1" ? (
+            <AssistantQuickActionsPreview />
+          ) : null}
         </AndroidWorkspaceTabsProvider>
       </ExistingThreadSettingsRouteProvider>
     </HardwareKeyboardCommandProvider>
