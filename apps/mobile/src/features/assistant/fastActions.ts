@@ -107,12 +107,19 @@ export function admitAssistantJevNavigation(
  * permission-filtered shells. Duplicate names across projects or environments
  * must not silently select a target.
  */
+export function findVisibleAssistantThreadMatches(
+  requestedTitle: string,
+  visibleThreads: ReadonlyArray<VisibleAssistantThread>,
+): ReadonlyArray<VisibleAssistantThread> {
+  const title = canonical(requestedTitle);
+  if (!title) return [];
+  return visibleThreads.filter((thread) => canonical(thread.title) === title);
+}
+
 export function findUniqueVisibleAssistantThread(
   requestedTitle: string,
   visibleThreads: ReadonlyArray<VisibleAssistantThread>,
 ): VisibleAssistantThread | null {
-  const title = canonical(requestedTitle);
-  if (!title) return null;
-  const matches = visibleThreads.filter((thread) => canonical(thread.title) === title);
+  const matches = findVisibleAssistantThreadMatches(requestedTitle, visibleThreads);
   return matches.length === 1 ? matches[0]! : null;
 }
