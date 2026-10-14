@@ -10,7 +10,7 @@ export type AssistantDestination = "chats" | "pulls" | "environments" | "usage";
 
 export type AssistantFastAction =
   | { readonly kind: "navigate"; readonly destination: AssistantDestination }
-  | { readonly kind: "inspect"; readonly queue: "approvals" | "working" }
+  | { readonly kind: "inspect"; readonly queue: "approvals" | "needs-me" | "working" }
   | { readonly kind: "find-thread"; readonly title: string };
 
 export type AssistantFastResolution =
@@ -62,8 +62,11 @@ export function resolveAssistantFastAction(utterance: string): AssistantFastReso
     return { kind: "action", source: "rule", action: { kind: "navigate", destination } };
   }
 
-  if (["show approvals", "what needs my approval", "what's waiting on me"].includes(phrase)) {
+  if (["show approvals", "what needs my approval"].includes(phrase)) {
     return { kind: "action", source: "rule", action: { kind: "inspect", queue: "approvals" } };
+  }
+  if (["what's waiting on me", "what needs my attention", "show what needs me"].includes(phrase)) {
+    return { kind: "action", source: "rule", action: { kind: "inspect", queue: "needs-me" } };
   }
   if (["show working agents", "who is working", "what's running"].includes(phrase)) {
     return { kind: "action", source: "rule", action: { kind: "inspect", queue: "working" } };
