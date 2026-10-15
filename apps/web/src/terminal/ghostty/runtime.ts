@@ -19,6 +19,26 @@ type TypeLayouts = Readonly<Record<string, TypeLayout>>;
 
 const textDecoder = new TextDecoder();
 
+/**
+ * A stalled asset download used to wedge every terminal: `loadGhosttyRuntime`
+ * caches the pending promise, and a fetch that never settles never rejects,
+ * so the retry reset in its `.catch` never ran. Bound the download so a stall
+ * becomes a rejection the next terminal open retries.
+ */
+const GHOSTTY_WASM_FETCH_TIMEOUT_MS = 30_000;
+
+function fetchWasmAsset(url: string): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () =>
+      controller.abort(
+        new Error(`Timed out loading ${url} after ${GHOSTTY_WASM_FETCH_TIMEOUT_MS}ms.`),
+      ),
+    GHOSTTY_WASM_FETCH_TIMEOUT_MS,
+  );
+  return fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timeout));
+}
+
 export class GhosttyRuntime {
   readonly memory: WebAssembly.Memory;
   readonly layouts: TypeLayouts;
@@ -44,7 +64,7 @@ export class GhosttyRuntime {
   }
 
   static async load(): Promise<GhosttyRuntime> {
-    const response = await fetch(ghosttyWasmUrl);
+    const response = await fetchWasmAsset(ghosttyWasmUrl);
     if (!response.ok) {
       throw new Error(`Unable to load libghostty-vt (${response.status})`);
     }
@@ -194,7 +214,7 @@ export class GhosttyRuntime {
   }
 
   private async installWritePtyTrampoline(): Promise<void> {
-    const response = await fetch(ghosttyWritePtyWasmUrl);
+    const response = await fetchWasmAsset(ghosttyWritePtyWasmUrl);
     if (!response.ok) {
       throw new Error(`Unable to load the libghostty-vt PTY trampoline (${response.status})`);
     }
