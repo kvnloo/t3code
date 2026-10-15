@@ -1,0 +1,116 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { assert, it } from "@effect/vitest";
+import {
+  getProviderSkillsForSlashMenu,
+  getProviderSlashCommandsForSlashMenu,
+} from "@t3tools/client-runtime/providerSkills";
+import { ProviderDriverKind } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+
+import { discoverClaudeSkills } from "../../../../server/src/provider/Drivers/ClaudeSkills.ts";
+import { detectComposerTrigger } from "../../composer-logic";
+import type { ComposerCommandItem } from "./ComposerCommandMenu";
+import {
+  searchSlashCommandItems,
+  slashCommandItemsForPromptPosition,
+} from "./composerSlashCommandSearch";
+
+it.layer(NodeServices.layer)("installed Claude plugin slash completion", (it) => {
+  it.effect.each([
+    { position: "after a prior line", prompt: "please use\n/impl" },
+    { position: "after text on the same line", prompt: "please use /impl" },
+  ])("offers the discovered skill $position", ({ prompt }) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-plugin-slash-menu-" });
+      const configDir = path.join(tempDir, "claude-home");
+      const pluginDir = path.join(configDir, "plugins", "cache", "shop", "skills", "1.0.0");
+      const skillPath = path.join(pluginDir, "skills", "implement", "SKILL.md");
+      yield* fs.makeDirectory(path.dirname(skillPath), { recursive: true });
+      yield* fs.writeFileString(
+        skillPath,
+        "---\nname: implement\ndescription: Execute a work plan.\n---\n",
+      );
+      yield* fs.makeDirectory(path.join(pluginDir, ".claude-plugin"), { recursive: true });
+      yield* fs.writeFileString(
+        path.join(pluginDir, ".claude-plugin", "plugin.json"),
+        JSON.stringify({ name: "mattpocock-skills" }),
+      );
+      yield* fs.writeFileString(
+        path.join(configDir, "plugins", "installed_plugins.json"),
+        JSON.stringify({
+          plugins: { "skills@shop": [{ scope: "user", installPath: pluginDir }] },
+        }),
+      );
+      yield* fs.writeFileString(
+        path.join(configDir, "settings.json"),
+        JSON.stringify({ enabledPlugins: { "skills@shop": true } }),
+      );
+
+      const skills = yield* discoverClaudeSkills({ homePath: configDir });
+      assert.deepEqual(skills, [
+        {
+          name: "mattpocock-skills:implement",
+          path: skillPath,
+          enabled: true,
+          scope: "user",
+          description: "Execute a work plan.",
+        },
+      ]);
+
+      const provider = ProviderDriverKind.make("claudeAgent");
+      const visibleSkills = getProviderSkillsForSlashMenu(skills, true);
+      const commands = getProviderSlashCommandsForSlashMenu(
+        [{ name: "mattpocock-skills:implement" }, { name: "context" }],
+        visibleSkills,
+      );
+      assert.deepEqual(
+        commands.map((command) => command.name),
+        ["context"],
+      );
+
+      const items = [
+        ...commands.map((command) => ({
+          id: `provider-slash-command:${provider}:${command.name}`,
+          type: "provider-slash-command" as const,
+          provider,
+          command,
+          label: `/${command.name}`,
+          description: "Run provider command",
+        })),
+        ...visibleSkills.map((skill) => ({
+          id: `skill:${provider}:${skill.name}`,
+          type: "skill" as const,
+          provider,
+          skill,
+          label: `/skill:${skill.name}`,
+          description: skill.description ?? "",
+        })),
+      ] satisfies Array<Extract<ComposerCommandItem, { type: "provider-slash-command" | "skill" }>>;
+      assert.deepEqual(
+        searchSlashCommandItems(items, "context").map((item) => item.id),
+        ["provider-slash-command:claudeAgent:context"],
+      );
+
+      // #19847 requires the same-line case too; this assertion currently exposes that gap.
+      const trigger = detectComposerTrigger(prompt, prompt.length);
+      assert.deepEqual(trigger, {
+        kind: "slash-command",
+        query: "impl",
+        rangeStart: prompt.lastIndexOf("/"),
+        rangeEnd: prompt.length,
+      });
+      assert.isNotNull(trigger);
+      const visibleItems = slashCommandItemsForPromptPosition(items, trigger!.rangeStart === 0);
+      assert.deepEqual(
+        searchSlashCommandItems(visibleItems, trigger!.query).map((item) => item.id),
+        ["skill:claudeAgent:mattpocock-skills:implement"],
+      );
+      assert.deepEqual(searchSlashCommandItems(visibleItems, "context"), []);
+      assert.deepEqual(searchSlashCommandItems(visibleItems, "nonexistent-command-zzzz"), []);
+    }),
+  );
+});

@@ -1,0 +1,273 @@
+{
+  "schema": "t3-synthetic-merge-qa-v1",
+  "classification": "qualified synthetic-merge helper-integration evidence; independently reproduced; not merge-ready default test",
+  "tested_revision": "99b5739268a9aeb1fc9ae9251984892341b74fcd",
+  "merge_parents": [
+    "2d31acb9751d89fd00f2b3fd0725b37ed9109440",
+    "b633c9cae6af0a30a33a73ce7ce4cee5204e34b6"
+  ],
+  "origin_pr": "https://github.com/pingdotgg/t3code/pull/15662",
+  "downstream_issue": "https://github.com/kvnloo/t3code/issues/41",
+  "claim_url": "https://github.com/kvnloo/t3code/issues/41#issuecomment-6199232081",
+  "source_archive": {
+    "url": "https://codeload.github.com/pingdotgg/t3code/tar.gz/99b5739268a9aeb1fc9ae9251984892341b74fcd",
+    "bytes": 115870683,
+    "sha256": "95ef62076326c37b87df951e181cf3ac4a7c93a9fc5ed6bcc2ee86c9e3c62959"
+  },
+  "source_integrity": {
+    "regular_archive_files": 28079,
+    "original_file_mismatches": [],
+    "key_files": [
+      {
+        "path": "pnpm-lock.yaml",
+        "git_blob": "b6cc9b75ca88de44fe8c75613a870224069d46d0",
+        "sha256": "6342162d528261bed2d8e2d09fc11212465b4615e58e1047a615b20994990965"
+      },
+      {
+        "path": "pnpm-workspace.yaml",
+        "git_blob": "546ead4772082853e7a772f5d35f19b385fda35a",
+        "sha256": "78af193c74c56144d59f3517a53bc0a7c49824edeef7c4589a35d6d7d25c6d85"
+      },
+      {
+        "path": "package.json",
+        "git_blob": "7b15acd6f0a335191ed22428a6c412abcb793ab6",
+        "sha256": "be7fcc93f698a6a68030ff76fc389e6fa5aeeed4b2b883438175cdcbaa557de7"
+      },
+      {
+        "path": "vite.config.ts",
+        "git_blob": "f96bdd28266cf01c809c947d96b69863f9d8bee9",
+        "sha256": "4aba6eefe3f0a79172ed9c4785aeb6dafff0ee768506d624eebb40c875ee4295"
+      },
+      {
+        "path": "apps/server/src/provider/Drivers/ClaudeSkills.ts",
+        "git_blob": "d91d6a0f4e9d5cc71c4e25725882763f87c62762",
+        "sha256": "ebaeb867d91e53908038a705f9f3033033aaf18d4a26d2ee2b04d1eed82a460b"
+      },
+      {
+        "path": "apps/server/src/provider/Drivers/ClaudeSkills.test.ts",
+        "git_blob": "7f8d97f3101106f9324007bda0f093a79ae301e4",
+        "sha256": "ca7b9d1fcefdf56979053032ff31bf7d458a67c422a6d2a21ae25828ede4553a"
+      },
+      {
+        "path": "apps/web/src/composer-logic.ts",
+        "git_blob": "2dc9f6d08f8182b23e2bec4906e91920bd0077ce",
+        "sha256": "a17f23659f857117b35ff7e01d25ef45941571ce576485064e9b17652d5de1b9"
+      },
+      {
+        "path": "packages/shared/src/composerTrigger.ts",
+        "git_blob": "9143f27172e11dac875121454688226e2834d59c",
+        "sha256": "dd9a213d7c33cdab068d7a98cd790a71d293937ab61ee89aada76d7360a7d7e7"
+      },
+      {
+        "path": "packages/client-runtime/src/providerSkills.ts",
+        "git_blob": "fe69c371fc6cf0b3f7122b3ab4837d2b74ce2f48",
+        "sha256": "8fdd9bbf28c70d4ef809c8202d534c3bd1c73413d874a70ea9365d3097b05cda"
+      },
+      {
+        "path": "apps/web/src/components/chat/composerSlashCommandSearch.ts",
+        "git_blob": "0d33a3316413ed6750a689efb4a094037af65d3d",
+        "sha256": "30b204bf8e5e22947da69c7699d141f37b2353c7e08839bfbecbda43a38ca782"
+      }
+    ],
+    "independent_archive_manifest_sha256": "84ba1633c3467442467f4cd461ace51f77c2ea1c2f5ab132e127009f276b62e0",
+    "previous_owner_head_source_preserved": {
+      "original_regular_files": 27746,
+      "mismatches": [],
+      "prior_phase_two_log_manifest_verified": true
+    }
+  },
+  "toolchain": {
+    "node": "24.19.0",
+    "pnpm": "11.10.0",
+    "pnpm_cli_sha256": "67b035e322203961795e8e34ca63a08c37a4386eda94107fb3d28f3246d882ad",
+    "vite_plus": "1.0.0",
+    "bundled_test_runner_report": "5.0.1",
+    "effect": "4.0.4",
+    "effect_vitest": "4.0.4",
+    "effect_platform_node": "4.0.4",
+    "dependencies_resolve_inside_fresh_source": true
+  },
+  "installation": {
+    "argv_normalized": [
+      "node",
+      "$PNPM_CLI",
+      "--filter",
+      "@t3tools/monorepo",
+      "--filter",
+      "t3...",
+      "install",
+      "--frozen-lockfile",
+      "--ignore-scripts",
+      "--store-dir",
+      "$STORE",
+      "--network-concurrency",
+      "2",
+      "--child-concurrency",
+      "1",
+      "--reporter",
+      "append-only"
+    ],
+    "path_variables": "PNPM_CLI is the already verified official pnpm executable; STORE is the previously populated pnpm content-addressed store. No old node_modules were copied.",
+    "exit_code": 0,
+    "lifecycle_scripts": false,
+    "frozen_lockfile": true,
+    "elapsed_seconds": 20.36,
+    "packages_added": 1091,
+    "packages_reused": 1066,
+    "packages_downloaded": 19,
+    "raw_log_sha256": "42766de58b98d3e120d19dac663426cf1863e16e7811f18f0fff6d736fd58e43"
+  },
+  "tests": {
+    "baseline": {
+      "argv_normalized": [
+        "node",
+        "$PNPM_CLI",
+        "exec",
+        "vp",
+        "test",
+        "run",
+        "apps/server/src/provider/Drivers/ClaudeSkills.test.ts",
+        "packages/client-runtime/src/providerSkills.test.ts",
+        "apps/web/src/components/chat/composerSlashCommandSearch.test.ts",
+        "apps/web/src/composer-logic.test.ts",
+        "packages/shared/src/composerTrigger.test.ts"
+      ],
+      "files": [
+        {
+          "path": "apps/server/src/provider/Drivers/ClaudeSkills.test.ts",
+          "passed": 23
+        },
+        {
+          "path": "packages/client-runtime/src/providerSkills.test.ts",
+          "passed": 16
+        },
+        {
+          "path": "apps/web/src/components/chat/composerSlashCommandSearch.test.ts",
+          "passed": 7
+        },
+        {
+          "path": "apps/web/src/composer-logic.test.ts",
+          "passed": 94
+        },
+        {
+          "path": "packages/shared/src/composerTrigger.test.ts",
+          "passed": 20
+        }
+      ],
+      "passed": 160,
+      "failed": 0,
+      "exit_code": 0,
+      "raw_log_sha256": "2e57582380d00a752a0b110fd285e9bc63a7609b068c8bcbfe7aeb918a4f180b"
+    },
+    "diagnostic": {
+      "argv_normalized": [
+        "node",
+        "$PNPM_CLI",
+        "exec",
+        "vp",
+        "test",
+        "run",
+        "apps/web/src/components/chat/claudePluginSlashMenu.test.ts"
+      ],
+      "artifact": "claudePluginSlashMenu.test.ts.txt",
+      "staged_path": "apps/web/src/components/chat/claudePluginSlashMenu.test.ts",
+      "sha256": "13c177ddf977afccc7549825b065c44243ac7dab7dff0963f5e8ae03e49ab355",
+      "cases": [
+        {
+          "prompt": "please use\n/impl",
+          "result": "passed"
+        },
+        {
+          "prompt": "please use /impl",
+          "result": "passed"
+        }
+      ],
+      "passed": 2,
+      "failed": 0,
+      "exit_code": 0,
+      "raw_log_sha256": "8d1daff7c9b5e2196e2730d7b2c627382b99b5106fe169e6d3c189e81dc0c362"
+    },
+    "independent": {
+      "status": "passed",
+      "invocations": 1,
+      "passed": 2,
+      "failed": 0,
+      "exit_code": 0,
+      "argv_normalized": [
+        "node",
+        "$PNPM_CLI",
+        "exec",
+        "vp",
+        "test",
+        "run",
+        "apps/web/src/components/chat/claudePluginSlashMenu.test.ts"
+      ],
+      "diagnostic_sha256_before": "13c177ddf977afccc7549825b065c44243ac7dab7dff0963f5e8ae03e49ab355",
+      "diagnostic_sha256_after": "13c177ddf977afccc7549825b065c44243ac7dab7dff0963f5e8ae03e49ab355",
+      "raw_log_sha256": "40e958c82cdc912624d5ed5308862d45ded7c7e4bcd34b5245dff6980761a3e3",
+      "elapsed_seconds": 8.29,
+      "original_archive_files_compared_before_and_after": 28079,
+      "source_mismatches": [],
+      "dependency_symlinks_checked": 3515,
+      "dependency_symlinks_outside_fresh_source": [],
+      "offline_package_manager_configuration": {
+        "npm_config_offline": "true",
+        "PNPM_CONFIG_OFFLINE": "true",
+        "COREPACK_ENABLE_NETWORK": "0"
+      },
+      "kernel_network_isolation": false,
+      "optional_probe": {
+        "command": "unshare -n true",
+        "exit_code": 1,
+        "stderr": "unshare: unshare failed: Operation not permitted",
+        "retry": false,
+        "contained_diagnostic": false
+      }
+    },
+    "totals_this_stage": {
+      "unique_cases": 162,
+      "case_executions": 164,
+      "passed_case_executions": 164,
+      "failed_case_executions": 0,
+      "explanation": "160 baseline + 2 producer diagnostic + 2 independent diagnostic; all six files were not run together."
+    }
+  },
+  "resource_limits": {
+    "seconds": 600,
+    "new_allocated_bytes": 4294967296,
+    "early_stop_bytes": 3758096384,
+    "shared_store_initial_allocated_bytes": 1448521728,
+    "shared_store_after_install_allocated_bytes": 1722228736,
+    "producer_new_allocated_bytes_including_store_growth": 2751901696,
+    "producer_qualification_elapsed_seconds": 131.2,
+    "new_allocated_bytes_after_independent_execution_including_store_growth": 2763337728
+  },
+  "scope": {
+    "baseline_main_inspected": "3ff452bd65adf758e68b886d1e3778ae1ec7d970",
+    "synthetic_base_behind_main_commits": 21,
+    "current_main_executed": false,
+    "browser_executed": false,
+    "provider_called": false,
+    "production_edits": false,
+    "source_reconstructed_or_rebased": false,
+    "origin_writes": false
+  },
+  "limitations": [
+    "Helper integration only; SDK command inventory and menu-item assembly use fixtures.",
+    "No actual React composer, selection/insertion proof, browser, provider handshake, dispatch, authenticated model turn, or native mobile UI.",
+    "Synthetic merge base is 21 commits behind inspected main; source equality for relevant helpers is not current-main runtime validation.",
+    "The exact diagnostic is evidence-only and excluded from default test discovery by its .ts.txt artifact extension.",
+    "Prior web-composite TS6307 and unresolved @oxlint/plugins limitations remain disclosed; lint and typecheck were not rerun or repaired in this qualification.",
+    "Old-head failure and synthetic-merge success use different source/dependency snapshots; this is not a controlled single-change causal RED/GREEN experiment.",
+    "Optional no-op network-namespace probe failed with Operation not permitted and was not retried. It contained no diagnostic. The authorized ordinary independent test used offline package-manager settings and isolated HOME/TMP, without kernel-enforced network isolation."
+  ],
+  "credits": {
+    "discovery": "Maria (maria-rcks), PR15662",
+    "discovery_precursors": [
+      "Moinax",
+      "shivamhwp"
+    ],
+    "inline_trigger": "Bil0000, merged PR19107",
+    "downstream_qa": "OpenAI assistant via Codex"
+  }
+}
