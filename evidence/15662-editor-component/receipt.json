@@ -1,0 +1,451 @@
+{
+  "schema": "t3-editor-component-qa-v1",
+  "qa": "LIMITED",
+  "classification": "independently reproduced synthetic-merge helper-to-mounted-editor component evidence; no full selection callback, real browser, or provider invocation proof",
+  "tested_revision": "99b5739268a9aeb1fc9ae9251984892341b74fcd",
+  "merge_parents": [
+    "2d31acb9751d89fd00f2b3fd0725b37ed9109440",
+    "b633c9cae6af0a30a33a73ce7ce4cee5204e34b6"
+  ],
+  "origin_pr": "https://github.com/pingdotgg/t3code/pull/15662",
+  "origin_head_at_inspection": "b633c9cae6af0a30a33a73ce7ce4cee5204e34b6",
+  "origin_base_at_inspection": "6cd02e98f7edd78b7bde9ceff26c829476dbeb77",
+  "origin_inspected_at": "2026-10-15T19:15:14Z",
+  "origin_state": "open",
+  "claim_url": "https://github.com/kvnloo/t3code/issues/41#issuecomment-6200316522",
+  "claim_lease_until": "2026-10-15T19:33:00Z",
+  "city_id": "oss:t3code",
+  "max_seconds": 900,
+  "max_new_allocation_bytes": 268435456,
+  "source_archive_sha256": "95ef62076326c37b87df951e181cf3ac4a7c93a9fc5ed6bcc2ee86c9e3c62959",
+  "source_key_hashes": [
+    {
+      "path": "apps/server/src/provider/Drivers/ClaudeSkills.ts",
+      "sha256": "ebaeb867d91e53908038a705f9f3033033aaf18d4a26d2ee2b04d1eed82a460b",
+      "git_blob": "d91d6a0f4e9d5cc71c4e25725882763f87c62762"
+    },
+    {
+      "path": "packages/client-runtime/src/providerSkills.ts",
+      "sha256": "8fdd9bbf28c70d4ef809c8202d534c3bd1c73413d874a70ea9365d3097b05cda",
+      "git_blob": "fe69c371fc6cf0b3f7122b3ab4837d2b74ce2f48"
+    },
+    {
+      "path": "apps/web/src/components/chat/composerSlashCommandSearch.ts",
+      "sha256": "30b204bf8e5e22947da69c7699d141f37b2353c7e08839bfbecbda43a38ca782",
+      "git_blob": "0d33a3316413ed6750a689efb4a094037af65d3d"
+    },
+    {
+      "path": "apps/web/src/composer-logic.ts",
+      "sha256": "a17f23659f857117b35ff7e01d25ef45941571ce576485064e9b17652d5de1b9",
+      "git_blob": "2dc9f6d08f8182b23e2bec4906e91920bd0077ce"
+    },
+    {
+      "path": "apps/web/src/components/ComposerPromptEditor.tsx",
+      "sha256": "cb15d26fdb94968dacc08616cfa0c9e3fbdce2bba1688f50878a05eb79a0c545",
+      "git_blob": "cb4810e6f17e7778e3413c34a30daae5ba2e9aaa"
+    },
+    {
+      "path": "apps/web/src/components/ComposerPromptEditorTiptap.tsx",
+      "sha256": "70b7b29bd059408c1bf0687ab2d41f150f172ebd654ad1977758c1719de237dc",
+      "git_blob": "a9accaf6e013ce425f1fafee1dac211163e54ea0"
+    },
+    {
+      "path": "apps/web/src/composer-rich-text-doc.ts",
+      "sha256": "e80744e326e65d15f8e6c16822c2998a887072e9af343b7b7666d0d14e1f1750",
+      "git_blob": "8c376fb5d93f718eea7b823aeda210ba6a644c75"
+    },
+    {
+      "path": "apps/server/src/provider/Drivers/ClaudeSkillDispatch.ts",
+      "sha256": "cd9b80f5c588ebe8878bb2ce2d330ef2c17292c7c2bb1f09f727156ecdfcfa2c",
+      "git_blob": "2dc106e853828e3972ae859ed7cd6ac6cf204cb5"
+    },
+    {
+      "path": "apps/web/src/components/chat/ChatComposer.tsx",
+      "sha256": "bc42c254d42c460f5ece123ac9ef4bfb2b8546a07793b39465cfc850e1dc5b07",
+      "git_blob": "05a5e6702092f9a61aded46fb99db4c73b97d632"
+    },
+    {
+      "path": "apps/web/src/components/ComposerPromptEditorTiptap.navigation.test.tsx",
+      "sha256": "2b3f4de6de157ba2ca88f05f236fcf89c183c2a64e6d9f5bd6c857d5d6bde086",
+      "git_blob": "53bc7104cbc3aac5ef80252c150be29b9e72ac10"
+    },
+    {
+      "path": "apps/web/src/components/contextChipParts.tsx",
+      "sha256": "eac95c62e7f169e7437222b66fec7467d4e136cf6f42331b902cc9801209a625",
+      "git_blob": "cf45749351f3d3e9b48a18f3cd9932b14043624c"
+    },
+    {
+      "path": "pnpm-lock.yaml",
+      "sha256": "6342162d528261bed2d8e2d09fc11212465b4615e58e1047a615b20994990965",
+      "git_blob": "b6cc9b75ca88de44fe8c75613a870224069d46d0"
+    },
+    {
+      "path": "vite.config.ts",
+      "sha256": "4aba6eefe3f0a79172ed9c4785aeb6dafff0ee768506d624eebb40c875ee4295",
+      "git_blob": "f96bdd28266cf01c809c947d96b69863f9d8bee9"
+    }
+  ],
+  "software_versions": {
+    "node": "24.19.0",
+    "pnpm": "11.10.0",
+    "vite-plus": "1.0.0",
+    "vitest": "5.0.1",
+    "effect": "4.0.4",
+    "@effect/platform-node": "4.0.4",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "jsdom": "30.1.0",
+    "@tiptap/core": "3.31.3"
+  },
+  "diagnostic": {
+    "artifact": "claudePluginEditorInsertion.diagnostic.test.tsx.txt",
+    "runtime_path": "apps/web/src/components/chat/claudePluginEditorInsertion.diagnostic.test.tsx",
+    "sha256": "b374c4b15bafd104fa6fa670d77430d446738efcf5f9311dced7ccba73abfaf2",
+    "initial_diagnostic_sha256": "65eeb824751748621eb85e027cab28f0486dc1400eca07701d70007db3310924",
+    "production_modules_mocked": false,
+    "selection_callback_extracted_or_copied": false,
+    "only_global_stub": "IS_REACT_ACT_ENVIRONMENT",
+    "case_matrix": {
+      "prefix": [
+        "please use ",
+        "please use\n"
+      ],
+      "richTextEnabled": [
+        true,
+        false
+      ]
+    },
+    "temporary_source_copy_removed": true
+  },
+  "runs": [
+    {
+      "command": [
+        "node",
+        "/workspace/scratch/df37e4e44cce/t3code-15662-qa-20261015/tooling/package/bin/pnpm.cjs",
+        "exec",
+        "vp",
+        "test",
+        "run",
+        "apps/web/src/components/ComposerPromptEditorTiptap.navigation.test.tsx"
+      ],
+      "cwd": "/workspace/scratch/df37e4e44cce/t3code-15662-merge-qa-20261015T1823Z/source",
+      "pid": 10,
+      "exit_code": -15,
+      "stop_reason": "Command '['du', '-s', '-B1', '/workspace/scratch/df37e4e44cce/t3code-15662-editor-qa-20261015T1917Z']' returned non-zero exit status 1.",
+      "elapsed_seconds": 11.98,
+      "peak_new_allocated_bytes": 8912896,
+      "final_new_allocated_bytes": 12046336,
+      "log_sha256": "37159aba290e47aad04ee7babad411085fb7979313f6da3e2b6dd9ad6fe33ab9",
+      "offline_package_manager_settings": true,
+      "kernel_network_isolation": false,
+      "id": "baseline",
+      "reported_cases": 0,
+      "passed": 0,
+      "failed": 0,
+      "interpretation": "Interrupted by watchdog du missing-file race before any reported test cases; instrumentation failure only.",
+      "metadata_sha256": "1f423af180dc0e9994bdbf4f99784c9f6db8ff596cb2dc56f60f47705fedb49b"
+    },
+    {
+      "command": [
+        "node",
+        "/workspace/scratch/df37e4e44cce/t3code-15662-qa-20261015/tooling/package/bin/pnpm.cjs",
+        "exec",
+        "vp",
+        "test",
+        "run",
+        "apps/web/src/components/ComposerPromptEditorTiptap.navigation.test.tsx"
+      ],
+      "cwd": "/workspace/scratch/df37e4e44cce/t3code-15662-merge-qa-20261015T1823Z/source",
+      "pid": 11,
+      "exit_code": 0,
+      "stop_reason": null,
+      "elapsed_seconds": 12.19,
+      "peak_new_allocated_bytes": 26828800,
+      "final_new_allocated_bytes": 26828800,
+      "log_sha256": "231d32a64463c92e56fe8cc19134eac37825f82de60a56a22c50c342401d163d",
+      "offline_package_manager_settings": true,
+      "kernel_network_isolation": false,
+      "id": "baseline-retry",
+      "reported_cases": 9,
+      "passed": 9,
+      "failed": 0,
+      "interpretation": "Unchanged existing editor navigation suite after narrow watchdog correction.",
+      "metadata_sha256": "21c6983259c320f02d5ab5088e7abc49582ebde464aa987fc1cbca193c6d5b20"
+    },
+    {
+      "command": [
+        "node",
+        "/workspace/scratch/df37e4e44cce/t3code-15662-qa-20261015/tooling/package/bin/pnpm.cjs",
+        "exec",
+        "vp",
+        "test",
+        "run",
+        "apps/web/src/components/chat/claudePluginEditorInsertion.diagnostic.test.tsx"
+      ],
+      "cwd": "/workspace/scratch/df37e4e44cce/t3code-15662-merge-qa-20261015T1823Z/source",
+      "pid": 11,
+      "exit_code": 1,
+      "stop_reason": null,
+      "elapsed_seconds": 12.77,
+      "peak_new_allocated_bytes": 40722432,
+      "final_new_allocated_bytes": 40722432,
+      "log_sha256": "dc45744164f8c04b16dfb04d7f27394a64e608820a32d1cc872b91605ffa3ff0",
+      "offline_package_manager_settings": true,
+      "kernel_network_isolation": false,
+      "id": "diagnostic-initial",
+      "reported_cases": 4,
+      "passed": 0,
+      "failed": 4,
+      "interpretation": "Harness expected aria-label without real component suffix . Show details; all four reached successful semantic skill-node assertion before label assertion failed.",
+      "metadata_sha256": "c98e875e102062c4662f4f4ea94e01153b2a76c8c2415f0da9bf6e6ff03b7fa1"
+    },
+    {
+      "command": [
+        "node",
+        "/workspace/scratch/df37e4e44cce/t3code-15662-qa-20261015/tooling/package/bin/pnpm.cjs",
+        "exec",
+        "vp",
+        "test",
+        "run",
+        "apps/web/src/components/chat/claudePluginEditorInsertion.diagnostic.test.tsx"
+      ],
+      "cwd": "/workspace/scratch/df37e4e44cce/t3code-15662-merge-qa-20261015T1823Z/source",
+      "pid": 138,
+      "exit_code": 0,
+      "stop_reason": null,
+      "elapsed_seconds": 11.55,
+      "peak_new_allocated_bytes": 54611968,
+      "final_new_allocated_bytes": 54611968,
+      "log_sha256": "dce924642d9b1e063eddc370b16749ff7f8ebf318c475898fdd3c0ce7ca1568b",
+      "offline_package_manager_settings": true,
+      "kernel_network_isolation": false,
+      "id": "diagnostic-final",
+      "reported_cases": 4,
+      "passed": 4,
+      "failed": 0,
+      "interpretation": "Corrected label assertion; added direct ProseMirror selection checks; final formatted diagnostic bytes.",
+      "metadata_sha256": "71ad140051adec91058498a4f6d6b08d908eda36029cf156b97fca5616f303ac"
+    },
+    {
+      "command": [
+        "node",
+        "/workspace/scratch/df37e4e44cce/t3code-15662-qa-20261015/tooling/package/bin/pnpm.cjs",
+        "exec",
+        "vp",
+        "test",
+        "run",
+        "apps/web/src/components/chat/claudePluginEditorInsertion.diagnostic.test.tsx"
+      ],
+      "cwd": "/workspace/scratch/df37e4e44cce/t3code-15662-merge-qa-20261015T1823Z/source",
+      "started_at": "2026-10-15T19:21:59.811760+00:00",
+      "elapsed_seconds": 12.33,
+      "pid": 6,
+      "exit_code": 0,
+      "stop_reason": null,
+      "test_sha256": "b374c4b15bafd104fa6fa670d77430d446738efcf5f9311dced7ccba73abfaf2",
+      "packet_test_sha256": "b374c4b15bafd104fa6fa670d77430d446738efcf5f9311dced7ccba73abfaf2",
+      "expected_test_sha256": "b374c4b15bafd104fa6fa670d77430d446738efcf5f9311dced7ccba73abfaf2",
+      "log_sha256": "e54ca2a8b53e23cd18c82d6594e275765dff640d36ca0c35d9a46fd85f920bfb",
+      "peak_new_artifact_bytes": 17235968,
+      "final_new_artifact_bytes": 17235968,
+      "offline_package_manager_settings": true,
+      "isolated_home_tmp": true,
+      "network_namespace_attempted": false,
+      "kernel_network_isolation": false,
+      "installs": 0,
+      "producer_test_bytes_unchanged": true,
+      "id": "diagnostic-independent",
+      "reported_cases": 4,
+      "passed": 4,
+      "failed": 0,
+      "metadata_sha256": "e8919eb81693300aed8fe4592c52dbb9dbc794c157f37e565cf5845a7ed4167f"
+    }
+  ],
+  "execution_counts": {
+    "unique_cases": 13,
+    "reported_case_executions": 21,
+    "passed_executions": 17,
+    "failed_harness_assertion_executions": 4,
+    "interrupted_runs_with_zero_reported_cases": 1,
+    "product_red_green_claim": false
+  },
+  "format": {
+    "command": [
+      "node",
+      "/workspace/scratch/df37e4e44cce/t3code-15662-qa-20261015/tooling/package/bin/pnpm.cjs",
+      "exec",
+      "vp",
+      "fmt",
+      "apps/web/src/components/chat/claudePluginEditorInsertion.diagnostic.test.tsx"
+    ],
+    "cwd": "/workspace/scratch/df37e4e44cce/t3code-15662-merge-qa-20261015T1823Z/source",
+    "pid": 12,
+    "exit_code": 0,
+    "stop_reason": null,
+    "elapsed_seconds": 6.67,
+    "peak_new_allocated_bytes": 40747008,
+    "final_new_allocated_bytes": 40742912,
+    "log_sha256": "e5501aff61659dd24415b92d45b6c8c9bc1f1d072323c0138e5cfff7e149bcac",
+    "offline_package_manager_settings": true,
+    "kernel_network_isolation": false
+  },
+  "lint": "not run in this stage",
+  "typecheck": "not run in this stage; opt-in cross-package placement, not merge-ready default test",
+  "warnings": {
+    "text": "flushSync was called from inside a lifecycle method. React cannot flush when React is already rendering. Consider moving this call to a scheduler task or micro task.",
+    "per_diagnostic_run": 4,
+    "diagnostic_runs": 3,
+    "suppressed": false,
+    "claim": "Observed React warning only; no established user-visible defect or impact."
+  },
+  "proof_boundary": {
+    "discovery": "actual discoverClaudeSkills on temporary synthetic installed-plugin files",
+    "inventory_trigger_search": "actual imported functions; provider command inventory is fixture data",
+    "editor": "actual imported ComposerPromptEditor mounted by react-dom in jsdom; real Tiptap document/transaction and observed DOM chip",
+    "selection": "harness chooses a search result and supplies controlled props via public helpers; ChatComposer selection callback and menu selection not executed",
+    "typing": "editor.commands.insertContent, not browser keystrokes",
+    "dispatch": "pure planClaudeSkillDispatch called with expected prompt after asserting actual editor serialization equals it; no provider call",
+    "not_proven": [
+      "current main runtime",
+      "full ChatComposer click or key selection",
+      "focus scheduling or stale-expected-text guard",
+      "real-browser layout or input",
+      "provider handshake or transport",
+      "SDK/CLI or live plugin execution"
+    ]
+  },
+  "safety": {
+    "installs": 0,
+    "production_changes": 0,
+    "provider_calls": 0,
+    "browser_launches": 0,
+    "upstream_actions": 0,
+    "default_branch_writes": 0,
+    "isolated_home_tmp": true,
+    "offline_package_manager_settings": true,
+    "network_namespace_attempted": false,
+    "kernel_network_isolation": false
+  },
+  "preservation": {
+    "source_originals_checked": 28079,
+    "source_mismatches": [],
+    "prior_stage_artifact_files_checked": 20,
+    "prior_stage_artifact_mismatches": [],
+    "owner_head_originals_checked": 27746,
+    "owner_head_source_mismatches": [],
+    "temporary_diagnostic_removed_after_hash_check": true,
+    "diagnostic_sha256": "b374c4b15bafd104fa6fa670d77430d446738efcf5f9311dced7ccba73abfaf2",
+    "new_allocation_bytes_including_independent_review": 71884800,
+    "elapsed_seconds": 382.65,
+    "finished_at": "2026-10-15T19:24:05Z"
+  },
+  "independent_review": {
+    "outcome": "accepted scoped proof; independently reproduced 4/4 and preservation checks",
+    "postflight_sha256": "5ca8a3c8b92624c41f5e77ad13eb4180faf8015ca7bb3f880a0d916d9f0e74ba",
+    "postflight": {
+      "source_sha": "99b5739268a9aeb1fc9ae9251984892341b74fcd",
+      "original_files_checked": 28079,
+      "source_mismatches": [],
+      "prior_evidence_files_checked": 20,
+      "prior_evidence_mismatches": [],
+      "producer_log_checks": [
+        {
+          "path": "/workspace/scratch/df37e4e44cce/t3code-15662-editor-qa-20261015T1917Z/logs/format.json",
+          "recorded_log_sha256": "e5501aff61659dd24415b92d45b6c8c9bc1f1d072323c0138e5cfff7e149bcac",
+          "actual_log_sha256": "e5501aff61659dd24415b92d45b6c8c9bc1f1d072323c0138e5cfff7e149bcac",
+          "matches": true
+        },
+        {
+          "path": "/workspace/scratch/df37e4e44cce/t3code-15662-editor-qa-20261015T1917Z/logs/baseline-retry.json",
+          "recorded_log_sha256": "231d32a64463c92e56fe8cc19134eac37825f82de60a56a22c50c342401d163d",
+          "actual_log_sha256": "231d32a64463c92e56fe8cc19134eac37825f82de60a56a22c50c342401d163d",
+          "matches": true
+        },
+        {
+          "path": "/workspace/scratch/df37e4e44cce/t3code-15662-editor-qa-20261015T1917Z/logs/diagnostic-initial.json",
+          "recorded_log_sha256": "dc45744164f8c04b16dfb04d7f27394a64e608820a32d1cc872b91605ffa3ff0",
+          "actual_log_sha256": "dc45744164f8c04b16dfb04d7f27394a64e608820a32d1cc872b91605ffa3ff0",
+          "matches": true
+        },
+        {
+          "path": "/workspace/scratch/df37e4e44cce/t3code-15662-editor-qa-20261015T1917Z/logs/baseline.json",
+          "recorded_log_sha256": "37159aba290e47aad04ee7babad411085fb7979313f6da3e2b6dd9ad6fe33ab9",
+          "actual_log_sha256": "37159aba290e47aad04ee7babad411085fb7979313f6da3e2b6dd9ad6fe33ab9",
+          "matches": true
+        },
+        {
+          "path": "/workspace/scratch/df37e4e44cce/t3code-15662-editor-qa-20261015T1917Z/logs/diagnostic-final.json",
+          "recorded_log_sha256": "dce924642d9b1e063eddc370b16749ff7f8ebf318c475898fdd3c0ce7ca1568b",
+          "actual_log_sha256": "dce924642d9b1e063eddc370b16749ff7f8ebf318c475898fdd3c0ce7ca1568b",
+          "matches": true
+        }
+      ],
+      "review_artifacts": [
+        {
+          "path": "/workspace/scratch/df37e4e44cce/t3code-15662-editor-independent-20261015T1918Z/diagnostic.json",
+          "sha256": "e8919eb81693300aed8fe4592c52dbb9dbc794c157f37e565cf5845a7ed4167f"
+        },
+        {
+          "path": "/workspace/scratch/df37e4e44cce/t3code-15662-editor-independent-20261015T1918Z/diagnostic.log",
+          "sha256": "e54ca2a8b53e23cd18c82d6594e275765dff640d36ca0c35d9a46fd85f920bfb"
+        },
+        {
+          "path": "/workspace/scratch/df37e4e44cce/t3code-15662-editor-independent-20261015T1918Z/preflight.json",
+          "sha256": "53110d27d148f402043694350c92389d8211208bad92745accb494c95e5ead6a"
+        },
+        {
+          "path": "/workspace/scratch/df37e4e44cce/t3code-15662-editor-independent-20261015T1918Z/run-independent.py",
+          "sha256": "dfe0dfebc1ec08212c5f7cd0d95708c035d270b7b51df9bf49d2d87bcc43cc11"
+        }
+      ]
+    }
+  },
+  "local_raw_artifact_hashes": [
+    {
+      "file": "logs/baseline-retry.json",
+      "sha256": "21c6983259c320f02d5ab5088e7abc49582ebde464aa987fc1cbca193c6d5b20"
+    },
+    {
+      "file": "logs/baseline-retry.log",
+      "sha256": "231d32a64463c92e56fe8cc19134eac37825f82de60a56a22c50c342401d163d"
+    },
+    {
+      "file": "logs/baseline.json",
+      "sha256": "1f423af180dc0e9994bdbf4f99784c9f6db8ff596cb2dc56f60f47705fedb49b"
+    },
+    {
+      "file": "logs/baseline.log",
+      "sha256": "37159aba290e47aad04ee7babad411085fb7979313f6da3e2b6dd9ad6fe33ab9"
+    },
+    {
+      "file": "logs/diagnostic-final.json",
+      "sha256": "71ad140051adec91058498a4f6d6b08d908eda36029cf156b97fca5616f303ac"
+    },
+    {
+      "file": "logs/diagnostic-final.log",
+      "sha256": "dce924642d9b1e063eddc370b16749ff7f8ebf318c475898fdd3c0ce7ca1568b"
+    },
+    {
+      "file": "logs/diagnostic-initial.json",
+      "sha256": "c98e875e102062c4662f4f4ea94e01153b2a76c8c2415f0da9bf6e6ff03b7fa1"
+    },
+    {
+      "file": "logs/diagnostic-initial.log",
+      "sha256": "dc45744164f8c04b16dfb04d7f27394a64e608820a32d1cc872b91605ffa3ff0"
+    },
+    {
+      "file": "logs/format.json",
+      "sha256": "76956d4ef470ee591a873aac65e9222f2a946b1f2ffaf485c2ada28c342cb005"
+    },
+    {
+      "file": "logs/format.log",
+      "sha256": "e5501aff61659dd24415b92d45b6c8c9bc1f1d072323c0138e5cfff7e149bcac"
+    }
+  ],
+  "credits": [
+    "Maria (maria-rcks): plugin discovery implementation",
+    "Moinax and shivamhwp: precursor contributions",
+    "Bil0000: existing inline trigger implementation",
+    "ChatGPT: downstream verification only"
+  ]
+}

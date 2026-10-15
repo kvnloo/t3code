@@ -1,0 +1,242 @@
+// @vitest-environment jsdom
+// Opt-in synthetic-merge component diagnostic. This mounts the real editor, but
+// deliberately does not mount ChatComposer or execute its selection callback.
+
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import type { Editor } from "@tiptap/core";
+import {
+  getProviderSkillsForSlashMenu,
+  getProviderSlashCommandsForSlashMenu,
+} from "@t3tools/client-runtime/providerSkills";
+import { ProviderDriverKind, type ServerProviderSkill } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { act, createRef } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
+
+import { discoverClaudeSkills } from "../../../../server/src/provider/Drivers/ClaudeSkills.ts";
+import { planClaudeSkillDispatch } from "../../../../server/src/provider/Drivers/ClaudeSkillDispatch.ts";
+import {
+  collapseExpandedComposerCursor,
+  detectComposerTrigger,
+  replaceTextRange,
+} from "../../composer-logic";
+import { serializeEditorDoc } from "../../composer-rich-text-doc";
+import { ComposerPromptEditor, type ComposerPromptEditorHandle } from "../ComposerPromptEditor";
+import type { ComposerCommandItem } from "./ComposerCommandMenu";
+import {
+  searchSlashCommandItems,
+  slashCommandItemsForPromptPosition,
+} from "./composerSlashCommandSearch";
+
+let root: Root;
+let container: HTMLDivElement;
+let tempDir: string;
+
+beforeEach(async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  tempDir = await mkdtemp(join(tmpdir(), "t3-plugin-editor-"));
+  container = document.createElement("div");
+  document.body.append(container);
+  root = createRoot(container);
+});
+
+afterEach(async () => {
+  await act(async () => root.unmount());
+  container.remove();
+  vi.unstubAllGlobals();
+  await rm(tempDir, { recursive: true, force: true });
+});
+
+async function discoverInstalledPlugin() {
+  const configDir = join(tempDir, "claude-home");
+  const pluginDir = join(configDir, "plugins", "cache", "shop", "skills", "1.0.0");
+  const skillPath = join(pluginDir, "skills", "implement", "SKILL.md");
+  await mkdir(dirname(skillPath), { recursive: true });
+  await writeFile(skillPath, "---\nname: implement\ndescription: Execute a work plan.\n---\n");
+  await mkdir(join(pluginDir, ".claude-plugin"), { recursive: true });
+  await writeFile(
+    join(pluginDir, ".claude-plugin", "plugin.json"),
+    JSON.stringify({ name: "mattpocock-skills" }),
+  );
+  await writeFile(
+    join(configDir, "plugins", "installed_plugins.json"),
+    JSON.stringify({ plugins: { "skills@shop": [{ scope: "user", installPath: pluginDir }] } }),
+  );
+  await writeFile(
+    join(configDir, "settings.json"),
+    JSON.stringify({ enabledPlugins: { "skills@shop": true } }),
+  );
+  const skills = await Effect.runPromise(
+    discoverClaudeSkills({ homePath: configDir }).pipe(Effect.provide(NodeServices.layer)),
+  );
+  expect(skills).toEqual([
+    {
+      name: "mattpocock-skills:implement",
+      path: skillPath,
+      enabled: true,
+      scope: "user",
+      description: "Execute a work plan.",
+    },
+  ]);
+  return skills;
+}
+
+function skillNodes(editor: Editor) {
+  const nodes: Array<{ name: string; label: string; atomic: boolean }> = [];
+  editor.state.doc.descendants((node) => {
+    if (node.type.name === "composer-skill")
+      nodes.push({ name: node.attrs.skillName, label: node.attrs.skillLabel, atomic: node.isAtom });
+  });
+  return nodes;
+}
+
+const cases = [
+  { position: "same line", prefix: "please use ", richTextEnabled: true },
+  { position: "same line", prefix: "please use ", richTextEnabled: false },
+  { position: "prior line", prefix: "please use\n", richTextEnabled: true },
+  { position: "prior line", prefix: "please use\n", richTextEnabled: false },
+];
+
+it.each(cases)(
+  "inserts discovered skill after $position with richText=$richTextEnabled",
+  async ({ prefix, richTextEnabled }) => {
+    const skills = await discoverInstalledPlugin();
+    const provider = ProviderDriverKind.make("claudeAgent");
+    const visibleSkills = getProviderSkillsForSlashMenu(skills, true);
+    const commands = getProviderSlashCommandsForSlashMenu(
+      [{ name: "mattpocock-skills:implement" }, { name: "context" }],
+      visibleSkills,
+    );
+    expect(commands.map((command) => command.name)).toEqual(["context"]);
+    const items = [
+      ...commands.map((command) => ({
+        id: `provider-slash-command:${provider}:${command.name}`,
+        type: "provider-slash-command" as const,
+        provider,
+        command,
+        label: `/${command.name}`,
+        description: "Run provider command",
+      })),
+      ...visibleSkills.map((skill) => ({
+        id: `skill:${provider}:${skill.name}`,
+        type: "skill" as const,
+        provider,
+        skill,
+        label: `/skill:${skill.name}`,
+        description: skill.description ?? "",
+      })),
+    ] satisfies Array<Extract<ComposerCommandItem, { type: "provider-slash-command" | "skill" }>>;
+
+    const initial = `${prefix}/impl`;
+    const editorRef = createRef<ComposerPromptEditorHandle>();
+    const changes: string[] = [];
+    const render = async (
+      value: string,
+      cursor: number,
+      inventory: ReadonlyArray<ServerProviderSkill>,
+    ) => {
+      await act(async () =>
+        root.render(
+          <ComposerPromptEditor
+            editorRef={editorRef}
+            value={value}
+            cursor={cursor}
+            richTextEnabled={richTextEnabled}
+            contextRecords={new Map()}
+            skills={inventory}
+            disabled={false}
+            placeholder=""
+            onChange={(next) => changes.push(next)}
+            onPaste={() => {}}
+          />,
+        ),
+      );
+    };
+    await render(initial, initial.length, skills);
+    const element = container.querySelector<HTMLElement & { editor: Editor }>(".tiptap");
+    if (!element || !editorRef.current) throw new Error("Real composer editor did not mount");
+    const editor = element.editor;
+    const before = editorRef.current.readSnapshot();
+    expect(before.value).toBe(initial);
+    expect(before.expandedCursor).toBe(initial.length);
+    expect(skillNodes(editor)).toEqual([]);
+
+    const trigger = detectComposerTrigger(before.value, before.expandedCursor);
+    expect(trigger).toEqual({
+      kind: "slash-command",
+      query: "impl",
+      rangeStart: prefix.length,
+      rangeEnd: initial.length,
+    });
+    if (!trigger) throw new Error("Expected slash trigger");
+    const visibleItems = slashCommandItemsForPromptPosition(items, trigger.rangeStart === 0);
+    expect(searchSlashCommandItems(visibleItems, "context")).toEqual([]);
+    const matches = searchSlashCommandItems(visibleItems, trigger.query);
+    expect(matches.map((item) => item.id)).toEqual([
+      "skill:claudeAgent:mattpocock-skills:implement",
+    ]);
+    const selected = matches[0];
+    if (!selected || selected.type !== "skill")
+      throw new Error("Expected discovered skill candidate");
+
+    // Harness boundary: choose the search result directly and supply a controlled
+    // value with the same public helpers. ChatComposer's callback is NOT invoked.
+    const next = replaceTextRange(
+      before.value,
+      trigger.rangeStart,
+      trigger.rangeEnd,
+      `$${selected.skill.name} `,
+    );
+    const cursor = collapseExpandedComposerCursor(next.text, next.cursor);
+    const expected = `${prefix}$mattpocock-skills:implement `;
+    expect(next.text).toBe(expected);
+    expect(cursor).toBe(prefix.length + 2);
+    await render(next.text, cursor, skills);
+    expect(container.querySelector<HTMLElement & { editor: Editor }>(".tiptap")?.editor).toBe(
+      editor,
+    );
+    expect(skillNodes(editor)).toEqual([
+      { name: "mattpocock-skills:implement", label: "Mattpocock Skills Implement", atomic: true },
+    ]);
+    expect(
+      container.querySelector('[aria-label="Skill Mattpocock Skills Implement. Show details"]'),
+    ).not.toBeNull();
+    expect(serializeEditorDoc(editor.state.doc).value).toBe(expected);
+    expect(editor.state.selection.empty).toBe(true);
+    expect(editor.state.selection.$from.nodeBefore?.text).toBe(" ");
+    expect(editorRef.current.readSnapshot()).toEqual({
+      value: expected,
+      cursor: prefix.length + 2,
+      expandedCursor: expected.length,
+      contextIds: [],
+    });
+
+    // Use the actual editor transaction at its real current selection. This catches
+    // an incorrect controlled cursor that would put following text before the chip.
+    await act(async () => {
+      editor.commands.insertContent("and explain");
+    });
+    const final = `${expected}and explain`;
+    expect(serializeEditorDoc(editor.state.doc).value).toBe(final);
+    expect(editorRef.current.readSnapshot()).toEqual({
+      value: final,
+      cursor: prefix.length + 2 + "and explain".length,
+      expandedCursor: final.length,
+      contextIds: [],
+    });
+    expect(changes).toContain(final);
+    expect(skillNodes(editor)).toHaveLength(1);
+
+    // Pure dispatch planning only. No provider, SDK, transport, or CLI runs here.
+    expect(planClaudeSkillDispatch(final, new Set(skills.map((skill) => skill.name)))).toEqual({
+      leadingText: "please use",
+      commandText: "/mattpocock-skills:implement and explain",
+      skillName: "mattpocock-skills:implement",
+    });
+    expect(planClaudeSkillDispatch(final, new Set())).toBeUndefined();
+  },
+);
