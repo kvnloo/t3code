@@ -128,6 +128,14 @@ function AssistantQuickActionsContent(props: { readonly onClose: () => void }) {
           updatedAt: thread.updatedAt,
           needsApproval: thread.hasPendingApprovals,
           needsAnswer: thread.hasPendingUserInput,
+          // Preserve inherited requests from hidden delegated subagents.
+          // Older mobile shells may not expose this field yet.
+          pendingSubagentRequest:
+            "pendingSubagentRequest" in thread &&
+            (thread.pendingSubagentRequest === "approval" ||
+              thread.pendingSubagentRequest === "user_input")
+              ? thread.pendingSubagentRequest
+              : null,
           needsPlanReview:
             thread.interactionMode === "plan" && thread.hasActionableProposedPlan,
           failed: thread.latestRun?.status === "failed" || thread.runtime?.status === "failed",
