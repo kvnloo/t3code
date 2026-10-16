@@ -98,6 +98,7 @@ export function admitAssistantJevNavigation(
     !navigationCue.test(canonical(utterance)) ||
     !Number.isFinite(confidence) ||
     confidence < ASSISTANT_JEV_MIN_CONFIDENCE ||
+    confidence > 1 ||
     !DESTINATION_VALUES.some((value) => value === destination)
   ) {
     return { kind: "agent", reason: "low-confidence" };
