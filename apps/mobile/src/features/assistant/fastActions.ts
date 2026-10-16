@@ -52,6 +52,8 @@ function canonical(text: string): string {
 
 /** Only exact low-risk phrases are admitted without a model. */
 export function resolveAssistantFastAction(utterance: string): AssistantFastResolution {
+  // Bound the untrusted raw transcript before NFKC/whitespace normalization.
+  if (utterance.length > 160) return { kind: "agent", reason: "too-long" };
   const phrase = canonical(utterance);
   if (phrase.length > 160) return { kind: "agent", reason: "too-long" };
   if (phrase.length === 0) return { kind: "agent", reason: "unrecognized" };
