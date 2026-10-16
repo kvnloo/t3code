@@ -25,16 +25,31 @@ export function formatCount(value: number): string {
   return INTEGER.format(Math.round(value));
 }
 
+const TOKEN_UNITS = [
+  [1e12, "T"],
+  [1e9, "B"],
+  [1e6, "M"],
+  [1e3, "K"],
+] as const;
+
 /**
  * Compacts a token count to three significant figures with a unit suffix, so
  * columns of numbers line up at a glance (`19.9B`, `76.7M`, `804K`).
  */
 export function formatTokens(value: number): string {
   const abs = Math.abs(value);
-  if (abs >= 1e12) return `${trim(value / 1e12)}T`;
-  if (abs >= 1e9) return `${trim(value / 1e9)}B`;
-  if (abs >= 1e6) return `${trim(value / 1e6)}M`;
-  if (abs >= 1e3) return `${trim(value / 1e3)}K`;
+  for (let i = 0; i < TOKEN_UNITS.length; i++) {
+    const [scale, suffix] = TOKEN_UNITS[i];
+    if (abs < scale) continue;
+    const text = trim(value / scale);
+    // trim() rounds: 999.5K would otherwise print "1000K". Promote a
+    // rounded-up boundary into the next unit so columns stay aligned.
+    if ((text === "1000" || text === "-1000") && i > 0) {
+      const [nextScale, nextSuffix] = TOKEN_UNITS[i - 1];
+      return `${trim(value / nextScale)}${nextSuffix}`;
+    }
+    return `${text}${suffix}`;
+  }
   return INTEGER.format(Math.round(value));
 }
 
