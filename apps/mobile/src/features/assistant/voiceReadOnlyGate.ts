@@ -105,10 +105,22 @@ export function createAssistantReadOnlyVoiceGate(config: {
       } catch {
         return refused("unavailable");
       }
-      const environment = projection.environments.find(
+      // A reconnect may momentarily yield conflicting rows for the selected
+      // environment. Reject disagreements instead of trusting the first match.
+      const selectedRows = projection.environments.filter(
         (entry) => entry.environmentId === config.environmentId,
       );
-      if (!environment?.enabled || !environment.connected || !environment.shellLive) {
+      const environment = selectedRows[0];
+      if (
+        !environment ||
+        selectedRows.some(
+          (entry) =>
+            !entry.enabled ||
+            !entry.connected ||
+            !entry.shellLive ||
+            entry.label !== environment.label,
+        )
+      ) {
         return refused("unavailable");
       }
       const currentThreads = projection.threads.filter(
