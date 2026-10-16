@@ -105,6 +105,9 @@ export function createAssistantReadOnlyVoiceGate(config: {
       } catch {
         return refused("unavailable");
       }
+      // Consent or transport ownership may be revoked synchronously while
+      // reading the projection; never return private data after revocation.
+      if (closed || config.signal?.aborted) return refused("closed");
       // A reconnect may momentarily yield conflicting rows for the selected
       // environment. Reject disagreements instead of trusting the first match.
       const selectedRows = projection.environments.filter(
