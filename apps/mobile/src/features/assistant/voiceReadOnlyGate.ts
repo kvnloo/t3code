@@ -126,9 +126,28 @@ export function createAssistantReadOnlyVoiceGate(config: {
       ) {
         return refused("unavailable");
       }
-      const currentThreads = projection.threads.filter(
-        (thread) => thread.environmentId === config.environmentId,
-      );
+      // Cached and live shell projections can temporarily contain the same
+      // thread identity twice. Never choose a stale title or suppress a pending
+      // approval based on whichever row happens to arrive first.
+      const byThreadId = new Map<string, AssistantAttentionFacts>();
+      for (const thread of projection.threads) {
+        if (thread.environmentId !== config.environmentId) continue;
+        const prior = byThreadId.get(thread.threadId);
+        if (
+          prior &&
+          (prior.title !== thread.title ||
+            prior.updatedAt !== thread.updatedAt ||
+            prior.needsApproval !== thread.needsApproval ||
+            prior.needsAnswer !== thread.needsAnswer ||
+            prior.needsPlanReview !== thread.needsPlanReview ||
+            prior.failed !== thread.failed ||
+            prior.working !== thread.working)
+        ) {
+          return refused("unavailable");
+        }
+        byThreadId.set(thread.threadId, thread);
+      }
+      const currentThreads = [...byThreadId.values()];
       if (resolved.action.kind === "inspect") {
         const snapshot = buildAssistantAttentionSnapshot([environment], currentThreads);
         const items = filterAssistantAttentionItems(snapshot.items, resolved.action.queue);
