@@ -95,9 +95,16 @@ export function admitAssistantJevNavigation(
   if (rule.kind === "action" || rule.reason === "too-long") return rule;
   // A high-confidence label is not evidence that the user wanted to
   // navigate. Never reinterpret a write, stop or approval request as UI motion.
-  const navigationCue = /^(?:open|show|go to|take me to|navigate to|bring up|switch to|jump to)\b/;
+  // Require one complete navigation intent; never drop trailing instructions.
+  const navigationMatch =
+    /^(?:open|show|go to|take me to|navigate to|bring up|switch to|jump to)\s+(?:(?:the|my)\s+)?(.+?)(?:\s+(?:page|dashboard|overview))?$/.exec(
+      canonical(utterance),
+    );
+  const namedTarget = navigationMatch?.[1] ?? "";
+  const namedDestination = namedTarget === "pr" ? "pulls" : DESTINATIONS[namedTarget];
   if (
-    !navigationCue.test(canonical(utterance)) ||
+    namedDestination === undefined ||
+    namedDestination !== destination ||
     !Number.isFinite(confidence) ||
     confidence < ASSISTANT_JEV_MIN_CONFIDENCE ||
     confidence > 1 ||
