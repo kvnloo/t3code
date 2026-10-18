@@ -1,4 +1,6 @@
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { NonNegativeInt, TextGenerationError } from "@t3tools/contracts";
@@ -9,6 +11,9 @@ import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
 import * as TextGenerationOperations from "@t3tools/provider-core/server/textGenerationOperations";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
 import * as OpenCodeServerOwner from "./OpenCodeServerOwner.ts";
+
+// Match the three-minute generation budget used by the OpenCode 2 provider.
+const OPENCODE_TEXT_GENERATION_TIMEOUT = "3 minutes";
 
 const OpenCodeTextGenerationOperation = Schema.Literals([
   "generateCommitMessage",
@@ -186,11 +191,14 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
           ...(server.serverPassword !== undefined ? { serverPassword: server.serverPassword } : {}),
         });
         const session = yield* Effect.tryPromise({
-          try: () =>
-            client.session.create({
-              title: `T3 Code ${input.operation}`,
-              permission: [{ permission: "*", pattern: "*", action: "deny" }],
-            }),
+          try: (signal) =>
+            client.session.create(
+              {
+                title: `T3 Code ${input.operation}`,
+                permission: [{ permission: "*", pattern: "*", action: "deny" }],
+              },
+              { signal },
+            ),
           catch: (cause) =>
             new OpenCodeTextGenerationSessionRequestError({
               operation: input.operation,
@@ -215,20 +223,44 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
         };
 
         const result = yield* Effect.tryPromise({
-          try: () =>
-            client.session.prompt({
-              sessionID: session.data.id,
-              model: parsedModel,
-              ...(selectedAgent ? { agent: selectedAgent } : {}),
-              ...(selectedVariant ? { variant: selectedVariant } : {}),
-              parts: [{ type: "text", text: input.prompt }, ...fileParts],
-            }),
+          try: (signal) =>
+            client.session.prompt(
+              {
+                sessionID: session.data.id,
+                model: parsedModel,
+                ...(selectedAgent ? { agent: selectedAgent } : {}),
+                ...(selectedVariant ? { variant: selectedVariant } : {}),
+                parts: [{ type: "text", text: input.prompt }, ...fileParts],
+              },
+              { signal },
+            ),
           catch: (cause) =>
             new OpenCodeTextGenerationPromptRequestError({
               ...promptContext,
               cause,
             }),
-        });
+        }).pipe(
+          // Request cancellation alone does not stop generation on the OpenCode server.
+          // This session-specific cleanup follows the approach in #10606 (yashranaway).
+          Effect.onInterrupt(() =>
+            OpenCodeRuntime.runOpenCodeSdk("session.abort", (signal) =>
+              client.session.abort({ sessionID: session.data.id }, { signal }),
+            ).pipe(
+              // The onInterrupt finalizer is masked. Run the bounded abort
+              // in a fresh, interruptible child; wait for it before returning.
+              Effect.timeout("10 seconds"),
+              Effect.catch(() =>
+                Effect.logWarning(
+                  "Failed to stop cancelled OpenCode text generation.",
+                  promptContext,
+                ),
+              ),
+              Effect.asVoid,
+              Effect.forkChild({ startImmediately: true, uninterruptible: false }),
+              Effect.flatMap(Fiber.join),
+            ),
+          ),
+        );
         const promptFailure = getOpenCodePromptFailure(result.data?.info?.error);
         if (promptFailure) {
           return yield* new OpenCodeTextGenerationPromptResponseError({
@@ -306,6 +338,19 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
             .pipe(Effect.flatMap(runAgainstServer), Effect.scoped)
         : serverOwner.withServer(runAgainstServer);
     const rawOutput = yield* serverOutput.pipe(
+      Effect.timeoutOption(OPENCODE_TEXT_GENERATION_TIMEOUT),
+      Effect.flatMap(
+        Option.match({
+          onNone: () =>
+            Effect.fail(
+              new TextGenerationError({
+                operation: input.operation,
+                detail: "OpenCode request timed out.",
+              }),
+            ),
+          onSome: (value) => Effect.succeed(value),
+        }),
+      ),
       Effect.catchTags({
         OpenCodeRuntimeError: (cause) =>
           Effect.fail(
