@@ -139,3 +139,20 @@ Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR
 Have a feature request? Start an [Ideas discussion](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
 
 Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
+
+## Linux agent memory policy
+
+Linux agent scopes use a shared hard memory ceiling by default. T3 Code does not
+set `MemoryHigh`: synchronous reclaim throttling can stall active tools before a
+hard limit is reached.
+
+Set `T3CODE_AGENT_MEMORY_POLICY=inherit` in the server's environment to leave both
+memory properties entirely to your systemd host policy. Alternatively,
+`T3CODE_AGENT_MEMORY_MAX` sets the managed hard ceiling as a positive integer byte
+count (for example, `4294967296` for 4 GiB). Invalid managed values fail rather
+than silently launching without the requested ceiling.
+
+These settings apply when the server initializes agent scopes. They do not
+remove runtime overrides written by an older T3 version; review and remove those
+exact `user.control` overrides separately when migrating to host-managed policy.
+

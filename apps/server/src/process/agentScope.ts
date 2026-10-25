@@ -28,16 +28,29 @@ export function ownedAgentSlice(stateDir: string): string {
 const GiB = 1024 ** 3;
 
 /**
- * Agents together leave about 6 GB free before they are throttled and 4 GB
- * before the kernel kills one, so the server, sshd, and tailscaled keep
- * working. Small machines still give agents at least half of RAM before
- * throttling and three quarters before a kill.
+ * Leave 4 GiB for the host (at least a quarter on small machines).
+ * Do not impose MemoryHigh: synchronous reclaim can stall active agent tools.
+ * T3CODE_AGENT_MEMORY_POLICY=inherit leaves both properties to host policy.
+ * T3CODE_AGENT_MEMORY_MAX overrides the managed hard limit in positive bytes.
  */
-function agentSliceMemoryLimits(totalBytes: number) {
-  return {
-    high: Math.max(totalBytes - 6 * GiB, Math.floor(totalBytes / 2)),
-    max: Math.max(totalBytes - 4 * GiB, Math.floor(totalBytes * 0.75)),
-  };
+export function agentSliceMemoryLimits(
+  totalBytes: number,
+  env: Readonly<Record<string, string | undefined>> = {},
+): { max: number } | undefined {
+  const policy = env.T3CODE_AGENT_MEMORY_POLICY ?? "managed";
+  if (policy === "inherit") return undefined;
+  if (policy !== "managed") {
+    throw new Error("T3CODE_AGENT_MEMORY_POLICY must be managed or inherit");
+  }
+  const explicit = env.T3CODE_AGENT_MEMORY_MAX;
+  if (explicit !== undefined) {
+    const max = Number(explicit);
+    if (!/^[1-9]\d*$/.test(explicit) || !Number.isSafeInteger(max)) {
+      throw new Error("T3CODE_AGENT_MEMORY_MAX must be a positive safe integer byte count");
+    }
+    return { max };
+  }
+  return { max: Math.max(totalBytes - 4 * GiB, Math.floor(totalBytes * 0.75)) };
 }
 
 export interface ScopeState {
@@ -172,19 +185,20 @@ export const make = Effect.gen(function* () {
         yield* Effect.logInfo("Agent scopes are off: no systemd user manager");
         return undefined;
       }
-      const limits = agentSliceMemoryLimits(NodeOS.totalmem());
-      const limited = yield* run(systemctl, [
-        "--user",
-        "set-property",
-        "--runtime",
-        AGENT_SLICE,
-        `MemoryHigh=${limits.high}`,
-        `MemoryMax=${limits.max}`,
-      ]);
-      if (limited._tag === "None" || limited.value.code !== 0) {
-        yield* Effect.logWarning("Could not set memory limits on the agents slice", {
-          stderr: limited._tag === "Some" ? limited.value.stderr.trim() : undefined,
-        });
+      const limits = agentSliceMemoryLimits(NodeOS.totalmem(), hostEnvironment);
+      if (limits !== undefined) {
+        const limited = yield* run(systemctl, [
+          "--user",
+          "set-property",
+          "--runtime",
+          AGENT_SLICE,
+          `MemoryMax=${limits.max}`,
+        ]);
+        if (limited._tag === "None" || limited.value.code !== 0) {
+          yield* Effect.logWarning("Could not set memory limits on the agents slice", {
+            stderr: limited._tag === "Some" ? limited.value.stderr.trim() : undefined,
+          });
+        }
       }
       yield* Effect.logInfo("Agent scopes are on", {
         slice: AGENT_SLICE,

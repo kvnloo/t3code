@@ -16,7 +16,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as ServerConfig from "../config.ts";
 import { makeCodexAppServerSpawnCommand } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
 import * as ProcessRunner from "../processRunner.ts";
-import { classifyScope, make, ownedAgentSlice, type ScopeState } from "./agentScope.ts";
+import { agentSliceMemoryLimits, classifyScope, make, ownedAgentSlice, type ScopeState } from "./agentScope.ts";
 
 const running: ScopeState = {
   loadState: "loaded",
@@ -34,6 +34,33 @@ describe("classifyScope", () => {
     expect(classifyScope({ ...running, oomKills: 1 })).toBe("stopping");
     expect(classifyScope({ ...running, populated: false })).toBe("stopping");
     expect(classifyScope({ ...running, activeState: "deactivating" })).toBe("stopping");
+  });
+});
+
+describe("agentSliceMemoryLimits", () => {
+  it("uses only a hard ceiling by default", () => {
+    expect(agentSliceMemoryLimits(24 * 1024 ** 3)).toEqual({ max: 20 * 1024 ** 3 });
+    expect(agentSliceMemoryLimits(2 * 1024 ** 3)).toEqual({ max: 1.5 * 1024 ** 3 });
+  });
+
+  it("leaves host policy untouched in inherit mode", () => {
+    expect(agentSliceMemoryLimits(24 * 1024 ** 3, {
+      T3CODE_AGENT_MEMORY_POLICY: "inherit",
+    })).toBeUndefined();
+  });
+
+  it("accepts an explicit hard ceiling in bytes and rejects invalid settings", () => {
+    expect(agentSliceMemoryLimits(24 * 1024 ** 3, {
+      T3CODE_AGENT_MEMORY_MAX: "4294967296",
+    })).toEqual({ max: 4294967296 });
+    for (const value of ["", "0", "-1", "1.5", "NaN", "Infinity", "4G", "9007199254740992"]) {
+      expect(() => agentSliceMemoryLimits(24 * 1024 ** 3, {
+        T3CODE_AGENT_MEMORY_MAX: value,
+      })).toThrow("positive safe integer");
+    }
+    expect(() => agentSliceMemoryLimits(24 * 1024 ** 3, {
+      T3CODE_AGENT_MEMORY_POLICY: "unknown",
+    })).toThrow("managed or inherit");
   });
 });
 
@@ -55,7 +82,12 @@ const withFakeSystemd = <A, E>(
   {
     oomPolicy = true,
     stopFails = false,
-  }: { readonly oomPolicy?: boolean; readonly stopFails?: boolean } = {},
+    environment = {},
+  }: {
+    readonly oomPolicy?: boolean;
+    readonly stopFails?: boolean;
+    readonly environment?: Readonly<Record<string, string>>;
+  } = {},
 ) =>
   Effect.gen(function* () {
     const bin = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-agent-scope-"));
@@ -105,7 +137,9 @@ const withFakeSystemd = <A, E>(
     const scope = yield* make.pipe(
       Effect.provideService(ProcessRunner.ProcessRunner, runner),
       Effect.provideService(HostProcess.Platform, "linux"),
-      Effect.provideService(HostProcess.Environment, { PATH: bin, XDG_RUNTIME_DIR: "/run/user/1" }),
+      Effect.provideService(HostProcess.Environment, {
+        ...environment, PATH: bin, XDG_RUNTIME_DIR: "/run/user/1",
+      }),
       Effect.provideService(FileSystem.FileSystem, {
         ...fileSystem,
         readFileString: (path, encoding) =>
@@ -167,6 +201,25 @@ const launchCodex = (scope: Effect.Success<typeof make>, threadId: string) =>
   );
 
 describe("AgentScope service", () => {
+  it.effect("does not write resource overrides in inherit mode", () =>
+    withFakeSystemd(({ scope, calls }) =>
+      Effect.gen(function* () {
+        const agent = yield* scope.wrap({ command: "agent", args: [], name: "t", threadId: "a" });
+        expect(agent.args.some((arg) => arg.startsWith("--slice="))).toBe(true);
+        expect(calls.filter(([, verb]) => verb === "set-property")).toEqual([]);
+      }), { environment: { T3CODE_AGENT_MEMORY_POLICY: "inherit" } }),
+  );
+
+  it.effect("applies an explicit hard limit without a reclaim throttle", () =>
+    withFakeSystemd(({ scope, calls }) =>
+      Effect.gen(function* () {
+        yield* scope.wrap({ command: "agent", args: [], name: "t", threadId: "a" });
+        expect(calls.filter(([, verb]) => verb === "set-property")).toEqual([
+          ["--user", "set-property", "--runtime", "app-t3code-agents.slice", "MemoryMax=4294967296"],
+        ]);
+      }), { environment: { T3CODE_AGENT_MEMORY_MAX: "4294967296" } }),
+  );
+
   it.effect("labels a thread from its newest scope until its next session clears it", () =>
     withFakeSystemd(({ scope, units }) =>
       Effect.gen(function* () {
