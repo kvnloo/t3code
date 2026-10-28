@@ -105,6 +105,7 @@ home machine. The checked-in YAML intentionally has an unpullable image token.
    fingerprint: keep it private and out of Git. A PASS is **not** proof of
    working HTTPS, ACL enforcement, client pairing, saved threads, app readiness
    or provider execution; perform the manual checks separately.
+
 4. Verify pod/container image IDs, CPU/memory/ephemeral limits, absence of
    mounted Kubernetes tokens, tailnet policy denial from an unauthorized device,
    and **negative ingress test from a non-Tailscale namespace**. Inspect
