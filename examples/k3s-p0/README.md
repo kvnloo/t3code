@@ -72,7 +72,7 @@ home machine. The checked-in YAML intentionally has an unpullable image token.
    demand*, without sending it to GitHub or storing it in pod logs:
    `kubectl --context YOUR_DISPOSABLE_K3S_CONTEXT -n t3-k3s-p0 exec
    deployment/t3-owner -- /opt/t3/t3 auth pairing create --base-dir /data/t3
-   --base-url https://ACTUAL_TAILNET_NAME.ts.net --ttl 5m`.
+   --base-url https://ACTUAL_INGRESS_FQDN --ttl 5m`.
    Pair a web/desktop/mobile client reachable via the same tailnet. Verify
    the server descriptor and its environment ID. Pairing a client does **not**
    create an OAuth peer link; linked environments beta is separately consented.
@@ -84,6 +84,27 @@ home machine. The checked-in YAML intentionally has an unpullable image token.
    unchanged. The fixed pod hostname mitigates `os.hostname()` drift in
    usage fingerprints (see [upstream #11849](https://github.com/pingdotgg/t3code/issues/11849)),
    but is not itself proof of identity persistence.
+
+   For **read-only, reproducible identity evidence**, capture a local baseline
+   after the first verified Ready deployment, then verify it **after** the
+   human-triggered restart above (never point at the existing home cluster):
+
+   ```sh
+   python3 examples/k3s-p0/acceptance.py --context YOUR_DISPOSABLE_K3S_CONTEXT \
+     --write-baseline /tmp/t3-p0-identity.json
+   # Human explicitly performs rollout restart; wait for Ready before continuing.
+   python3 examples/k3s-p0/acceptance.py --context YOUR_DISPOSABLE_K3S_CONTEXT \
+     --check-baseline /tmp/t3-p0-identity.json
+   ```
+
+   The probe uses only read-only `kubectl get` and `kubectl exec ... cat`
+   requests. It checks a Ready replica, digest reference, Bound PVC, private
+   Service/Tailscale Ingress and **unchanged hashed environment ID, PVC UID and
+   ingress hostname**; it never prints the raw ID, grants access, restarts a
+   server or applies/deletes resources. The baseline contains a stable identity
+   fingerprint: keep it private and out of Git. A PASS is **not** proof of
+   working HTTPS, ACL enforcement, client pairing, saved threads, app readiness
+   or provider execution; perform the manual checks separately.
 4. Verify pod/container image IDs, CPU/memory/ephemeral limits, absence of
    mounted Kubernetes tokens, tailnet policy denial from an unauthorized device,
    and **negative ingress test from a non-Tailscale namespace**. Inspect
