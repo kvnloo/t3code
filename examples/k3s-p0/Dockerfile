@@ -19,7 +19,7 @@ RUN set -eu; \
   base="https://github.com/pingdotgg/t3code/releases/download/v${T3_VERSION}"; \
   curl --fail --silent --show-error --location "${base}/SHA256SUMS" -o /tmp/SHA256SUMS; \
   curl --fail --silent --show-error --location "${base}/${archive}" -o /tmp/t3.tar.gz; \
-  expected="$(awk -v name="${archive}" '{ n=$2; sub(/^\\*/, "", n); if (n == name) { print $1; exit } }' /tmp/SHA256SUMS)"; \
+  expected="$(awk -v name="${archive}" '{ n=$2; if (substr(n, 1, 1) == "*") n=substr(n, 2); if (n == name) { print $1; exit } }' /tmp/SHA256SUMS)"; \
   test -n "${expected}"; \
   printf '%s  %s\n' "${expected}" /tmp/t3.tar.gz | sha256sum --check --status; \
   mkdir -p /opt/t3; \
