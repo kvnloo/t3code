@@ -36,6 +36,29 @@ K3s must enforce NetworkPolicy for the ingress allowlist to work. Pods do
 **egress unrestricted** for the owner process. Use a dedicated cluster/node
 for the first experiment, not existing household infrastructure.
 
+## Read-only cluster preflight (before any apply)
+
+On an **owner-approved disposable test context**, check basic API prerequisites
+without creating, deleting or restarting anything:
+
+```sh
+python3 examples/k3s-p0/preflight.py --context YOUR_DISPOSABLE_K3S_CONTEXT
+```
+
+The probe uses explicit-context `kubectl get` requests only. It requires
+Kubernetes 1.28+, exactly one Ready/un-tainted/schedulable node, an **absent**
+`t3-k3s-p0` namespace (protecting existing state), the `tailscale` namespace
+and IngressClass controller `tailscale.com/ts-ingress`, and exactly one named
+default StorageClass. Missing RBAC or API data fails closed; errors never copy
+kubectl stderr that could expose private endpoints. No credentials are exported.
+
+**This cannot prove a cluster is disposable or yours.** It also does not test
+whether the Tailscale operator is healthy, certificates are issued, the
+selected StorageClass can actually bind a PVC, NetworkPolicy is enforced by the
+CNI, or tailnet ACLs/route identity are correct. Verify those separately, and
+review the selected kubeconfig context and physical host before approving any
+live apply. A PASS means *prerequisite metadata only*, not P0 acceptance.
+
 ## Offline proof (safe)
 
 ```sh
