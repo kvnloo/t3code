@@ -101,10 +101,23 @@ home machine. The checked-in YAML intentionally has an unpullable image token.
    requests. It also verifies actual Pod image/labels, PVC mount, no API-token
    mount or hostPath, Service selector/port, private Ingress backend/TLS,
    and live EndpointSlice target Pod UID, IP, readiness and T3 port 3773.
-   It also rejects an unobserved/incomplete Deployment rollout. This closes
+   It checks the **exact requested** `t3-k3s-p0.<tailnet>.ts.net` Ingress
+   hostname, rejects additional reported ingress addresses, and verifies that
+   **the namespace has exactly one unchanged, narrow ingress NetworkPolicy**.
+   Kubernetes policies are additive, so a second broad allow would invalidate
+   the isolation claim. This is intentionally strict for this isolated fixture:
+   additional operator-injected policies require review instead of a green
+   acceptance result. The check needs permission to **list NetworkPolicies**
+   and `pods/exec` permission to read the environment ID; it is not a
+   read-only-RBAC-only Kubernetes probe. It also rejects an
+   unobserved/incomplete Deployment rollout. This closes
    false-green checks where an unrelated/stale Pod or Service looks Ready
    without actually selecting the intended T3 data. The API evidence is
-   **not** a dataplane/TLS/ACL probe; test those separately. It requires
+   **not** a dataplane/TLS/ACL or CNI enforcement probe; test those separately.
+   A matching Ingress name does not prove its DNS resolves to the expected
+   private tailnet destination: independently resolve the hostname, test
+   HTTPS certificate/identity from an approved client, and confirm denied
+   access from an unauthorized tailnet identity and unrelated Pod namespace. It requires
    **one Running/Ready Pod with a new Pod UID** after the
    human-triggered rollout, while checking unchanged hashed environment ID,
    PVC UID, ingress hostname and pinned image digest. Merely running the probe

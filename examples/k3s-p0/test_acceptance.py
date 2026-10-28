@@ -51,6 +51,19 @@ def fake_reads(identity="stable-id", ready=True, host="t3-k3s-p0.tailxxx.ts.net"
                 "addresses": ["10.42.0.9"],
             }],
         }]},
+
+        "networkpolicies": {"items": [{
+            "metadata": {"name": "t3-p0-ingress"},
+            "spec": {
+                "podSelector": {"matchLabels": {"app": "t3-owner"}},
+                "policyTypes": ["Ingress"],
+                "ingress": [{
+                    "from": [{"namespaceSelector": {
+                        "matchLabels": {"kubernetes.io/metadata.name": "tailscale"}}}],
+                    "ports": [{"protocol": "TCP", "port": 3773}],
+                }],
+            },
+        }]},
         "service": {"spec": {"type": "ClusterIP", "selector": {"app": "t3-owner"},
                              "ports": [{"name": "http", "port": 80, "targetPort": "http"}]}},
         "ingress": {"metadata": {"annotations": {"tailscale.com/funnel": "true"} if funnel else {}},
@@ -73,6 +86,8 @@ def fake_reads(identity="stable-id", ready=True, host="t3-k3s-p0.tailxxx.ts.net"
         if args[3] == "endpointslices":
             assert args[4:] == ("-l", "kubernetes.io/service-name=t3-owner",
                                 "-o", "json")
+        if args[3] == "networkpolicies":
+            assert args[4:] == ("-o", "json")
         return json.dumps(docs[args[3]])
     return read, calls
 
@@ -87,7 +102,7 @@ class P0EvidenceTest(unittest.TestCase):
         self.assertEqual(
             {k: v for k, v in before.items() if k != "podUid"},
             {k: v for k, v in after.items() if k != "podUid"})
-        self.assertEqual(len(calls), 7)
+        self.assertEqual(len(calls), 8)
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "identity.json"
             module.write_baseline(path, before)
@@ -235,6 +250,56 @@ class P0EvidenceTest(unittest.TestCase):
                     edit(document)
                     return json.dumps(document)
                 with self.assertRaisesRegex(module.EvidenceError, "rollout"):
+                    module.collect("disposable-test", altered)
+
+
+    def test_rejects_mismatched_or_multiple_tailnet_ingress_routes(self):
+        edits = [
+            lambda d: d["status"]["loadBalancer"].update(ingress=[]),
+            lambda d: d["status"]["loadBalancer"]["ingress"][0].update(
+                hostname="unrelated.tailxxx.ts.net"),
+            lambda d: d["status"]["loadBalancer"]["ingress"][0].update(
+                hostname="t3-k3s-p0.tailxxx.ts.net.evil.example"),
+            lambda d: d["status"]["loadBalancer"]["ingress"][0].update(
+                hostname="t3-k3s-p0..ts.net"),
+            lambda d: d["status"]["loadBalancer"]["ingress"][0].update(
+                ip="203.0.113.19"),
+            lambda d: d["status"]["loadBalancer"]["ingress"].append(
+                {"hostname": "other.tailxxx.ts.net"}),
+        ]
+        for index, edit in enumerate(edits):
+            with self.subTest(index=index):
+                reader, _ = fake_reads()
+                def altered(context, *args):
+                    raw = reader(context, *args)
+                    if args[3] != "ingress":
+                        return raw
+                    document = json.loads(raw)
+                    edit(document)
+                    return json.dumps(document)
+                with self.assertRaisesRegex(module.EvidenceError, "Ingress"):
+                    module.collect("disposable-test", altered)
+
+    def test_rejects_missing_extra_or_widened_network_policy(self):
+        edits = [
+            lambda d: d.update(items=[]),
+            lambda d: d["items"].append(dict(d["items"][0])),
+            lambda d: d["items"][0]["metadata"].update(name="unexpected"),
+            lambda d: d["items"][0]["spec"]["ingress"][0].update(**{"from": [{}]}),
+            lambda d: d["items"][0]["spec"]["ingress"][0]["ports"][0].update(port=3774),
+            lambda d: d["items"][0]["spec"].update(policyTypes=["Ingress", "Egress"]),
+        ]
+        for index, edit in enumerate(edits):
+            with self.subTest(index=index):
+                reader, _ = fake_reads()
+                def altered(context, *args):
+                    raw = reader(context, *args)
+                    if args[3] != "networkpolicies":
+                        return raw
+                    document = json.loads(raw)
+                    edit(document)
+                    return json.dumps(document)
+                with self.assertRaisesRegex(module.EvidenceError, "NetworkPolicy"):
                     module.collect("disposable-test", altered)
 
 if __name__ == "__main__":

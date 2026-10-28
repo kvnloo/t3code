@@ -124,6 +124,57 @@ def verify_service_endpoints(pod: dict, endpoint_slices: dict) -> None:
             raise EvidenceError("P0 EndpointSlice routes to a stale/wrong Pod IP")
 
 
+
+def verify_private_ingress(ingress: dict) -> str:
+    """Reject unexpected public/second routes and mismatched tailnet identity.
+
+    A plausible .ts.net suffix alone is insufficient: the DNS device label
+    must match the explicit Tailscale Ingress name in this P0 fixture.
+    This verifies API metadata, not TLS or tailnet ACL enforcement.
+    """
+    addresses = ingress.get("status", {}).get("loadBalancer", {}).get("ingress")
+    if not isinstance(addresses, list) or len(addresses) != 1:
+        raise EvidenceError("P0 Ingress must advertise exactly one private hostname")
+    entry = addresses[0]
+    if not isinstance(entry, dict) or entry.get("ip"):
+        raise EvidenceError("P0 Ingress must not advertise a public/IP route")
+    hostname = entry.get("hostname")
+    labels = hostname.split(".") if isinstance(hostname, str) else []
+    if (len(labels) != 4 or labels[0] != "t3-k3s-p0"
+            or labels[2:] != ["ts", "net"]
+            or not labels[1]
+            or labels[1].startswith("-") or labels[1].endswith("-")
+            or len(labels[1]) > 63
+            or any(ch not in "abcdefghijklmnopqrstuvwxyz0123456789-" for ch in labels[1])):
+        raise EvidenceError("P0 Ingress hostname does not match the requested tailnet name")
+    return hostname
+
+
+def verify_private_network_policy(policies: dict) -> None:
+    """Conservatively reject missing or extra additive policies for this P0 namespace.
+
+    NetworkPolicies are additive: verifying one safe policy while another
+    allows all traffic would otherwise produce a false-green result.
+    CNI enforcement still requires a separately observed negative test.
+    """
+    items = policies.get("items") if isinstance(policies, dict) else None
+    if not isinstance(items, list) or len(items) != 1:
+        raise EvidenceError("P0 requires exactly one isolated ingress NetworkPolicy")
+    item = items[0]
+    if not isinstance(item, dict) or item.get("metadata", {}).get("name") != "t3-p0-ingress":
+        raise EvidenceError("unexpected P0 NetworkPolicy identity")
+    expected = {
+        "podSelector": {"matchLabels": {"app": "t3-owner"}},
+        "policyTypes": ["Ingress"],
+        "ingress": [{
+            "from": [{"namespaceSelector": {
+                "matchLabels": {"kubernetes.io/metadata.name": "tailscale"}}}],
+            "ports": [{"protocol": "TCP", "port": 3773}],
+        }],
+    }
+    if item.get("spec") != expected:
+        raise EvidenceError("P0 NetworkPolicy allows a different ingress scope")
+
 def collect(context: str, read=kubectl) -> dict[str, str]:
     def get(kind: str, name: str) -> dict:
         try:
@@ -181,12 +232,7 @@ def collect(context: str, read=kubectl) -> dict[str, str]:
         raise EvidenceError("P0 Ingress is not served by Tailscale")
     if ingress.get("metadata", {}).get("annotations", {}).get("tailscale.com/funnel") == "true":
         raise EvidenceError("Tailscale Funnel must stay disabled")
-    addresses = ingress.get("status", {}).get("loadBalancer", {}).get("ingress", [])
-    if not addresses:
-        raise EvidenceError("Tailscale Ingress has no ready address")
-    hostname = addresses[0].get("hostname", "")
-    if not hostname.endswith(".ts.net"):
-        raise EvidenceError("Tailscale Ingress does not report a MagicDNS hostname")
+    hostname = verify_private_ingress(ingress)
 
     verify_p0_wiring(pod, containers[0]["image"], service, ingress)
 
@@ -199,6 +245,15 @@ def collect(context: str, read=kubectl) -> dict[str, str]:
     except (json.JSONDecodeError, TypeError) as exc:
         raise EvidenceError("invalid kubectl EndpointSlice JSON") from exc
     verify_service_endpoints(pod, endpoint_slices)
+
+    # NetworkPolicy isolation is additive: reject a missing/extra/widened
+    # policy instead of checking only the expected policy's name.
+    try:
+        network_policies = json.loads(read(context, "-n", NAMESPACE, "get",
+                                          "networkpolicies", "-o", "json"))
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise EvidenceError("invalid kubectl NetworkPolicy JSON") from exc
+    verify_private_network_policy(network_policies)
 
     # Explicitly read the owner's current identity; never log/print it.
     raw_id = read(context, "-n", NAMESPACE, "exec", f"pod/{pod_name}", "--",
