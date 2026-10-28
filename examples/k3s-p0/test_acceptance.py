@@ -17,10 +17,14 @@ def fake_reads(identity="stable-id", ready=True, host="t3-k3s-p0.tailxxx.ts.net"
                funnel=False, pod_uid="pod-1", pod_ready=True, pod_count=1, deleting=False,
                image=None):
     docs = {
-        "deployment": {"spec": {"replicas": 1, "template": {"spec": {
-            "automountServiceAccountToken": False,
-            "containers": [{"name": "t3", "image": image or "ghcr.io/me/t3@sha256:" + "a" * 64}]}}},
-            "status": {"readyReplicas": 1 if ready else 0}},
+        "deployment": {"metadata": {"generation": 7},
+            "spec": {"replicas": 1, "template": {"spec": {
+                "automountServiceAccountToken": False,
+                "containers": [{"name": "t3", "image": image or "ghcr.io/me/t3@sha256:" + "a" * 64}]}}},
+            "status": {"readyReplicas": 1 if ready else 0,
+                       "availableReplicas": 1 if ready else 0,
+                       "updatedReplicas": 1 if ready else 0,
+                       "observedGeneration": 7}},
         "pods": {"items": [{
             "metadata": {"name": "t3-owner-test", "uid": pod_uid,
                          "labels": {"app": "t3-owner"},
@@ -31,10 +35,22 @@ def fake_reads(identity="stable-id", ready=True, host="t3-k3s-p0.tailxxx.ts.net"
                                      "volumeMounts": [{"name": "data", "mountPath": "/data"}]}],
                      "volumes": [{"name": "data", "persistentVolumeClaim": {
                          "claimName": "t3-p0-data"}}]},
-            "status": {"phase": "Running", "containerStatuses": [
+            "status": {"phase": "Running", "podIP": "10.42.0.9",
+                       "podIPs": [{"ip": "10.42.0.9"}],
+                       "containerStatuses": [
                 {"name": "t3", "ready": pod_ready}]},
         } for _ in range(pod_count)]},
         "pvc": {"metadata": {"uid": "stable-pvc-uid"}, "status": {"phase": "Bound"}},
+        "endpointslices": {"items": [{
+            "metadata": {"labels": {"kubernetes.io/service-name": "t3-owner"}},
+            "ports": [{"name": "http", "port": 3773, "protocol": "TCP"}],
+            "endpoints": [{
+                "conditions": {"ready": True},
+                "targetRef": {"kind": "Pod", "name": "t3-owner-test",
+                              "namespace": "t3-k3s-p0", "uid": pod_uid},
+                "addresses": ["10.42.0.9"],
+            }],
+        }]},
         "service": {"spec": {"type": "ClusterIP", "selector": {"app": "t3-owner"},
                              "ports": [{"name": "http", "port": 80, "targetPort": "http"}]}},
         "ingress": {"metadata": {"annotations": {"tailscale.com/funnel": "true"} if funnel else {}},
@@ -54,6 +70,9 @@ def fake_reads(identity="stable-id", ready=True, host="t3-k3s-p0.tailxxx.ts.net"
             return identity + "\n"
         if args[3] == "pods":
             assert args[4:] == ("-l", "app=t3-owner", "-o", "json")
+        if args[3] == "endpointslices":
+            assert args[4:] == ("-l", "kubernetes.io/service-name=t3-owner",
+                                "-o", "json")
         return json.dumps(docs[args[3]])
     return read, calls
 
@@ -68,7 +87,7 @@ class P0EvidenceTest(unittest.TestCase):
         self.assertEqual(
             {k: v for k, v in before.items() if k != "podUid"},
             {k: v for k, v in after.items() if k != "podUid"})
-        self.assertEqual(len(calls), 6)
+        self.assertEqual(len(calls), 7)
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "identity.json"
             module.write_baseline(path, before)
@@ -171,6 +190,52 @@ class P0EvidenceTest(unittest.TestCase):
                 with self.assertRaises(module.EvidenceError):
                     module.collect("disposable-test", altered)
 
+
+    def test_rejects_stale_service_endpoints(self):
+        edits = [
+            lambda d: d.update(items=[]),
+            lambda d: d["items"][0]["metadata"]["labels"].update(
+                {"kubernetes.io/service-name": "unrelated"}),
+            lambda d: d["items"][0]["ports"][0].update(port=3774),
+            lambda d: d["items"][0]["endpoints"][0]["targetRef"].update(uid="old-uid"),
+            lambda d: d["items"][0]["endpoints"][0]["conditions"].update(ready=False),
+            lambda d: d["items"][0]["endpoints"][0]["conditions"].update(terminating=True),
+            lambda d: d["items"][0]["endpoints"][0].update(addresses=["10.42.0.99"]),
+            lambda d: d["items"][0]["endpoints"].append(
+                dict(d["items"][0]["endpoints"][0])),
+        ]
+        for index, edit in enumerate(edits):
+            with self.subTest(index=index):
+                base, _ = fake_reads()
+                def altered(context, *args):
+                    value = base(context, *args)
+                    if args[3] != "endpointslices":
+                        return value
+                    document = json.loads(value)
+                    edit(document)
+                    return json.dumps(document)
+                with self.assertRaisesRegex(module.EvidenceError, "EndpointSlice"):
+                    module.collect("disposable-test", altered)
+
+    def test_rejects_unobserved_or_unavailable_rollout(self):
+        edits = [
+            lambda d: d["status"].update(observedGeneration=6),
+            lambda d: d["status"].update(availableReplicas=0),
+            lambda d: d["status"].update(updatedReplicas=0),
+            lambda d: d["metadata"].update(generation=8),
+        ]
+        for index, edit in enumerate(edits):
+            with self.subTest(index=index):
+                base, _ = fake_reads()
+                def altered(context, *args):
+                    value = base(context, *args)
+                    if args[3] != "deployment":
+                        return value
+                    document = json.loads(value)
+                    edit(document)
+                    return json.dumps(document)
+                with self.assertRaisesRegex(module.EvidenceError, "rollout"):
+                    module.collect("disposable-test", altered)
 
 if __name__ == "__main__":
     unittest.main()

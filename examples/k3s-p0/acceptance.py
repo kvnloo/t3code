@@ -78,6 +78,52 @@ def verify_p0_wiring(pod: dict, deployment_image: str, service: dict, ingress: d
         raise EvidenceError("P0 Ingress is not wired to the private T3 owner Service")
 
 
+def verify_service_endpoints(pod: dict, endpoint_slices: dict) -> None:
+    """Prove Service's live EndpointSlices resolve only to this Ready Pod.
+
+    This verifies API controller wiring, not actual CNI routing, TLS, or ACLs.
+    """
+    meta = pod.get("metadata", {})
+    status = pod.get("status", {})
+    pod_name, pod_uid = meta.get("name"), meta.get("uid")
+    pod_ips = {status.get("podIP")} if status.get("podIP") else set()
+    for address in status.get("podIPs", []):
+        if isinstance(address, dict) and address.get("ip"):
+            pod_ips.add(address["ip"])
+    if not pod_name or not pod_uid or not pod_ips:
+        raise EvidenceError("P0 Pod identity/IP is missing from its status")
+    slices = endpoint_slices.get("items") if isinstance(endpoint_slices, dict) else None
+    if not isinstance(slices, list) or not slices:
+        raise EvidenceError("P0 Service has no observed EndpointSlices")
+    for item in slices:
+        if not isinstance(item, dict) or item.get("metadata", {}).get("labels", {}).get(
+                "kubernetes.io/service-name") != "t3-owner":
+            raise EvidenceError("P0 EndpointSlice belongs to a different Service")
+        ports = item.get("ports", [])
+        if (not isinstance(ports, list) or len(ports) != 1
+                or not isinstance(ports[0], dict)
+                or ports[0].get("name") != "http"
+                or ports[0].get("port") != 3773
+                or ports[0].get("protocol", "TCP") != "TCP"):
+            raise EvidenceError("P0 EndpointSlice does not route to T3 port 3773")
+        endpoints = item.get("endpoints", [])
+        if not isinstance(endpoints, list) or len(endpoints) != 1:
+            raise EvidenceError("P0 EndpointSlice must select exactly one T3 Pod")
+        endpoint = endpoints[0]
+        ref = endpoint.get("targetRef", {})
+        conditions = endpoint.get("conditions", {})
+        if (ref.get("kind") != "Pod" or ref.get("name") != pod_name
+                or ref.get("uid") != pod_uid
+                or ref.get("namespace", "t3-k3s-p0") != "t3-k3s-p0"
+                or conditions.get("ready") is not True
+                or conditions.get("terminating") is True):
+            raise EvidenceError("P0 EndpointSlice selects an unready/stale Pod")
+        addresses = endpoint.get("addresses", [])
+        if (not isinstance(addresses, list) or not addresses
+                or any(not isinstance(ip, str) or ip not in pod_ips for ip in addresses)):
+            raise EvidenceError("P0 EndpointSlice routes to a stale/wrong Pod IP")
+
+
 def collect(context: str, read=kubectl) -> dict[str, str]:
     def get(kind: str, name: str) -> dict:
         try:
@@ -87,10 +133,16 @@ def collect(context: str, read=kubectl) -> dict[str, str]:
 
     deployment = get("deployment", "t3-owner")
     pod_spec = deployment.get("spec", {}).get("template", {}).get("spec", {})
+    generation = deployment.get("metadata", {}).get("generation")
+    deployment_status = deployment.get("status", {})
     if (deployment.get("spec", {}).get("replicas") != 1
-            or deployment.get("status", {}).get("readyReplicas") != 1
+            or not isinstance(generation, int) or generation < 1
+            or deployment_status.get("observedGeneration") != generation
+            or deployment_status.get("updatedReplicas") != 1
+            or deployment_status.get("availableReplicas") != 1
+            or deployment_status.get("readyReplicas") != 1
             or pod_spec.get("automountServiceAccountToken") is not False):
-        raise EvidenceError("P0 deployment must have one Ready replica without an API token")
+        raise EvidenceError("P0 Deployment rollout not fully observed/Ready or mounts API token")
     containers = pod_spec.get("containers", [])
     if len(containers) != 1 or "@sha256:" not in containers[0].get("image", ""):
         raise EvidenceError("P0 deployment must use exactly one digest-pinned container")
@@ -137,6 +189,16 @@ def collect(context: str, read=kubectl) -> dict[str, str]:
         raise EvidenceError("Tailscale Ingress does not report a MagicDNS hostname")
 
     verify_p0_wiring(pod, containers[0]["image"], service, ingress)
+
+    # A matching Service selector is not proof that kube-proxy is directing
+    # traffic to this Pod. Reconcile the live EndpointSlices and Pod UID/IP.
+    try:
+        endpoint_slices = json.loads(read(context, "-n", NAMESPACE, "get", "endpointslices",
+                                         "-l", "kubernetes.io/service-name=t3-owner",
+                                         "-o", "json"))
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise EvidenceError("invalid kubectl EndpointSlice JSON") from exc
+    verify_service_endpoints(pod, endpoint_slices)
 
     # Explicitly read the owner's current identity; never log/print it.
     raw_id = read(context, "-n", NAMESPACE, "exec", f"pod/{pod_name}", "--",

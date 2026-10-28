@@ -99,9 +99,12 @@ home machine. The checked-in YAML intentionally has an unpullable image token.
 
    The probe uses only read-only `kubectl get` and `kubectl exec ... cat`
    requests. It also verifies actual Pod image/labels, PVC mount, no API-token
-   mount or hostPath, Service selector/port, and private Ingress backend/TLS
-   routing. This closes false-green checks where an unrelated Pod or Service
-   appears Ready without serving the intended T3 data. It requires
+   mount or hostPath, Service selector/port, private Ingress backend/TLS,
+   and live EndpointSlice target Pod UID, IP, readiness and T3 port 3773.
+   It also rejects an unobserved/incomplete Deployment rollout. This closes
+   false-green checks where an unrelated/stale Pod or Service looks Ready
+   without actually selecting the intended T3 data. The API evidence is
+   **not** a dataplane/TLS/ACL probe; test those separately. It requires
    **one Running/Ready Pod with a new Pod UID** after the
    human-triggered rollout, while checking unchanged hashed environment ID,
    PVC UID, ingress hostname and pinned image digest. Merely running the probe
