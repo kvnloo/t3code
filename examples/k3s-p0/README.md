@@ -107,8 +107,7 @@ home machine. The checked-in YAML intentionally has an unpullable image token.
    insecure TLS bypass, redirects, proxy settings or a bearer token.
 
    ```sh
-   python3 examples/k3s-p0/descriptor_probe.py \\
-     --baseline /tmp/t3-p0-identity.json
+   python3 examples/k3s-p0/descriptor_probe.py --baseline /tmp/t3-p0-identity.json
    ```
 
    A PASS adds **remote HTTPS/T3 descriptor identity** evidence, not tailnet
