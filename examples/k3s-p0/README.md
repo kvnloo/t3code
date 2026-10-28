@@ -98,11 +98,13 @@ home machine. The checked-in YAML intentionally has an unpullable image token.
    ```
 
    The probe uses only read-only `kubectl get` and `kubectl exec ... cat`
-   requests. It checks a Ready replica, digest reference, Bound PVC, private
-   Service/Tailscale Ingress and **unchanged hashed environment ID, PVC UID and
-   ingress hostname**; it never prints the raw ID, grants access, restarts a
-   server or applies/deletes resources. The baseline contains a stable identity
-   fingerprint: keep it private and out of Git. A PASS is **not** proof of
+   requests. It requires **one Running/Ready Pod with a new Pod UID** after the
+   human-triggered rollout, while checking unchanged hashed environment ID,
+   PVC UID, ingress hostname and pinned image digest. Merely running the probe
+   twice without restarting must fail. Each baseline is format v2; discard any
+   earlier offline v1 baseline and collect a new pre-restart sample. It never
+   prints the raw ID, grants access, restarts a server or applies/deletes
+   resources. Keep the private identity fingerprint out of Git. A PASS is **not** proof of
    working HTTPS, ACL enforcement, client pairing, saved threads, app readiness
    or provider execution; perform the manual checks separately.
 
