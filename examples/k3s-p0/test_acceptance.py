@@ -19,18 +19,29 @@ def fake_reads(identity="stable-id", ready=True, host="t3-k3s-p0.tailxxx.ts.net"
     docs = {
         "deployment": {"spec": {"replicas": 1, "template": {"spec": {
             "automountServiceAccountToken": False,
-            "containers": [{"image": image or "ghcr.io/me/t3@sha256:" + "a" * 64}]}}},
+            "containers": [{"name": "t3", "image": image or "ghcr.io/me/t3@sha256:" + "a" * 64}]}}},
             "status": {"readyReplicas": 1 if ready else 0}},
         "pods": {"items": [{
             "metadata": {"name": "t3-owner-test", "uid": pod_uid,
+                         "labels": {"app": "t3-owner"},
                          **({"deletionTimestamp": "2026-10-28T00:00:00Z"} if deleting else {})},
+            "spec": {"automountServiceAccountToken": False,
+                     "containers": [{"name": "t3",
+                                     "image": image or "ghcr.io/me/t3@sha256:" + "a" * 64,
+                                     "volumeMounts": [{"name": "data", "mountPath": "/data"}]}],
+                     "volumes": [{"name": "data", "persistentVolumeClaim": {
+                         "claimName": "t3-p0-data"}}]},
             "status": {"phase": "Running", "containerStatuses": [
                 {"name": "t3", "ready": pod_ready}]},
         } for _ in range(pod_count)]},
         "pvc": {"metadata": {"uid": "stable-pvc-uid"}, "status": {"phase": "Bound"}},
-        "service": {"spec": {"type": "ClusterIP"}},
+        "service": {"spec": {"type": "ClusterIP", "selector": {"app": "t3-owner"},
+                             "ports": [{"name": "http", "port": 80, "targetPort": "http"}]}},
         "ingress": {"metadata": {"annotations": {"tailscale.com/funnel": "true"} if funnel else {}},
-                    "spec": {"ingressClassName": "tailscale"},
+                    "spec": {"ingressClassName": "tailscale",
+                             "tls": [{"hosts": ["t3-k3s-p0"]}],
+                             "defaultBackend": {"service": {
+                                 "name": "t3-owner", "port": {"name": "http"}}}},
                     "status": {"loadBalancer": {"ingress": [{"hostname": host}]}}},
     }
     calls = []
@@ -113,6 +124,52 @@ class P0EvidenceTest(unittest.TestCase):
     def test_no_implicit_kubectl_context(self):
         with self.assertRaises(module.EvidenceError):
             module.kubectl("-unsafe", "get", "pods")
+
+    def test_rejects_service_and_ingress_misdirection(self):
+        edits = [
+            ("service", lambda doc: doc["spec"].update(selector={"app": "other"})),
+            ("service", lambda doc: doc["spec"]["ports"][0].update(targetPort="other")),
+            ("service", lambda doc: doc["spec"].update(externalIPs=["192.0.2.10"])),
+            ("ingress", lambda doc: doc["spec"]["defaultBackend"]["service"].update(name="other")),
+            ("ingress", lambda doc: doc["spec"].update(rules=[{"host": "public.example"}])),
+            ("ingress", lambda doc: doc["spec"]["tls"][0].update(hosts=["other"])),
+        ]
+        for kind, edit in edits:
+            with self.subTest(kind=kind, edit=edits.index((kind, edit))):
+                base, _ = fake_reads()
+                def altered(context, *args):
+                    value = base(context, *args)
+                    if args[3] != kind:
+                        return value
+                    doc = json.loads(value)
+                    edit(doc)
+                    return json.dumps(doc)
+                with self.assertRaisesRegex(module.EvidenceError, "Service|Ingress"):
+                    module.collect("disposable-test", altered)
+
+    def test_rejects_wrong_pod_image_pvc_or_token_mount(self):
+        edits = [
+            lambda doc: doc["items"][0]["spec"]["containers"][0].update(
+                image="ghcr.io/other/t3@sha256:" + "b" * 64),
+            lambda doc: doc["items"][0]["spec"]["volumes"][0]["persistentVolumeClaim"].update(
+                claimName="another-pvc"),
+            lambda doc: doc["items"][0]["spec"].update(automountServiceAccountToken=True),
+            lambda doc: doc["items"][0]["spec"]["volumes"].append(
+                {"name": "escape", "hostPath": {"path": "/host"}}),
+            lambda doc: doc["items"][0]["metadata"].update(labels={"app": "other"}),
+        ]
+        for index, edit in enumerate(edits):
+            with self.subTest(index=index):
+                base, _ = fake_reads()
+                def altered(context, *args):
+                    value = base(context, *args)
+                    if args[3] != "pods":
+                        return value
+                    doc = json.loads(value)
+                    edit(doc)
+                    return json.dumps(doc)
+                with self.assertRaises(module.EvidenceError):
+                    module.collect("disposable-test", altered)
 
 
 if __name__ == "__main__":

@@ -98,7 +98,11 @@ home machine. The checked-in YAML intentionally has an unpullable image token.
    ```
 
    The probe uses only read-only `kubectl get` and `kubectl exec ... cat`
-   requests. It requires **one Running/Ready Pod with a new Pod UID** after the
+   requests. It also verifies actual Pod image/labels, PVC mount, no API-token
+   mount or hostPath, Service selector/port, and private Ingress backend/TLS
+   routing. This closes false-green checks where an unrelated Pod or Service
+   appears Ready without serving the intended T3 data. It requires
+   **one Running/Ready Pod with a new Pod UID** after the
    human-triggered rollout, while checking unchanged hashed environment ID,
    PVC UID, ingress hostname and pinned image digest. Merely running the probe
    twice without restarting must fail. Each baseline is format v2; discard any

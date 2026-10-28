@@ -33,6 +33,51 @@ def kubectl(context: str, *args: str) -> str:
     return result.stdout
 
 
+def verify_p0_wiring(pod: dict, deployment_image: str, service: dict, ingress: dict) -> None:
+    """Fail closed when Ready resources are not wired to this exact T3 owner.
+
+    A listening TCP socket and a populated ingress hostname alone do not prove
+    that the ingress reaches the expected pod, image, and persistent volume.
+    This does not claim network-policy enforcement, authentication or pairing.
+    """
+    meta = pod.get("metadata", {})
+    spec = pod.get("spec", {})
+    containers = spec.get("containers", [])
+    if (meta.get("labels", {}).get("app") != "t3-owner"
+            or len(containers) != 1 or containers[0].get("name") != "t3"
+            or containers[0].get("image") != deployment_image):
+        raise EvidenceError("selected Pod does not match pinned T3 Deployment")
+    if spec.get("automountServiceAccountToken") is not False:
+        raise EvidenceError("selected Pod must not mount a Kubernetes API token")
+    volumes = spec.get("volumes", [])
+    if any("hostPath" in volume for volume in volumes):
+        raise EvidenceError("selected Pod mounts an unexpected hostPath")
+    if (not any(mount.get("name") == "data" and mount.get("mountPath") == "/data"
+                for mount in containers[0].get("volumeMounts", []))
+            or not any(volume.get("name") == "data"
+                       and volume.get("persistentVolumeClaim", {}).get("claimName") == "t3-p0-data"
+                       for volume in volumes)):
+        raise EvidenceError("selected Pod is not backed by the expected persistent T3 PVC")
+
+    svc = service.get("spec", {})
+    ports = svc.get("ports", [])
+    if (svc.get("type") != "ClusterIP" or svc.get("externalIPs")
+            or svc.get("selector") != {"app": "t3-owner"}
+            or len(ports) != 1
+            or ports[0].get("name") != "http"
+            or ports[0].get("port") != 80
+            or ports[0].get("targetPort") != "http"):
+        raise EvidenceError("P0 Service does not exclusively route to the T3 owner")
+    ing = ingress.get("spec", {})
+    backend = ing.get("defaultBackend", {}).get("service", {})
+    tls = ing.get("tls", [])
+    if (ing.get("rules")
+            or backend.get("name") != "t3-owner"
+            or backend.get("port", {}).get("name") != "http"
+            or len(tls) != 1 or tls[0].get("hosts") != ["t3-k3s-p0"]):
+        raise EvidenceError("P0 Ingress is not wired to the private T3 owner Service")
+
+
 def collect(context: str, read=kubectl) -> dict[str, str]:
     def get(kind: str, name: str) -> dict:
         try:
@@ -91,6 +136,8 @@ def collect(context: str, read=kubectl) -> dict[str, str]:
     if not hostname.endswith(".ts.net"):
         raise EvidenceError("Tailscale Ingress does not report a MagicDNS hostname")
 
+    verify_p0_wiring(pod, containers[0]["image"], service, ingress)
+
     # Explicitly read the owner's current identity; never log/print it.
     raw_id = read(context, "-n", NAMESPACE, "exec", f"pod/{pod_name}", "--",
                   "cat", "/data/t3/userdata/environment-id").strip()
@@ -140,10 +187,10 @@ def main() -> None:
         record = collect(args.context)
         if args.write_baseline:
             write_baseline(args.write_baseline, record)
-            print("PASS: P0 object preflight observed; baseline saved with mode 0600")
+            print("PASS: P0 route/PVC preflight observed; baseline saved with mode 0600")
         else:
             check_baseline(args.check_baseline, record)
-            print("PASS: fresh Ready Pod observed; persisted ID, PVC, endpoint and image unchanged")
+            print("PASS: fresh Ready Pod and route observed; persisted ID, PVC, endpoint and image unchanged")
         print("NOT RUN: client pairing, auth, data/thread restoration, provider and policy enforcement")
     except (EvidenceError, OSError, ValueError, KeyError) as exc:
         parser.exit(1, f"FAIL: {exc}\n")
