@@ -97,6 +97,28 @@ home machine. The checked-in YAML intentionally has an unpullable image token.
      --check-baseline /tmp/t3-p0-identity.json
    ```
 
+   From an **authorized tailnet client**, independently check that the
+   **actual HTTPS endpoint** answers as the same persisted environment. Use the
+   private v2 baseline created above, before **and again after** the human
+   restart. This second script sends only a credential-free GET to the public
+   T3 descriptor, `/.well-known/t3/environment`, with a fresh HTTPS connection,
+   OS-trusted certificate and hostname verification. It compares the returned
+   ID as a hash and prints no ID or pairing token. It does **not** use an
+   insecure TLS bypass, redirects, proxy settings or a bearer token.
+
+   ```sh
+   python3 examples/k3s-p0/descriptor_probe.py \\
+     --baseline /tmp/t3-p0-identity.json
+   ```
+
+   A PASS adds **remote HTTPS/T3 descriptor identity** evidence, not tailnet
+   ACL or CNI enforcement, client pairing/auth, UI functionality, project data
+   restoration or provider readiness. Perform **negative ACL tests from an
+   unauthorized identity** and verify a real authenticated web/mobile client
+   and previously saved thread separately. DNS/TLS failure must block P0;
+   do not work around it with `curl -k` or a public proxy. Run this only on
+   a disposable owner-approved cluster and never share the private baseline.
+
    The probe uses only read-only `kubectl get` and `kubectl exec ... cat`
    requests. It also verifies actual Pod image/labels, PVC mount, no API-token
    mount or hostPath, Service selector/port, private Ingress backend/TLS,
