@@ -83,6 +83,13 @@ def inspect(plan, binding, deployment, replicasets, pods):
     rs, rm = active_rs[0]
     need(rs.get('spec', {}).get('replicas') == 1
          and rs.get('status', {}).get('readyReplicas') == 1, 'ReplicaSet not ready')
+    # ReplicaSet is the template used for the NEXT Pod after restart/eviction.
+    # A clean, Ready Pod is insufficient if its controller was subsequently
+    # changed to launch a different image, credential or unsafe container.
+    # Compare spec only: Deployment adds pod-template-hash to RS template labels.
+    rs_template = rs.get('spec', {}).get('template')
+    need(isinstance(rs_template, dict) and isinstance(rs_template.get('spec'), dict)
+         and rs_template['spec'] == template, 'active ReplicaSet template drift')
     need(isinstance(pods, dict) and pods.get('kind') == 'PodList'
          and isinstance(pods.get('items'), list) and len(pods['items']) == 1,
          'worker namespace does not have exactly one Pod')
