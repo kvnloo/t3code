@@ -162,6 +162,41 @@ class RuntimeTests(unittest.TestCase):
             with self.subTest(change=change), self.assertRaises(pc.PodError):
                 pc.inspect(*args)
 
+    def test_reject_pod_admission_network_and_runtime_overlays(self):
+        # A Pod can gain a Multus interface without an altered Pod spec or
+        # replacement ReplicaSet template, and a RuntimeClass can change GPU
+        # access. Neither is in the approved one-worker P1 plan.
+        cases = [
+            (('metadata', 'annotations'), {'k8s.v1.cni.cncf.io/networks': 'extra-net'}),
+            (('metadata', 'annotations'), {'v1.multus-cni.io/default-network': 'extra-net'}),
+            (('spec', 'runtimeClassName'), 'nvidia'),
+            (('spec', 'overhead'), {'cpu': '100m'}),
+            (('spec', 'resourceClaims'), [{'name': 'gpu'}]),
+            (('spec', 'priorityClassName'), 'system-node-critical'),
+            (('spec', 'nodeSelector'), {'gpu': 'true'}),
+            (('spec', 'affinity'), {'nodeAffinity': {'requiredDuringSchedulingIgnoredDuringExecution': {}}}),
+            (('spec', 'topologySpreadConstraints'), [{'maxSkew': 1}]),
+            (('spec', 'dnsConfig'), {'nameservers': ['8.8.8.8']}),
+            (('spec', 'dnsPolicy'), 'None'),
+            (('spec', 'serviceAccount'), 'default'),
+            (('spec', 'terminationGracePeriodSeconds'), 1),
+        ]
+        for path, value in cases:
+            args = fixture()
+            obj = args[4]['items'][0]
+            for key in path[:-1]:
+                obj = obj[key]
+            obj[path[-1]] = value
+            with self.subTest(path=path), self.assertRaises(pc.PodError):
+                pc.inspect(*args)
+        args = fixture()
+        pod = args[4]['items'][0]
+        pod['metadata']['annotations'] = {}
+        pod['spec']['dnsPolicy'] = 'ClusterFirst'
+        pod['spec']['serviceAccount'] = 't3-worker'
+        pod['spec']['terminationGracePeriodSeconds'] = 30
+        pc.inspect(*args)  # Empty annotations and Kubernetes defaults remain valid.
+
     def test_reject_false_readiness_and_concurrent_pods(self):
         cases = [
             (2, ('status', 'observedGeneration'), 1),
