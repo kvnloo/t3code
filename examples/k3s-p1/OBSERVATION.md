@@ -6,7 +6,11 @@ Namespace, PVC and Deployment, then extracts their stable Kubernetes UIDs. A pre
 binding can be replay-checked so a replaced Namespace, PVC, Deployment **or pinned image**
 **fails closed** rather than looking like the same worker lease. The v3 receipt contains a SHA-256 fingerprint of the full immutable OCI image
 reference, never the raw registry/image name, and checks the observed
-Deployment's **desired Pod template** image equals the plan. Old v1/v2 binding
+Deployment's **desired Pod template** image equals the plan. It also requires the
+planned non-root Pod/container security, resource bounds, probes and no unexpected
+host-network/PID/IPC access, injected init containers, registry credentials,
+environment secrets or shell overrides. An unexpected admission mutation fails
+closed for human review; Kubernetes may default other fields. Old v1/v2 binding
 baselines cannot be reused: recollect a trusted v3 baseline from one approved
 context. This does **not** check the image actually running in any Pod.
 
@@ -25,10 +29,10 @@ python3 -m unittest discover -s examples/k3s-p1 -p 'test_*.py' -v
 python3 -m py_compile examples/k3s-p1/observe.py
 ```
 
-The ten focused binding tests check stable UIDs, lease/namespace mismatch,
+The twelve focused binding tests check stable UIDs, lease/namespace mismatch,
 PVC replacement, invalid/unbound/deleting storage, retention/annotation drift,
 immutable image reference drift/format, rejection of a legacy v1 baseline,
-desired Deployment image/ServiceAccount/volume/selector drift, and CLI failure
+desired Deployment image/ServiceAccount/volume/selector and privilege/credential/resource drift, and CLI failure
 without printing private IDs.
 
 ## Human-gated future Kubernetes observation (NOT RUN)
