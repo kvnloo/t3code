@@ -94,6 +94,16 @@ No upstream writes and no READY status.
 LoadBalancer/NodePort, external IP, wrong backend, non-Tailscale IngressClass,
 Funnel/unreviewed ingress annotations, extra ingress rules, changed tailnet
 hostname, a widened NetworkPolicy, **an additional public Ingress or LoadBalancer/NodePort Service, or an additional wildcard-allow policy**.
+The helper also inspects **advertised** `Ingress.status.loadBalancer.ingress`
+and `Service.status.loadBalancer.ingress` when present, including both
+named-object and namespace-inventory snapshots. A public IP, external hostname,
+multiple advertised endpoints, inconsistent snapshots or malformed status
+fails closed even when the Kubernetes `spec` still looks private. An absent
+Ingress status is permitted only for an **unapplied desired-plan check**; it
+does **not** mean the route exists. The matching `*.ts.net` name does not
+establish tailnet ownership or ACL enforcement. Live HTTPS identity verification
+and a separate deny-path probe remain mandatory.
+
 Kubernetes ingress policy rules are additive; checking the named policy alone
 cannot exclude another policy that exposes the worker. The inventory must
 contain exactly the named policy with the same UID and spec, and exactly the named private Ingress and ClusterIP Service in their respective inventories. The checked-in
