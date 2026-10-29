@@ -30,7 +30,7 @@ def _meta(obj, kind, name, namespace):
     return meta
 
 
-def verify(plan, service, ingress, policy, all_policies):
+def verify(plan, service, ingress, policy, all_policies, all_ingresses, all_services):
     """Fail closed for route/spec drift; no cluster writes or readiness claims."""
     if not isinstance(plan, dict) or plan.get('format') != 't3-k3s-p1-plan-v1':
         raise RouteError('invalid P1 plan format')
@@ -99,20 +99,44 @@ def verify(plan, service, ingress, policy, all_policies):
         raise RouteError('NetworkPolicy identity differs across snapshots')
     _same(listed.get('spec'), pspec, 'inventory NetworkPolicy spec')
 
+    # A second Ingress or LoadBalancer/NodePort Service in this namespace can
+    # advertise another route to the same worker. Only inspecting the named
+    # private Ingress and ClusterIP Service is not a namespace-wide inventory.
+    # This remains a desired-spec audit, NOT proof that traffic is denied.
+    for kind, expected, inventory in (
+        ('Service', service, all_services),
+        ('Ingress', ingress, all_ingresses),
+    ):
+        if (not isinstance(inventory, dict)
+                or inventory.get('kind') != kind + 'List'
+                or not isinstance(inventory.get('items'), list)
+                or len(inventory['items']) != 1):
+            raise RouteError(f'{kind} namespace inventory is missing or ambiguous')
+        listed = inventory['items'][0]
+        listed_meta = _meta(listed, kind, 't3-worker', ns)
+        expected_uid = expected['metadata'].get('uid')
+        if (not isinstance(expected_uid, str)
+                or not re.fullmatch(r'[a-zA-Z0-9-]{8,128}', expected_uid)
+                or listed_meta.get('uid') != expected_uid):
+            raise RouteError(f'{kind} identity differs across snapshots')
+        _same(listed.get('spec'), expected.get('spec'), f'inventory {kind} spec')
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for flag in ('plan', 'service', 'ingress', 'network-policy', 'all-network-policies'):
+    for flag in ('plan', 'service', 'ingress', 'network-policy', 'all-network-policies',
+                 'all-ingresses', 'all-services'):
         parser.add_argument('--' + flag, type=Path, required=True)
     args = parser.parse_args()
     try:
         values = [json.loads(getattr(args, x).read_text(encoding='utf-8'))
-                  for x in ('plan', 'service', 'ingress', 'network_policy', 'all_network_policies')]
+                  for x in ('plan', 'service', 'ingress', 'network_policy', 'all_network_policies',
+                            'all_ingresses', 'all_services')]
         verify(*values)
     except (OSError, ValueError, TypeError, AttributeError, KeyError) as exc:
         # Do not repeat private kubeconfig paths, DNS names, or JSON in errors.
         parser.exit(1, f'FAIL: P1 private route specification not verified ({type(exc).__name__})\n')
-    print('PASS: P1 desired private route and namespace policy inventory match (offline only)')
+    print('PASS: P1 desired private route and namespace route/policy inventories match (offline only)')
     print('NOT RUN: DNS, private TLS, Tailscale ACL, NetworkPolicy enforcement, OAuth or live delegation')
 
 
