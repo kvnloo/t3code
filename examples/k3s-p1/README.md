@@ -163,14 +163,17 @@ proof of the data plane.
 *disposable* P1 K3s worker and its exact context, the new `capture.py`
 reduces mistakes in the manual observation commands above. It uses only
 explicit-context `kubectl get -o json` calls with deadlines; it cannot
-provision, mutate, link, cancel or delete a worker. It collects six named
-resources (Namespace, PVC, Deployment, Service, Ingress, NetworkPolicy) and
-five complete namespace inventories (policies, ingresses, services,
+provision, mutate, link, cancel or delete a worker. It collects eight named
+resources (Namespace, ResourceQuota, ServiceAccount, PVC, Deployment, Service,
+Ingress, NetworkPolicy) and five complete namespace inventories (policies, ingresses, services,
 ReplicaSets, Pods). Each is read twice and mismatches fail closed **before
 any output is published**. Named resources must have the planned Kubernetes
 kind/name/namespace and a UID; the named Service, Ingress and NetworkPolicy
 must also exactly match their corresponding namespace-inventory entry.
 This rejects mixed GET/LIST views even when each view is independently stable.
+The extra quota and no-token ServiceAccount snapshots are for *subsequent*
+human/offline security review; collection alone does **not** validate their
+specifications or prove admission limits and token restrictions are enforced.
 It catches only a subset of mid-capture drift: Kubernetes offers **no atomic
 cross-resource snapshot** here, and matching objects do not prove freshness,
 route integrity or runtime attestation.
@@ -195,7 +198,8 @@ and atomically publishes the directory after all writes are synced. Linux
 directory from being replaced; unsupported kernels fail closed, not silently
 overwrite a previous snapshot. Run
 existing `observe.py`, `pod_check.py` and `route_check.py` on these
-**saved files**, using `first/namespace.json`, `first/pvc.json`,
+**saved files**, using `first/namespace.json`, `first/quota.json`,
+`first/serviceaccount.json`, `first/pvc.json`,
 `first/deployment.json`, `first/service.json`,
 `first/ingress.json`, `first/policy.json`,
 `first/all-policies.json`, `first/all-ingresses.json`,

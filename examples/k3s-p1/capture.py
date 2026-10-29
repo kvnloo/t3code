@@ -24,6 +24,8 @@ class CaptureError(RuntimeError):
 
 NAMES = (
     ('namespace', 'namespace', None),
+    ('quota', 'resourcequota', 'worker-quota'),
+    ('serviceaccount', 'serviceaccount', 't3-worker'),
     ('pvc', 'pvc', 't3-worker-data'),
     ('deployment', 'deployment', 't3-worker'),
     ('service', 'service', 't3-worker'),
@@ -40,6 +42,8 @@ LISTS = (
 
 NAMED_KINDS = {
     'namespace': 'Namespace',
+    'quota': 'ResourceQuota',
+    'serviceaccount': 'ServiceAccount',
     'pvc': 'PersistentVolumeClaim',
     'deployment': 'Deployment',
     'service': 'Service',
@@ -206,7 +210,7 @@ def main():
         publish(entries, args.output_dir)
     except (OSError, ValueError, TypeError, AttributeError, CaptureError) as exc:
         parser.exit(1, f'FAIL: P1 read-only snapshot capture ({type(exc).__name__})\n')
-    print('PASS: 11 API JSON snapshots captured to private directory (read-only Kubernetes calls)')
+    print('PASS: 13 API JSON snapshots captured to private directory (read-only Kubernetes calls)')
     print('NOT RUN: live integrity attestation, HTTPS, OAuth, linked delegation, cancellation, TTL')
 
 

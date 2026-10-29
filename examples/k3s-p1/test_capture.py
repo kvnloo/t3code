@@ -35,7 +35,8 @@ class Stub:
         name = remainder[0] if remainder else None
         if self.broken == resource:
             return subprocess.CompletedProcess(command, 1, '', 'private kubeconfig detail')
-        kinds = {'namespace': 'Namespace', 'pvc': 'PersistentVolumeClaim',
+        kinds = {'namespace': 'Namespace', 'resourcequota': 'ResourceQuota',
+                 'serviceaccount': 'ServiceAccount', 'pvc': 'PersistentVolumeClaim',
                  'deployment': 'Deployment', 'service': 'Service',
                  'ingress': 'Ingress', 'networkpolicy': 'NetworkPolicy'}
         listed_names = {'networkpolicies': ('networkpolicy', 'worker-ingress'),
@@ -80,8 +81,10 @@ class CaptureTests(unittest.TestCase):
     def test_read_only_explicit_context_and_stable_snapshot(self):
         stub = Stub()
         records = module.capture('disposable-k3s', PLAN, runner=stub)
-        self.assertEqual(len(records), 11)
-        self.assertEqual(len(stub.calls), 22)
+        self.assertEqual(len(records), 13)
+        self.assertEqual(len(stub.calls), 26)
+        self.assertEqual(records['quota']['kind'], 'ResourceQuota')
+        self.assertEqual(records['serviceaccount']['kind'], 'ServiceAccount')
         self.assertTrue(all('get' in c and 'apply' not in c and 'delete' not in c
                             and 'patch' not in c for c in stub.calls))
         self.assertTrue(all('--context' in c for c in stub.calls))
@@ -96,7 +99,7 @@ class CaptureTests(unittest.TestCase):
                 module.capture('disposable-k3s', altered, runner=Stub())
 
     def test_detect_change_in_named_resource_or_inventory(self):
-        for res in ('deployment', 'ingresses', 'pods'):
+        for res in ('resourcequota', 'serviceaccount', 'deployment', 'ingresses', 'pods'):
             with self.subTest(resource=res), self.assertRaises(module.CaptureError):
                 module.capture('disposable-k3s', PLAN, runner=Stub(drift=res))
 
@@ -104,6 +107,8 @@ class CaptureTests(unittest.TestCase):
         cases = (
             ('deployment', 'kind'), ('deployment', 'name'),
             ('deployment', 'namespace'), ('deployment', 'uid'),
+            ('resourcequota', 'kind'), ('resourcequota', 'uid'),
+            ('serviceaccount', 'name'), ('serviceaccount', 'namespace'),
             ('namespace', 'name'), ('services', 'inventory_missing'),
             ('services', 'inventory_drift'), ('ingresses', 'inventory_missing'),
             ('networkpolicies', 'inventory_drift'),
@@ -111,6 +116,12 @@ class CaptureTests(unittest.TestCase):
         for case in cases:
             with self.subTest(mutation=case), self.assertRaises(module.CaptureError):
                 module.capture('disposable-k3s', PLAN, runner=Stub(tamper=case))
+
+    def test_missing_quota_or_service_account_fails_closed(self):
+        for res in ('resourcequota', 'serviceaccount'):
+            with self.subTest(resource=res), self.assertRaisesRegex(
+                    module.CaptureError, 'request rejected'):
+                module.capture('disposable-k3s', PLAN, runner=Stub(broken=res))
 
     def test_redacted_rejected_api_read(self):
         with self.assertRaisesRegex(module.CaptureError, 'request rejected') as ctx:
