@@ -4,14 +4,14 @@
 `observe.py` helper compares one immutable P1 plan with API JSON for its
 Namespace, PVC and Deployment, then extracts their stable Kubernetes UIDs. A previous
 binding can be replay-checked so a replaced Namespace, PVC, Deployment **or pinned image**
-**fails closed** rather than looking like the same worker lease. The v3 receipt contains a SHA-256 fingerprint of the full immutable OCI image
+**fails closed** rather than looking like the same worker lease. The v4 receipt contains a SHA-256 fingerprint of the full immutable OCI image
 reference, never the raw registry/image name, and checks the observed
 Deployment's **desired Pod template** image equals the plan. It also requires the
 planned non-root Pod/container security, resource bounds, probes and no unexpected
 host-network/PID/IPC access, injected init containers, registry credentials,
 environment secrets or shell overrides. An unexpected admission mutation fails
 closed for human review; Kubernetes may default other fields. Old v1/v2 binding
-baselines cannot be reused: recollect a trusted v3 baseline from one approved
+or v3 baselines cannot be reused: recollect a trusted v4 baseline from one approved
 context. This does **not** check the image actually running in any Pod.
 
 This is **not** a provisioner, cluster lease, service/Pod readiness probe,
@@ -65,7 +65,7 @@ python3 examples/k3s-p1/observe.py \
 For a subsequent observation, **refresh all three Kubernetes JSON snapshots from the same
 approved context** and use the **same pinned image receipt**, then pass
 `--baseline /tmp/t3-p1-private/binding.json`. A Namespace/PVC/Deployment UID, desired image or PV
-binding change now fails. A missing/unbound PVC or lease/retention mismatch
+binding or Deployment generation change now fails. A missing/unbound PVC or lease/retention mismatch
 also fails; nothing is automatically repaired or deleted. Store the baseline
 safely and never overwrite it merely to make a failing comparison pass.
 
@@ -85,7 +85,9 @@ from one approved disposable K3s context. It binds Deployment UID →
 ReplicaSet controller UID → the **only** Pod UID, verifies Deployment rollout
 generation/ready replicas, Pod/container readiness as reported by Kubernetes,
 pinned container image reference, required Pod security/storage, and hashes
-the runtime image/container IDs into a private receipt. It rejects extra Pods,
+the runtime image/container IDs into a private receipt. The v4 binding also
+pins the Deployment's observed generation, so a changed spec on the same UID
+cannot be mistaken for the originally reviewed Deployment. It rejects extra Pods,
 stale rollout, wrong controller, changed image, extra containers/credentials and
 unapproved Pod mutations. Older inactive ReplicaSets are permitted.
 
@@ -116,6 +118,11 @@ python3 examples/k3s-p1/pod_check.py \
   --pods /tmp/t3-p1-private/pods.json \
   > /tmp/t3-p1-private/pod-snapshot.json
 ```
+
+If the Deployment generation changes, stop, review the new desired spec and
+re-run `observe.py` against fresh same-context snapshots; do **not** overwrite
+the original binding merely to make the check pass. Kubernetes increments
+Deployment generation on spec changes, but offline snapshots can still be forged.
 
 Run `python3 -m unittest discover -s examples/k3s-p1 -p 'test_pod_check.py' -v`
 for synthetic, credential-free regressions. Keep API snapshots private; they may
