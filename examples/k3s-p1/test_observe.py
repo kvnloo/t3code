@@ -54,6 +54,31 @@ DEPLOYMENT = {'kind': 'Deployment', 'metadata': {
                                           {'name': 'tmp', 'emptyDir': {'sizeLimit': '1Gi'}}]}}}}
 
 
+_POD = DEPLOYMENT['spec']['template']['spec']
+_POD.update({
+    'hostname': 't3-worker', 'terminationGracePeriodSeconds': 90,
+    'securityContext': {
+        'runAsNonRoot': True, 'runAsUser': 10001, 'runAsGroup': 10001,
+        'fsGroup': 10001, 'seccompProfile': {'type': 'RuntimeDefault'},
+    },
+})
+_CONTAINER = _POD['containers'][0]
+_CONTAINER.update({
+    'workingDir': '/data', 'imagePullPolicy': 'IfNotPresent',
+    'ports': [{'name': 'http', 'containerPort': 3773}],
+    'resources': {
+        'requests': {'cpu': '500m', 'memory': '1Gi', 'ephemeral-storage': '512Mi'},
+        'limits': {'cpu': '2', 'memory': '4Gi', 'ephemeral-storage': '2Gi'},
+    },
+    'securityContext': {'allowPrivilegeEscalation': False, 'readOnlyRootFilesystem': True,
+                        'capabilities': {'drop': ['ALL']}},
+    'startupProbe': {'tcpSocket': {'port': 'http'}, 'periodSeconds': 5,
+                     'failureThreshold': 60},
+    'readinessProbe': {'tcpSocket': {'port': 'http'}, 'periodSeconds': 5},
+})
+
+
+
 class ObserveTests(unittest.TestCase):
     def test_stable_namespace_and_pvc_uid(self):
         initial = p.inspect(PLAN, NS, PVC, DEPLOYMENT)
@@ -180,6 +205,49 @@ class ObserveTests(unittest.TestCase):
         with self.assertRaisesRegex(p.ObservationError, 'binding changed'):
             p.compare(p.inspect(PLAN, NS, PVC, replaced),
                       p.inspect(PLAN, NS, PVC, DEPLOYMENT))
+
+    def test_privilege_network_and_credential_injection_fail_closed(self):
+        changes = [
+            ('host-network', ('hostNetwork',), True),
+            ('host-pid', ('hostPID',), True),
+            ('host-ipc', ('hostIPC',), True),
+            ('sidecar', ('initContainers',), [{'name': 'other', 'image': PLAN['image']}]),
+            ('registry-secret', ('imagePullSecrets',), [{'name': 'secret'}]),
+            ('hostname', ('hostname',), 'other'),
+            ('pod-security', ('securityContext', 'runAsNonRoot'), False),
+            ('pod-seccomp', ('securityContext', 'seccompProfile'), {'type': 'Unconfined'}),
+            ('env-secret', ('containers', 0, 'envFrom'), [{'secretRef': {'name': 'secret'}}]),
+            ('shell-override', ('containers', 0, 'command'), ['/bin/sh']),
+            ('privileged', ('containers', 0, 'securityContext', 'privileged'), True),
+            ('escalation', ('containers', 0, 'securityContext', 'allowPrivilegeEscalation'), True),
+            ('filesystem', ('containers', 0, 'securityContext', 'readOnlyRootFilesystem'), False),
+            ('caps', ('containers', 0, 'securityContext', 'capabilities'), {'drop': []}),
+            ('cpu', ('containers', 0, 'resources', 'limits', 'cpu'), '8'),
+            ('readiness', ('containers', 0, 'readinessProbe', 'tcpSocket', 'port'), 9999),
+        ]
+        for label, path, value in changes:
+            bad = copy.deepcopy(DEPLOYMENT)
+            target = bad['spec']['template']['spec']
+            for segment in path[:-1]:
+                target = target[segment]
+            target[path[-1]] = value
+            with self.subTest(label=label), self.assertRaises(p.ObservationError):
+                p.inspect(PLAN, NS, PVC, bad)
+
+    def test_missing_required_security_fields_fail_closed(self):
+        for path in [
+            ('securityContext',),
+            ('containers', 0, 'securityContext'),
+            ('containers', 0, 'resources'),
+            ('containers', 0, 'startupProbe'),
+        ]:
+            bad = copy.deepcopy(DEPLOYMENT)
+            target = bad['spec']['template']['spec']
+            for segment in path[:-1]:
+                target = target[segment]
+            del target[path[-1]]
+            with self.subTest(path=path), self.assertRaises(p.ObservationError):
+                p.inspect(PLAN, NS, PVC, bad)
 
     def test_cli_rejects_invalid_binding_without_emitting_ids(self):
         with tempfile.TemporaryDirectory() as directory:
