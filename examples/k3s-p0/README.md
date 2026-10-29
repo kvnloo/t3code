@@ -46,7 +46,9 @@ python3 examples/k3s-p0/preflight.py --context YOUR_DISPOSABLE_K3S_CONTEXT
 ```
 
 The probe uses explicit-context `kubectl get` requests only. It requires
-Kubernetes 1.28+, exactly one Ready/un-tainted/schedulable node, an **absent**
+a stable K3s build on Kubernetes 1.28+ (`/version.gitVersion` must end in
+`+k3sN`; generic Kubernetes distributions are rejected), exactly one
+Ready/un-tainted/schedulable node, an **absent**
 `t3-k3s-p0` namespace (protecting existing state), the `tailscale` namespace
 and IngressClass controller `tailscale.com/ts-ingress`, and exactly one named
 default StorageClass. Missing RBAC or API data fails closed; errors never copy
