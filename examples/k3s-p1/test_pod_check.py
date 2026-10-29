@@ -21,8 +21,8 @@ DUID = '11111111-1111-4111-8111-111111111111'
 RUID = '22222222-2222-4222-8222-222222222222'
 PUID = '33333333-3333-4333-8333-333333333333'
 PLAN = {'format': 't3-k3s-p1-plan-v1', 'leaseHash': HASH, 'namespace': NS, 'image': IMAGE}
-BINDING = {'format': 't3-k3s-p1-binding-v3', 'leaseHash': HASH, 'namespace': NS,
-           'deploymentUID': DUID, 'imageRefSha256': hashlib.sha256(IMAGE.encode()).hexdigest()}
+BINDING = {'format': 't3-k3s-p1-binding-v4', 'leaseHash': HASH, 'namespace': NS,
+           'deploymentUID': DUID, 'deploymentGeneration': 2, 'imageRefSha256': hashlib.sha256(IMAGE.encode()).hexdigest()}
 CONTAINER = {'name': 't3', 'image': IMAGE, 'workingDir': '/data',
              'imagePullPolicy': 'IfNotPresent',
              'ports': [{'name': 'http', 'containerPort': 3773}],
@@ -79,6 +79,7 @@ class RuntimeTests(unittest.TestCase):
     def test_reject_ownership_or_lease_rebinding(self):
         for idx, path, value in [
             (1, ('deploymentUID',), 'ffffffff-ffff-ffff-ffff-ffffffffffff'),
+            (1, ('deploymentGeneration',), 1),
             (1, ('imageRefSha256',), '0' * 64),
             (2, ('metadata', 'uid'), 'ffffffff-ffff-ffff-ffff-ffffffffffff'),
             (3, ('items', 0, 'metadata', 'ownerReferences', 0, 'controller'), False),
@@ -91,6 +92,19 @@ class RuntimeTests(unittest.TestCase):
                 v = v[key]
             v[path[-1]] = value
             with self.subTest(idx=idx, path=path), self.assertRaises(pc.PodError):
+                pc.inspect(*args)
+
+    def test_reject_spec_change_between_binding_and_pod_read(self):
+        args = fixture()
+        args[2]['metadata']['generation'] = 3
+        args[2]['status']['observedGeneration'] = 3
+        # Same UID, image and ready replicas do not imply unchanged spec.
+        with self.assertRaisesRegex(pc.PodError, 'deployment changed'):
+            pc.inspect(*args)
+        for bad in (None, 0, True, '2'):
+            args = fixture()
+            args[1]['deploymentGeneration'] = bad
+            with self.subTest(bad=bad), self.assertRaises(pc.PodError):
                 pc.inspect(*args)
 
     def test_reject_false_readiness_and_concurrent_pods(self):
