@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import secrets
 import stat
 import sys
 
@@ -130,18 +131,35 @@ def lock(state_dir: Path, plan: dict) -> bool:
             raise PlanError('state directory must be owned by caller with mode 0700')
         filename = plan['leaseHash'] + '.json'
         data = (json.dumps(plan, sort_keys=True, separators=(',', ':')) + '\n').encode('utf-8')
+        # Never publish a receipt until its bytes are fully written and synced.
+        # O_EXCL on the final name exposes an empty/partial file to concurrent
+        # retries; a hard link from a private temporary inode publishes atomically.
+        pending = f'.{filename}.{secrets.token_hex(16)}.pending'
         file_flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0)
+        created = False
         try:
-            file = os.open(filename, file_flags, 0o600, dir_fd=directory)
-        except FileExistsError:
-            file = None
-        except OSError as exc:
-            raise PlanError('cannot establish local lease receipt') from exc
-        if file is not None:
+            file = os.open(pending, file_flags, 0o600, dir_fd=directory)
             with os.fdopen(file, 'wb') as output:
                 output.write(data)
                 output.flush()
                 os.fsync(output.fileno())
+            try:
+                os.link(pending, filename, src_dir_fd=directory,
+                        dst_dir_fd=directory, follow_symlinks=False)
+            except FileExistsError:
+                # Another caller published first. Verify its exact bytes below.
+                pass
+            else:
+                os.fsync(directory)
+                created = True
+        except OSError as exc:
+            raise PlanError('cannot establish local lease receipt') from exc
+        finally:
+            try:
+                os.unlink(pending, dir_fd=directory)
+            except FileNotFoundError:
+                pass
+        if created:
             return True
         read_flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0)
         try:
