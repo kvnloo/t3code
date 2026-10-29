@@ -3,8 +3,11 @@
 **READ-ONLY SOURCE CHECK; NO K3s EXECUTION OR WORKER AUTHORIZATION.** The
 `observe.py` helper compares one immutable P1 plan with API JSON for its
 Namespace and PVC, then extracts their stable Kubernetes UIDs. A previous
-binding can be replay-checked so a replaced Namespace or PVC **fails closed**
-rather than looking like the same worker lease.
+binding can be replay-checked so a replaced Namespace, PVC **or pinned image**
+**fails closed** rather than looking like the same worker lease. The v2
+receipt contains a SHA-256 fingerprint of the full immutable OCI image
+reference, never the raw registry/image name. Old v1 binding baselines
+cannot be reused: recollect a trusted v2 baseline before an approved rollout.
 
 This is **not** a provisioner, cluster lease, service/Pod readiness probe,
 T3 environment identity check, HTTPS proof, peer authorization, task
@@ -21,8 +24,9 @@ python3 -m unittest discover -s examples/k3s-p1 -p 'test_*.py' -v
 python3 -m py_compile examples/k3s-p1/observe.py
 ```
 
-The six focused binding tests check stable UIDs, lease/namespace mismatch,
+The eight focused binding tests check stable UIDs, lease/namespace mismatch,
 PVC replacement, invalid/unbound/deleting storage, retention/annotation drift,
+immutable image reference drift/format, rejection of a legacy v1 baseline,
 and CLI failure without printing private IDs.
 
 ## Human-gated future Kubernetes observation (NOT RUN)
@@ -49,7 +53,7 @@ python3 examples/k3s-p1/observe.py \
 ```
 
 For a subsequent observation, **refresh both JSON snapshots from the same
-approved context**, then pass
+approved context** and use the **same pinned image receipt**, then pass
 `--baseline /tmp/t3-p1-private/binding.json`. A Namespace/PVC UID or PV
 binding change now fails. A missing/unbound PVC or lease/retention mismatch
 also fails; nothing is automatically repaired or deleted. Store the baseline
