@@ -20,7 +20,9 @@ an ingress-only NetworkPolicy.
 The separate [offline UID observation helper](OBSERVATION.md) checks a
 reported Kubernetes Namespace/PVC/Deployment binding **and immutable
 image-reference fingerprint** against the plan and an earlier v3 baseline.
-It checks the Deployment's desired template image and PVC/SA mounting,
+It checks the Deployment's desired template image, PVC/SA mounting,
+non-root Pod/container security, resources and probes, and rejects host access,
+additional containers and injected credentials/command overrides,
 not the image of a live Pod. Legacy v1/v2 baselines are rejected. It never contacts a cluster or proves a live T3 worker.
 
 The local private mode-0600 receipt is create-once. A retry with identical
