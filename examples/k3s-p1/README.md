@@ -190,7 +190,10 @@ python3 examples/k3s-p1/capture.py \
 
 The command refuses existing destination paths, non-private parents,
 invalid plans or inconsistent repeated reads. It writes each JSON as 0600
-and atomically publishes the directory after all writes are synced. Run
+and atomically publishes the directory after all writes are synced. Linux
+`renameat2(RENAME_NOREPLACE)` prevents a racing writer's empty destination
+directory from being replaced; unsupported kernels fail closed, not silently
+overwrite a previous snapshot. Run
 existing `observe.py`, `pod_check.py` and `route_check.py` on these
 **saved files**, using `first/namespace.json`, `first/pvc.json`,
 `first/deployment.json`, `first/service.json`,
