@@ -17,6 +17,10 @@ ResourceQuota, no-token ServiceAccount, separate PVC, one Recreate Deployment
 running a headless T3 server, ClusterIP Service, private Tailscale Ingress and
 an ingress-only NetworkPolicy.
 
+The separate [offline UID observation helper](OBSERVATION.md) checks a
+reported Kubernetes Namespace/PVC binding against this plan and an earlier
+binding. It never contacts a cluster or proves a live T3 worker.
+
 The local private mode-0600 receipt is create-once. A retry with identical
 arguments renders identical YAML. Reusing the key with changed image/expiry
 fails closed rather than silently rebinding a purported lease. The receipt
@@ -58,10 +62,11 @@ fails instead of overwriting it.
 2. Inspect the generated eight-object YAML and chosen *disposable* K3s
    context. Verify the computed worker namespace is unused. Any dry run,
    image build or cluster apply requires separate owner authorization.
-3. Develop an opt-in reconcile/create/retry path that records Kubernetes
-   object UIDs, a stable worker descriptor, lease identity, expiry and explicit
-   retention/cancel/resume states; a lost HTTP response must never trigger
-   duplicate accepted completion.
+3. The offline UID helper checks supplied Namespace/PVC snapshots, but does
+   not persist a runtime lease or authorize reuse. Develop an opt-in
+   reconcile/create/retry path recording verified live Pod/Service ownership,
+   stable T3 descriptor, lease identity, expiry and explicit retention/cancel/
+   resume states; a lost response must never duplicate accepted completion.
 4. Independently approve OAuth peer linking on both environments, then run
    one real remote delegated task against a pinned repository revision.
    Client-saved environment and T3 peer OAuth are not interchangeable.
