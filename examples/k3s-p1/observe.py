@@ -73,6 +73,9 @@ def _inspect(plan, namespace, pvc, deployment):
     if dmeta.get('deletionTimestamp'):
         raise ObservationError('deployment is deleting')
     deployment_uid = _uid(deployment, 'deployment')
+    generation = dmeta.get('generation')
+    if type(generation) is not int or generation < 1:
+        raise ObservationError('deployment lacks a valid generation')
     dspec = deployment.get('spec', {})
     _require(dspec.get('replicas'), 1, 'deployment replicas')
     _require(dspec.get('strategy', {}).get('type'), 'Recreate', 'deployment strategy')
@@ -200,10 +203,10 @@ def _inspect(plan, namespace, pvc, deployment):
     if not isinstance(volume, str) or not volume or len(volume) > 253:
         raise ObservationError('PVC has no bound PersistentVolume name')
 
-    return {'format': 't3-k3s-p1-binding-v3', 'leaseHash': lease_hash,
+    return {'format': 't3-k3s-p1-binding-v4', 'leaseHash': lease_hash,
             'namespace': name, 'namespaceUID': _uid(namespace, 'namespace'),
             'pvcUID': _uid(pvc, 'PVC'), 'deploymentUID': deployment_uid,
-            'volumeName': volume,
+            'deploymentGeneration': generation, 'volumeName': volume,
             'imageRefSha256': hashlib.sha256(image.encode('ascii')).hexdigest(),
             'expiresAt': expiry, 'retention': 'retain'}
 
