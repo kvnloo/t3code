@@ -294,5 +294,50 @@ class ObserveTests(unittest.TestCase):
             self.assertNotIn(altered['metadata']['uid'], rejected.stderr)
 
 
+    def test_invalid_calendar_dates_and_planning_bounds_fail_closed(self):
+        for expiry in ('2026-02-30T00:00:00Z', '2026-13-01T00:00:00Z',
+                       '2019-12-31T23:59:59Z', '2101-01-01T00:00:00Z'):
+            bad = copy.deepcopy(PLAN)
+            bad['expiresAt'] = expiry
+            with self.subTest(expiry=expiry), self.assertRaises(p.ObservationError):
+                p.inspect(bad, NS, PVC, DEPLOYMENT)
+
+    def test_malformed_nested_api_json_fails_without_raw_traceback(self):
+        cases = [
+            ('namespace-metadata', 1, ('metadata',), None),
+            ('namespace-status', 1, ('status',), []),
+            ('pvc-spec', 2, ('spec',), None),
+            ('pvc-requests', 2, ('spec', 'resources', 'requests'), []),
+            ('deployment-spec', 3, ('spec',), None),
+            ('deployment-selector', 3, ('spec', 'selector'), None),
+            ('deployment-pod', 3, ('spec', 'template', 'spec'), []),
+        ]
+        for label, index, path, value in cases:
+            parts = [copy.deepcopy(x) for x in (PLAN, NS, PVC, DEPLOYMENT)]
+            target = parts[index]
+            for key in path[:-1]:
+                target = target[key]
+            target[path[-1]] = value
+            with self.subTest(label=label), self.assertRaisesRegex(
+                    p.ObservationError, 'malformed JSON object'):
+                p.inspect(*parts)
+
+        with tempfile.TemporaryDirectory() as directory:
+            documents = [copy.deepcopy(x) for x in (PLAN, NS, PVC, DEPLOYMENT)]
+            documents[1]['metadata'] = None
+            paths = [Path(directory) / name for name in
+                     ('plan.json', 'namespace.json', 'pvc.json', 'deployment.json')]
+            for path, doc in zip(paths, documents):
+                path.write_text(json.dumps(doc), encoding='utf-8')
+            args = [sys.executable, str(HERE / 'observe.py')]
+            for key, path in zip(('plan', 'namespace', 'pvc', 'deployment'), paths):
+                args.extend((f'--{key}', str(path)))
+            result = subprocess.run(args, capture_output=True, text=True, check=False)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.stdout, '')
+            self.assertNotIn('Traceback', result.stderr)
+            self.assertNotIn(str(paths[1]), result.stderr)
+
+
 if __name__ == '__main__':
     unittest.main()
