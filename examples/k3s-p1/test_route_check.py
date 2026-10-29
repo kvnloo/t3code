@@ -197,6 +197,33 @@ class RouteTests(unittest.TestCase):
                 with self.subTest(idx=idx, invalid=invalid), self.assertRaises(rc.RouteError):
                     rc.verify(*args)
 
+    def test_reject_controller_annotation_exposure_on_named_and_inventory_routes(self):
+        # Tailscale creates an L3 ingress proxy for annotated ClusterIP
+        # Services. It need not appear as another Ingress/Service here.
+        for idx, annotation in (
+            (1, {'tailscale.com/expose': 'true'}),
+            (6, {'tailscale.com/expose': 'true'}),
+            (1, {'external-dns.kubernetes.io/hostname': 'public.example.org'}),
+            (6, {'external-dns.kubernetes.io/hostname': 'public.example.org'}),
+            (2, {'tailscale.com/funnel': 'true'}),
+            (5, {'tailscale.com/funnel': 'true'}),
+            (1, None),
+            (6, []),
+        ):
+            args = copy.deepcopy([PLAN, S, I, P, ALL, ALL_INGRESSES, ALL_SERVICES])
+            obj = args[idx]['items'][0] if idx in (5, 6) else args[idx]
+            obj['metadata']['annotations'] = annotation
+            with self.subTest(idx=idx, annotation=annotation), self.assertRaises(rc.RouteError):
+                rc.verify(*args)
+
+        # kubectl apply metadata is not an alternate route.
+        args = copy.deepcopy([PLAN, S, I, P, ALL, ALL_INGRESSES, ALL_SERVICES])
+        for idx in (1, 2, 5, 6):
+            obj = args[idx]['items'][0] if idx in (5, 6) else args[idx]
+            obj['metadata']['annotations'] = {
+                'kubectl.kubernetes.io/last-applied-configuration': '{}'}
+        rc.verify(*args)
+
     def test_cli_no_network_and_no_private_details(self):
         with tempfile.TemporaryDirectory() as d:
             paths = [Path(d) / x for x in ('plan.json', 'service.json', 'ingress.json', 'policy.json',
