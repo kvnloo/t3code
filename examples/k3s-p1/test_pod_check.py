@@ -44,7 +44,8 @@ D = {'kind': 'Deployment', 'metadata': {'name': 't3-worker', 'uid': DUID,
 RS = {'kind': 'ReplicaSet', 'metadata': {'name': 't3-worker-abcdef', 'uid': RUID,
       'namespace': NS, 'ownerReferences': [{'kind': 'Deployment', 'name': 't3-worker',
                                            'uid': DUID, 'controller': True}]},
-      'spec': {'replicas': 1}, 'status': {'readyReplicas': 1, 'replicas': 1}}
+      'spec': {'replicas': 1, 'template': {'spec': copy.deepcopy(PODSPEC)}},
+      'status': {'readyReplicas': 1, 'replicas': 1}}
 POD = {'kind': 'Pod', 'metadata': {'name': 't3-worker-abcdef-0123', 'namespace': NS,
        'uid': PUID, 'labels': {'app': 't3-worker'}, 'ownerReferences': [
            {'kind': 'ReplicaSet', 'name': RS['metadata']['name'], 'uid': RUID,
@@ -105,6 +106,30 @@ class RuntimeTests(unittest.TestCase):
             args = fixture()
             args[1]['deploymentGeneration'] = bad
             with self.subTest(bad=bad), self.assertRaises(pc.PodError):
+                pc.inspect(*args)
+
+    def test_reject_active_replicaset_template_drift(self):
+        # A clean Pod can be replaced from an altered ReplicaSet template.
+        baseline = fixture()
+        baseline[3]['items'][0]['spec']['template']['metadata'] = {
+            'labels': {'pod-template-hash': 'abcdef'}}
+        pc.inspect(*baseline)  # Controller-added template metadata is expected.
+        for change in ('missing', 'sidecar', 'image', 'service-account', 'volume'):
+            args = fixture()
+            spec = args[3]['items'][0]['spec']
+            if change == 'missing':
+                del spec['template']
+            elif change == 'sidecar':
+                spec['template']['spec']['containers'].append(
+                    {'name': 'injected', 'image': IMAGE})
+            elif change == 'image':
+                spec['template']['spec']['containers'][0]['image'] = 't3:latest'
+            elif change == 'service-account':
+                spec['template']['spec']['serviceAccountName'] = 'default'
+            elif change == 'volume':
+                spec['template']['spec']['volumes'] = [{'name': 'data', 'hostPath': {'path': '/host'}}]
+            with self.subTest(change=change), self.assertRaisesRegex(
+                    pc.PodError, 'ReplicaSet template'):
                 pc.inspect(*args)
 
     def test_reject_false_readiness_and_concurrent_pods(self):
