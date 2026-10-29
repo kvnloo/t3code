@@ -160,6 +160,43 @@ class RouteTests(unittest.TestCase):
             with self.subTest(index=index, field='spec'), self.assertRaises(rc.RouteError):
                 rc.verify(*args)
 
+    def test_private_advertised_ingress_status_and_empty_status(self):
+        # An unscheduled Ingress has no status; an observed status must be private.
+        ingress = copy.deepcopy(I)
+        ingress['status'] = {'loadBalancer': {'ingress': [{
+            'hostname': N + '.tailxxx.ts.net'}]}}
+        service = copy.deepcopy(S)
+        service['status'] = {'loadBalancer': {}}
+        rc.verify(PLAN, service, ingress, P, ALL,
+                  {'kind': 'IngressList', 'items': [copy.deepcopy(ingress)]},
+                  {'kind': 'ServiceList', 'items': [copy.deepcopy(service)]})
+
+    def test_reject_public_or_inconsistent_advertised_status(self):
+        # Public ingress, extra routes and stale mismatched inventory can
+        # otherwise pass when only desired .spec is validated.
+        cases = [
+            (1, [{'ip': '203.0.113.10'}]),
+            (2, [{'hostname': 'public.example.com'}]),
+            (2, [{'ip': '203.0.113.10'}]),
+            (2, [{'hostname': N + '.tailxxx.ts.net', 'ip': '203.0.113.10'}]),
+            (2, [{'hostname': N + '.tailxxx.ts.net'}] * 2),
+            (5, [{'hostname': 'public.example.com'}]),
+            (6, [{'ip': '203.0.113.10'}]),
+        ]
+        for idx, routes in cases:
+            args = copy.deepcopy([PLAN, S, I, P, ALL, ALL_INGRESSES, ALL_SERVICES])
+            obj = args[idx]['items'][0] if idx in (5, 6) else args[idx]
+            obj['status'] = {'loadBalancer': {'ingress': routes}}
+            with self.subTest(idx=idx, routes=routes), self.assertRaises(rc.RouteError):
+                rc.verify(*args)
+        for idx in (1, 2, 5, 6):
+            for invalid in (None, {'loadBalancer': None}, {'loadBalancer': {'ingress': {}}}):
+                args = copy.deepcopy([PLAN, S, I, P, ALL, ALL_INGRESSES, ALL_SERVICES])
+                obj = args[idx]['items'][0] if idx in (5, 6) else args[idx]
+                obj['status'] = invalid
+                with self.subTest(idx=idx, invalid=invalid), self.assertRaises(rc.RouteError):
+                    rc.verify(*args)
+
     def test_cli_no_network_and_no_private_details(self):
         with tempfile.TemporaryDirectory() as d:
             paths = [Path(d) / x for x in ('plan.json', 'service.json', 'ingress.json', 'policy.json',
