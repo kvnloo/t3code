@@ -36,6 +36,15 @@ LISTS = (
     ('pods', 'pods', 'PodList'),
 )
 
+NAMED_KINDS = {
+    'namespace': 'Namespace',
+    'pvc': 'PersistentVolumeClaim',
+    'deployment': 'Deployment',
+    'service': 'Service',
+    'ingress': 'Ingress',
+    'policy': 'NetworkPolicy',
+}
+
 
 def _read(context, namespace, resource, name, runner):
     command = ['kubectl', '--context', context, '--request-timeout=10s']
@@ -83,7 +92,16 @@ def capture(context, plan, runner=subprocess.run):
     for key, resource, name in NAMES:
         item = _read(context, namespace, resource, name, runner)
         meta = item.get('metadata')
-        if not isinstance(meta, dict) or meta.get('namespace', namespace) != namespace:
+        expected_name = namespace if resource == 'namespace' else name
+        if (item.get('kind') != NAMED_KINDS[key]
+                or not isinstance(meta, dict)
+                or meta.get('name') != expected_name
+                or not isinstance(meta.get('uid'), str) or not meta['uid']):
+            raise CaptureError('named Kubernetes identity does not match the lease')
+        if resource == 'namespace':
+            if meta.get('namespace') not in (None, ''):
+                raise CaptureError('Namespace carries a foreign namespace')
+        elif meta.get('namespace') != namespace:
             raise CaptureError('named resource belongs to a different namespace')
         entries[key] = item
     for key, resource, kind in LISTS:
@@ -94,6 +112,17 @@ def capture(context, plan, runner=subprocess.run):
                or obj['metadata'].get('namespace') != namespace for obj in item['items']):
             raise CaptureError('inventory contains a foreign or malformed object')
         entries[key] = item
+    # Separate named GET and LIST requests can observe different objects even
+    # when each individual request remains stable across both reads. Reject
+    # mixed snapshots before publishing a seemingly coherent private receipt.
+    for key, inventory in (('policy', 'all-policies'),
+                           ('ingress', 'all-ingresses'),
+                           ('service', 'all-services')):
+        named = entries[key]
+        matches = [obj for obj in entries[inventory]['items']
+                   if obj['metadata'].get('name') == named['metadata']['name']]
+        if len(matches) != 1 or matches[0] != named:
+            raise CaptureError('named route or policy disagrees with namespace inventory')
     # Read everything again: reject mid-capture mutation of named endpoints,
     # Deployments, Pods, ReplicaSets or extra namespace routes/policies.
     for key, resource, name in NAMES:
