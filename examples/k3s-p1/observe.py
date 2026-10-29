@@ -82,6 +82,49 @@ def inspect(plan, namespace, pvc, deployment):
     container = containers[0]
     _require(container.get('name'), 't3', 'deployment container')
     _require(container.get('image'), image, 'observed deployment image')
+    # Fail closed if the observed desired Pod loosens its isolation while
+    # retaining the same Deployment UID, image, ServiceAccount and PVC.
+    # These checks cover spec drift, not admission/CNI enforcement or live Pods.
+    _require(pod.get('hostname'), 't3-worker', 'deployment hostname')
+    _require(pod.get('terminationGracePeriodSeconds'), 90, 'deployment termination grace')
+    _require(pod.get('securityContext'), {
+        'runAsNonRoot': True, 'runAsUser': 10001, 'runAsGroup': 10001,
+        'fsGroup': 10001, 'seccompProfile': {'type': 'RuntimeDefault'},
+    }, 'deployment Pod security')
+    for field in ('hostNetwork', 'hostPID', 'hostIPC', 'shareProcessNamespace'):
+        if pod.get(field) not in (None, False):
+            raise ObservationError('deployment host isolation drift')
+    for field in ('initContainers', 'ephemeralContainers', 'imagePullSecrets',
+                  'hostAliases'):
+        if pod.get(field):
+            raise ObservationError('deployment unexpected Pod credential or container path')
+    _require(container.get('workingDir'), '/data', 'deployment working directory')
+    _require(container.get('imagePullPolicy'), 'IfNotPresent', 'deployment pull policy')
+    _require(container.get('ports'), [{'name': 'http', 'containerPort': 3773}],
+             'deployment HTTP port')
+    _require(container.get('resources'), {
+        'requests': {'cpu': '500m', 'memory': '1Gi', 'ephemeral-storage': '512Mi'},
+        'limits': {'cpu': '2', 'memory': '4Gi', 'ephemeral-storage': '2Gi'},
+    }, 'deployment resource bounds')
+    security = container.get('securityContext')
+    if not isinstance(security, dict):
+        raise ObservationError('deployment missing container security context')
+    for field, value in {
+        'allowPrivilegeEscalation': False, 'readOnlyRootFilesystem': True,
+        'capabilities': {'drop': ['ALL']},
+    }.items():
+        _require(security.get(field), value, 'deployment container security')
+    if security.get('privileged') not in (None, False):
+        raise ObservationError('deployment privileged container')
+    for field in ('env', 'envFrom', 'command', 'args', 'lifecycle', 'volumeDevices'):
+        if container.get(field):
+            raise ObservationError('deployment unexpected injected container configuration')
+    _require(container.get('startupProbe'), {
+        'tcpSocket': {'port': 'http'}, 'periodSeconds': 5, 'failureThreshold': 60,
+    }, 'deployment startup probe')
+    _require(container.get('readinessProbe'), {
+        'tcpSocket': {'port': 'http'}, 'periodSeconds': 5,
+    }, 'deployment readiness probe')
     _require(container.get('volumeMounts'), [
         {'name': 'data', 'mountPath': '/data'},
         {'name': 'tmp', 'mountPath': '/tmp'},
