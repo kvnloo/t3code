@@ -206,6 +206,21 @@ class ObserveTests(unittest.TestCase):
             p.compare(p.inspect(PLAN, NS, PVC, replaced),
                       p.inspect(PLAN, NS, PVC, DEPLOYMENT))
 
+    def test_expected_kubernetes_api_defaults_do_not_false_reject(self):
+        defaulted = copy.deepcopy(DEPLOYMENT)
+        container = defaulted['spec']['template']['spec']['containers'][0]
+        container['ports'][0]['protocol'] = 'TCP'
+        for probe_name, failure_threshold in (('startupProbe', 60), ('readinessProbe', 3)):
+            container[probe_name].update({
+                'failureThreshold': failure_threshold, 'timeoutSeconds': 1,
+                'successThreshold': 1, 'initialDelaySeconds': 0,
+            })
+        p.compare(p.inspect(PLAN, NS, PVC, defaulted),
+                  p.inspect(PLAN, NS, PVC, DEPLOYMENT))
+        container['ports'][0]['hostPort'] = 3773
+        with self.assertRaises(p.ObservationError):
+            p.inspect(PLAN, NS, PVC, defaulted)
+
     def test_privilege_network_and_credential_injection_fail_closed(self):
         changes = [
             ('host-network', ('hostNetwork',), True),
