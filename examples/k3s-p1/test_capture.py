@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import os
+import stat
 from pathlib import Path
 import subprocess
 import tempfile
@@ -138,6 +139,46 @@ class CaptureTests(unittest.TestCase):
                     module.publish({'pods': {'kind': 'PodList', 'items': []}}, target)
             self.assertEqual(target.stat().st_ino, competing_inode[0])
             self.assertEqual(list(parent.iterdir()), [target])
+
+    def test_staging_directory_fsync_precedes_parent_publication(self):
+        # A file's fsync does not make its *directory entry* crash durable.
+        # The staging directory must be synced before renameat2 exposes it.
+        with tempfile.TemporaryDirectory() as temp:
+            parent = Path(temp) / 'owner'
+            parent.mkdir(mode=0o700)
+            target = parent / 'snapshot'
+            events = []
+            original_fsync = os.fsync
+
+            def record_fsync(fd):
+                events.append('directory' if stat.S_ISDIR(os.fstat(fd).st_mode)
+                              else 'file')
+                return original_fsync(fd)
+
+            with mock.patch.object(module.os, 'fsync', side_effect=record_fsync):
+                module.publish({'pods': {'kind': 'PodList', 'items': []}}, target)
+            self.assertEqual(events, ['file', 'directory', 'directory'])
+            self.assertEqual(json.loads((target / 'pods.json').read_text())['kind'],
+                             'PodList')
+
+    def test_staging_directory_sync_failure_cannot_publish(self):
+        with tempfile.TemporaryDirectory() as temp:
+            parent = Path(temp) / 'owner'
+            parent.mkdir(mode=0o700)
+            target = parent / 'snapshot'
+            original_fsync = os.fsync
+
+            def reject_directory_fsync(fd):
+                if stat.S_ISDIR(os.fstat(fd).st_mode):
+                    raise OSError('injected staging-directory fsync failure')
+                return original_fsync(fd)
+
+            with mock.patch.object(module.os, 'fsync',
+                                   side_effect=reject_directory_fsync):
+                with self.assertRaises(OSError):
+                    module.publish({'pods': {'kind': 'PodList', 'items': []}}, target)
+            self.assertFalse(target.exists())
+            self.assertEqual(list(parent.iterdir()), [])
 
     def test_publish_private_atomic_and_no_overwrite(self):
         with tempfile.TemporaryDirectory() as temp:
