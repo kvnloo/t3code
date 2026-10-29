@@ -77,3 +77,49 @@ repository/delegated task result, cancel/restart/TTL behavior and deliberate
 PVC retention. An old or expired plan is not a live reservation. Consult
 [work order #45](https://github.com/kvnloo/t3code/issues/45) and
 [stacked Draft #47](https://github.com/kvnloo/t3code/pull/47) for gates.
+
+## Optional read-only Pod runtime snapshot — NOT live proof
+
+After the desired-spec binding above, `pod_check.py` checks **saved JSON**
+from one approved disposable K3s context. It binds Deployment UID →
+ReplicaSet controller UID → the **only** Pod UID, verifies Deployment rollout
+generation/ready replicas, Pod/container readiness as reported by Kubernetes,
+pinned container image reference, required Pod security/storage, and hashes
+the runtime image/container IDs into a private receipt. It rejects extra Pods,
+stale rollout, wrong controller, changed image, extra containers/credentials and
+unapproved Pod mutations. Older inactive ReplicaSets are permitted.
+
+These are **offline comparisons of supplied snapshots**, not authentication
+of the Kubernetes API, live reachability, effective isolation, T3 persisted
+`environmentId`, peer permission or accepted work. The imageID *hash* is
+an observation, **not** equality proof against a multi-platform manifest's
+pinned digest. Pod UID changing across restarts needs separate review; stable
+Deployment/PVC identity cannot substitute for T3's persisted identity.
+
+Only after a separately approved P1 cluster run, save full namespace
+inventories from the **same explicitly verified kubeconfig context**, close
+together in time, into an owner-private directory:
+
+```sh
+umask 077
+kubectl --context YOUR_APPROVED_DISPOSABLE_CONTEXT -n YOUR_P1_NAMESPACE \
+  get replicasets -o json > /tmp/t3-p1-private/replicasets.json
+kubectl --context YOUR_APPROVED_DISPOSABLE_CONTEXT -n YOUR_P1_NAMESPACE \
+  get pods -o json > /tmp/t3-p1-private/pods.json
+# Re-capture deployment.json alongside both inventories; keep the existing
+# original, independently verified binding.json and lease plan.
+python3 examples/k3s-p1/pod_check.py \
+  --plan /tmp/k3s-p1-receipts/YOUR_FULL_LEASE_SHA256.json \
+  --binding /tmp/t3-p1-private/binding.json \
+  --deployment /tmp/t3-p1-private/deployment.json \
+  --replicasets /tmp/t3-p1-private/replicasets.json \
+  --pods /tmp/t3-p1-private/pods.json \
+  > /tmp/t3-p1-private/pod-snapshot.json
+```
+
+Run `python3 -m unittest discover -s examples/k3s-p1 -p 'test_pod_check.py' -v`
+for synthetic, credential-free regressions. Keep API snapshots private; they may
+expose Pod labels and topology. No `kubectl apply`, no network calls from the
+script and no automatic worker acceptance. After this check, **still NOT RUN**:
+real T3 environment identity, private TLS/ACL, consented OAuth peer link,
+verified delegated result and cancellation/restart behavior.
