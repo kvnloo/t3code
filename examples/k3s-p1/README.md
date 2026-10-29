@@ -18,8 +18,9 @@ running a headless T3 server, ClusterIP Service, private Tailscale Ingress and
 an ingress-only NetworkPolicy.
 
 The separate [offline UID observation helper](OBSERVATION.md) checks a
-reported Kubernetes Namespace/PVC binding against this plan and an earlier
-binding. It never contacts a cluster or proves a live T3 worker.
+reported Kubernetes Namespace/PVC binding **and immutable image-reference
+fingerprint** against the plan and an earlier v2 baseline. Legacy UID-only
+baselines are rejected. It never contacts a cluster or proves a live T3 worker.
 
 The local private mode-0600 receipt is create-once. A retry with identical
 arguments renders identical YAML. Reusing the key with changed image/expiry
