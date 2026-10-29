@@ -178,6 +178,13 @@ def publish(entries, output):
                     file.write('\n')
                     file.flush()
                     os.fsync(file.fileno())
+            # Sync staging directory entries before the parent rename. File
+            # fsync alone does not durably commit the file names inside it.
+            temp_fd = os.open(temp, os.O_RDONLY | os.O_DIRECTORY | getattr(os, 'O_NOFOLLOW', 0))
+            try:
+                os.fsync(temp_fd)
+            finally:
+                os.close(temp_fd)
             _rename_directory_exclusive(temp, output, parent_fd)
             os.fsync(parent_fd)
         finally:
