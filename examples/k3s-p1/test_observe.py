@@ -38,7 +38,7 @@ PVC = {'kind': 'PersistentVolumeClaim', 'metadata': {
 
 DEPLOYMENT = {'kind': 'Deployment', 'metadata': {
        'name': 't3-worker', 'namespace': NAMESPACE,
-       'uid': '44444444-aaaa-bbbb-cccc-444444444444'},
+       'uid': '44444444-aaaa-bbbb-cccc-444444444444', 'generation': 2},
        'spec': {'replicas': 1, 'strategy': {'type': 'Recreate'},
                 'selector': {'matchLabels': {'app': 't3-worker'}},
                 'template': {'metadata': {'labels': {'app': 't3-worker'}},
@@ -86,6 +86,20 @@ class ObserveTests(unittest.TestCase):
         p.compare(p.inspect(copy.deepcopy(PLAN), copy.deepcopy(NS), copy.deepcopy(PVC), copy.deepcopy(DEPLOYMENT)), initial)
         self.assertNotIn('image', initial)
         self.assertNotIn('credentials', json.dumps(initial))
+
+    def test_generation_blocks_stale_same_uid_binding(self):
+        original = p.inspect(PLAN, NS, PVC, DEPLOYMENT)
+        self.assertEqual(original['deploymentGeneration'], 2)
+        changed = copy.deepcopy(DEPLOYMENT)
+        changed['metadata']['generation'] = 3  # Kubernetes spec mutation preserves UID.
+        with self.assertRaisesRegex(p.ObservationError, 'binding changed'):
+            p.compare(p.inspect(PLAN, NS, PVC, changed), original)
+        for invalid in (None, 0, -1, True, '2'):
+            bad = copy.deepcopy(DEPLOYMENT)
+            bad['metadata']['generation'] = invalid
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(
+                    p.ObservationError, 'generation'):
+                p.inspect(PLAN, NS, PVC, bad)
 
     def test_wrong_lease_identity_or_namespace_is_rejected(self):
         for item, change in [('ns', {'metadata': {'name': 'other'}}),
@@ -136,7 +150,7 @@ class ObserveTests(unittest.TestCase):
 
     def test_changed_pinned_image_invalidates_existing_binding(self):
         first = p.inspect(PLAN, NS, PVC, DEPLOYMENT)
-        self.assertEqual(first['format'], 't3-k3s-p1-binding-v3')
+        self.assertEqual(first['format'], 't3-k3s-p1-binding-v4')
         self.assertEqual(len(first['imageRefSha256']), 64)
         self.assertNotIn(PLAN['image'], json.dumps(first))
         changed = copy.deepcopy(PLAN)
