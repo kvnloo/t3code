@@ -126,8 +126,9 @@ python3 examples/k3s-p1/route_check.py \
 
 A failed check requires manual review, never automatic rollback or deletion.
 Unexpected admission-controller annotations and any additional network
-policy fail closed. A saved inventory can be stale or collected mid-change; this does not enumerate routes in other namespaces or non-Kubernetes host networking.
-repeat the approved-context read and independently inspect effective CNI rules.
+policy fail closed. A saved inventory can be stale or collected mid-change. It does not enumerate
+routes in other namespaces or non-Kubernetes host networking. Repeat the
+approved-context read and independently inspect effective CNI rules.
 Also check actual DNS, HTTPS certificate, peer identity, private ACL negative test
 and CNI policy enforcement independently; do not treat these API objects as
 proof of the data plane.
