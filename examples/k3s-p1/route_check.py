@@ -1,0 +1,105 @@
+#!/usr/bin/env python3
+"""Offline P1 Service/Ingress/NetworkPolicy route contract; never calls Kubernetes.
+
+It checks only desired API objects, not the effective CNI, operator, TLS,
+DNS, tailnet ACL, peer OAuth grant, or a running T3 environment.
+"""
+import argparse
+import json
+from pathlib import Path
+import re
+
+
+class RouteError(ValueError):
+    """A saved Kubernetes route does not match the immutable P1 plan."""
+
+
+def _same(actual, expected, field):
+    if actual != expected:
+        raise RouteError(f'{field} differs from private P1 plan')
+
+
+def _meta(obj, kind, name, namespace):
+    if not isinstance(obj, dict) or obj.get('kind') != kind:
+        raise RouteError(f'{kind} object is missing or malformed')
+    meta = obj.get('metadata')
+    if not isinstance(meta, dict) or meta.get('name') != name or meta.get('namespace') != namespace:
+        raise RouteError(f'{kind} identity differs from P1 plan')
+    if meta.get('deletionTimestamp'):
+        raise RouteError(f'{kind} is deleting')
+    return meta
+
+
+def verify(plan, service, ingress, policy):
+    """Fail closed for route/spec drift; no cluster writes or readiness claims."""
+    if not isinstance(plan, dict) or plan.get('format') != 't3-k3s-p1-plan-v1':
+        raise RouteError('invalid P1 plan format')
+    lease = plan.get('leaseHash')
+    if not isinstance(lease, str) or not re.fullmatch(r'[0-9a-f]{64}', lease):
+        raise RouteError('invalid P1 lease hash')
+    ns = 't3-p1-' + lease[:24]
+    _same(plan.get('namespace'), ns, 'namespace')
+    _meta(service, 'Service', 't3-worker', ns)
+    _meta(ingress, 'Ingress', 't3-worker', ns)
+    _meta(policy, 'NetworkPolicy', 'worker-ingress', ns)
+
+    spec = service.get('spec')
+    if not isinstance(spec, dict):
+        raise RouteError('invalid Service spec')
+    _same(spec.get('type', 'ClusterIP'), 'ClusterIP', 'Service type')
+    _same(spec.get('selector'), {'app': 't3-worker'}, 'Service selector')
+    if spec.get('externalIPs') or spec.get('externalName') or spec.get('loadBalancerIP'):
+        raise RouteError('Service must not expose public/external endpoints')
+    ports = spec.get('ports')
+    if not isinstance(ports, list) or len(ports) != 1 or not isinstance(ports[0], dict):
+        raise RouteError('Service ports differ from P1 plan')
+    port = ports[0]
+    for key, expected in {'name': 'http', 'port': 80, 'targetPort': 'http', 'protocol': 'TCP'}.items():
+        _same(port.get(key, 'TCP' if key == 'protocol' else None), expected, 'Service port')
+    if port.get('nodePort') not in (None, 0):
+        raise RouteError('Service NodePort forbidden')
+
+    imeta = ingress['metadata']
+    annotations = imeta.get('annotations') or {}
+    if not isinstance(annotations, dict) or set(annotations) - {'kubectl.kubernetes.io/last-applied-configuration'}:
+        raise RouteError('unexpected ingress annotations require review')
+    ispec = ingress.get('spec')
+    if not isinstance(ispec, dict):
+        raise RouteError('invalid Ingress spec')
+    _same(ispec.get('ingressClassName'), 'tailscale', 'private IngressClass')
+    if ispec.get('rules') or ispec.get('defaultBackend') != {
+        'service': {'name': 't3-worker', 'port': {'name': 'http'}}
+    }:
+        raise RouteError('Ingress backend or rules differ from private plan')
+    _same(ispec.get('tls'), [{'hosts': ['t3-p1-' + lease[:24]]}], 'private Ingress hostname')
+
+    pspec = policy.get('spec')
+    if not isinstance(pspec, dict):
+        raise RouteError('invalid NetworkPolicy spec')
+    _same(pspec.get('podSelector'), {'matchLabels': {'app': 't3-worker'}}, 'policy selector')
+    _same(pspec.get('policyTypes'), ['Ingress'], 'policy types')
+    _same(pspec.get('ingress'), [{'from': [{'namespaceSelector': {'matchLabels': {
+        'kubernetes.io/metadata.name': 'tailscale'}}}],
+        'ports': [{'protocol': 'TCP', 'port': 3773}]}], 'private ingress allowlist')
+    if pspec.get('egress'):
+        raise RouteError('unexpected policy egress needs separate review')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    for flag in ('plan', 'service', 'ingress', 'network-policy'):
+        parser.add_argument('--' + flag, type=Path, required=True)
+    args = parser.parse_args()
+    try:
+        values = [json.loads(getattr(args, x).read_text(encoding='utf-8'))
+                  for x in ('plan', 'service', 'ingress', 'network_policy')]
+        verify(*values)
+    except (OSError, ValueError, TypeError, AttributeError, KeyError) as exc:
+        # Do not repeat private kubeconfig paths, DNS names, or JSON in errors.
+        parser.exit(1, f'FAIL: P1 private route specification not verified ({type(exc).__name__})\n')
+    print('PASS: P1 desired route specification matches plan (offline only)')
+    print('NOT RUN: DNS, private TLS, Tailscale ACL, NetworkPolicy enforcement, OAuth or live delegation')
+
+
+if __name__ == '__main__':
+    main()
