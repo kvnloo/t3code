@@ -124,6 +124,9 @@ def inspect(plan, binding, deployment, replicasets, pods):
     pm = meta(pod, 'Pod', ns)
     controller(pod, 'ReplicaSet', rm.get('name'), rm['uid'])
     need(pm.get('labels') == replacement_labels, 'Pod selector drift')
+    # Pod-level CNI/admission annotations may attach additional interfaces even
+    # when the ReplicaSet template and container specification remain intact.
+    need(pm.get('annotations') in (None, {}), 'unapproved Pod admission annotations')
     ps = pod.get('spec', {})
     need(isinstance(ps, dict) and ps.get('serviceAccountName') == 't3-worker'
          and ps.get('automountServiceAccountToken') is False
@@ -131,6 +134,22 @@ def inspect(plan, binding, deployment, replicasets, pods):
          and ps.get('volumes') == template.get('volumes'), 'admitted Pod security/storage drift')
     for field in ('hostNetwork', 'hostPID', 'hostIPC', 'shareProcessNamespace'):
         need(ps.get(field) in (None, False), 'Pod host isolation drift')
+    # Admission can change the Pod's runtime, GPU/DRA allocation, routing or
+    # scheduling without changing any field compared below. Only normal
+    # Kubernetes defaults are accepted; other overlays need new human review.
+    need(ps.get('runtimeClassName') in (None, '')
+         and not ps.get('overhead') and not ps.get('resourceClaims')
+         and ps.get('priorityClassName') in (None, ''),
+         'unapproved Pod runtime or resource allocation')
+    need(not ps.get('nodeSelector') and not ps.get('affinity')
+         and not ps.get('topologySpreadConstraints')
+         and not ps.get('dnsConfig')
+         and ps.get('dnsPolicy', 'ClusterFirst') == 'ClusterFirst',
+         'unapproved Pod DNS or placement policy')
+    need(ps.get('serviceAccount') in (None, 't3-worker')
+         and ps.get('terminationGracePeriodSeconds', 30) ==
+             template.get('terminationGracePeriodSeconds', 30),
+         'Pod service account or termination policy drift')
     for field in ('initContainers', 'ephemeralContainers', 'imagePullSecrets', 'hostAliases'):
         need(not ps.get(field), 'unexpected Pod configuration')
     containers = ps.get('containers')
