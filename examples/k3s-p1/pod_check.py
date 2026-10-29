@@ -100,8 +100,41 @@ def inspect(plan, binding, deployment, replicasets, pods):
     for field in ('name', 'image', 'securityContext', 'resources', 'volumeMounts'):
         need(containers[0].get(field) == template['containers'][0].get(field),
              'admitted container configuration drift')
-    for field in ('env', 'envFrom', 'command', 'args', 'volumeDevices'):
-        need(not containers[0].get(field), 'injected Pod credentials or command')
+    for field in ('env', 'envFrom', 'command', 'args', 'volumeDevices',
+                  'lifecycle', 'stdin', 'stdinOnce', 'tty'):
+        need(not containers[0].get(field), 'injected Pod command or lifecycle drift')
+    # The desired Deployment snapshot is inspected separately. Bind the admitted
+    # Pod's startup path and port/probes to it; matching only image/resources
+    # misses hostPort, postStart exec and probe-command injection.
+    need(ps.get('hostname') == template.get('hostname'), 'Pod hostname drift')
+    desired = template['containers'][0]
+    admitted = containers[0]
+    for field in ('workingDir', 'imagePullPolicy'):
+        need(admitted.get(field) == desired.get(field),
+             'admitted container startup drift')
+    want_ports, got_ports = desired.get('ports'), admitted.get('ports')
+    need(isinstance(want_ports, list) and len(want_ports) == 1
+         and isinstance(want_ports[0], dict)
+         and isinstance(got_ports, list) and len(got_ports) == 1
+         and isinstance(got_ports[0], dict), 'admitted container port drift')
+    wp, gp = want_ports[0], got_ports[0]
+    need(gp.get('name') == wp.get('name')
+         and gp.get('containerPort') == wp.get('containerPort')
+         and gp.get('protocol', 'TCP') == wp.get('protocol', 'TCP')
+         and gp.get('hostPort') in (None, 0) and not gp.get('hostIP'),
+         'admitted container port or host exposure drift')
+    probe_defaults = {'periodSeconds': 10, 'failureThreshold': 3,
+                      'timeoutSeconds': 1, 'successThreshold': 1,
+                      'initialDelaySeconds': 0}
+    for name in ('startupProbe', 'readinessProbe'):
+        expected_probe, actual_probe = desired.get(name), admitted.get(name)
+        need(isinstance(expected_probe, dict) and isinstance(actual_probe, dict)
+             and set(actual_probe) <= set(probe_defaults) | {'tcpSocket'}
+             and actual_probe.get('tcpSocket') == expected_probe.get('tcpSocket'),
+             'admitted container probe drift')
+        for field, default in probe_defaults.items():
+            need(actual_probe.get(field, default) == expected_probe.get(field, default),
+                 'admitted container probe timing drift')
     pod_status = pod.get('status', {})
     need(isinstance(pod_status, dict) and pod_status.get('phase') == 'Running', 'Pod not running')
     conditions = pod_status.get('conditions')
