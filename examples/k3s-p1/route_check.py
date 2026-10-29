@@ -30,7 +30,7 @@ def _meta(obj, kind, name, namespace):
     return meta
 
 
-def verify(plan, service, ingress, policy):
+def verify(plan, service, ingress, policy, all_policies):
     """Fail closed for route/spec drift; no cluster writes or readiness claims."""
     if not isinstance(plan, dict) or plan.get('format') != 't3-k3s-p1-plan-v1':
         raise RouteError('invalid P1 plan format')
@@ -84,20 +84,35 @@ def verify(plan, service, ingress, policy):
     if pspec.get('egress'):
         raise RouteError('unexpected policy egress needs separate review')
 
+    # Kubernetes ingress policy is additive. A single safe named policy says
+    # nothing about a second namespace-wide or wildcard allow policy.
+    if (not isinstance(all_policies, dict)
+            or all_policies.get('kind') != 'NetworkPolicyList'
+            or not isinstance(all_policies.get('items'), list)
+            or len(all_policies['items']) != 1):
+        raise RouteError('namespace-wide NetworkPolicy inventory is missing or ambiguous')
+    listed = all_policies['items'][0]
+    listed_meta = _meta(listed, 'NetworkPolicy', 'worker-ingress', ns)
+    uid = policy['metadata'].get('uid')
+    if (not isinstance(uid, str) or not re.fullmatch(r'[a-zA-Z0-9-]{8,128}', uid)
+            or listed_meta.get('uid') != uid):
+        raise RouteError('NetworkPolicy identity differs across snapshots')
+    _same(listed.get('spec'), pspec, 'inventory NetworkPolicy spec')
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for flag in ('plan', 'service', 'ingress', 'network-policy'):
+    for flag in ('plan', 'service', 'ingress', 'network-policy', 'all-network-policies'):
         parser.add_argument('--' + flag, type=Path, required=True)
     args = parser.parse_args()
     try:
         values = [json.loads(getattr(args, x).read_text(encoding='utf-8'))
-                  for x in ('plan', 'service', 'ingress', 'network_policy')]
+                  for x in ('plan', 'service', 'ingress', 'network_policy', 'all_network_policies')]
         verify(*values)
     except (OSError, ValueError, TypeError, AttributeError, KeyError) as exc:
         # Do not repeat private kubeconfig paths, DNS names, or JSON in errors.
         parser.exit(1, f'FAIL: P1 private route specification not verified ({type(exc).__name__})\n')
-    print('PASS: P1 desired route specification matches plan (offline only)')
+    print('PASS: P1 desired private route and namespace policy inventory match (offline only)')
     print('NOT RUN: DNS, private TLS, Tailscale ACL, NetworkPolicy enforcement, OAuth or live delegation')
 
 
