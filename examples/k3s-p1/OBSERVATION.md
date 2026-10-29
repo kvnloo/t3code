@@ -29,8 +29,9 @@ python3 -m unittest discover -s examples/k3s-p1 -p 'test_*.py' -v
 python3 -m py_compile examples/k3s-p1/observe.py
 ```
 
-The twelve focused binding tests check stable UIDs, lease/namespace mismatch,
-PVC replacement, invalid/unbound/deleting storage, retention/annotation drift,
+The focused binding tests check stable UIDs, lease/namespace mismatch,
+PVC replacement, invalid/unbound/deleting storage, malformed API JSON and
+invalid lease calendar dates (without a raw CLI traceback), retention/annotation drift,
 immutable image reference drift/format, rejection of a legacy v1 baseline,
 desired Deployment image/ServiceAccount/volume/selector and privilege/credential/resource drift, and CLI failure
 without printing private IDs.
