@@ -17,10 +17,11 @@ PLAN = {'format': 't3-k3s-p1-plan-v1', 'leaseHash': HASH, 'namespace': NAMESPACE
 
 
 class Stub:
-    def __init__(self, drift=None, broken=None):
+    def __init__(self, drift=None, broken=None, tamper=None):
         self.calls = []
         self.drift = drift
         self.broken = broken
+        self.tamper = tamper
 
     def __call__(self, command, **kwargs):
         self.calls.append(command)
@@ -32,14 +33,42 @@ class Stub:
         name = remainder[0] if remainder else None
         if self.broken == resource:
             return subprocess.CompletedProcess(command, 1, '', 'private kubeconfig detail')
+        kinds = {'namespace': 'Namespace', 'pvc': 'PersistentVolumeClaim',
+                 'deployment': 'Deployment', 'service': 'Service',
+                 'ingress': 'Ingress', 'networkpolicy': 'NetworkPolicy'}
+        listed_names = {'networkpolicies': ('networkpolicy', 'worker-ingress'),
+                        'ingresses': ('ingress', 't3-worker'),
+                        'services': ('service', 't3-worker')}
         if resource in ('networkpolicies', 'ingresses', 'services', 'replicasets', 'pods'):
+            items = []
+            if resource in listed_names:
+                source, selected_name = listed_names[resource]
+                items = [{'kind': kinds[source],
+                          'metadata': {'name': selected_name, 'namespace': NAMESPACE,
+                                       'uid': 'a1234567', 'resourceVersion': '2'},
+                          'spec': {'replicas': 1}}]
             obj = {'kind': dict(networkpolicies='NetworkPolicyList', ingresses='IngressList',
                                 services='ServiceList', replicasets='ReplicaSetList',
-                                pods='PodList')[resource], 'items': []}
+                                pods='PodList')[resource], 'items': items}
         else:
-            obj = {'kind': resource, 'metadata': {'name': name, 'namespace': NAMESPACE,
-                                                  'uid': 'a1234567', 'resourceVersion': '2'},
-                   'spec': {'replicas': 1}}
+            meta = {'name': name, 'uid': 'a1234567', 'resourceVersion': '2'}
+            if resource != 'namespace':
+                meta['namespace'] = NAMESPACE
+            obj = {'kind': kinds[resource], 'metadata': meta, 'spec': {'replicas': 1}}
+        if self.tamper is not None and self.tamper[0] == resource:
+            flaw = self.tamper[1]
+            if flaw == 'kind':
+                obj['kind'] = 'Other'
+            elif flaw == 'name':
+                obj['metadata']['name'] = 'unrelated'
+            elif flaw == 'namespace':
+                obj['metadata'].pop('namespace', None)
+            elif flaw == 'uid':
+                obj['metadata']['uid'] = None
+            elif flaw == 'inventory_missing':
+                obj['items'] = []
+            elif flaw == 'inventory_drift':
+                obj['items'][0]['spec']['replicas'] = 2
         if self.drift == resource and len([c for c in self.calls if resource in c]) > 1:
             obj['metadata'] = {'resourceVersion': '3'}
         return subprocess.CompletedProcess(command, 0, json.dumps(obj), '')
@@ -68,6 +97,18 @@ class CaptureTests(unittest.TestCase):
         for res in ('deployment', 'ingresses', 'pods'):
             with self.subTest(resource=res), self.assertRaises(module.CaptureError):
                 module.capture('disposable-k3s', PLAN, runner=Stub(drift=res))
+
+    def test_named_identity_and_mixed_inventory_fail_closed(self):
+        cases = (
+            ('deployment', 'kind'), ('deployment', 'name'),
+            ('deployment', 'namespace'), ('deployment', 'uid'),
+            ('namespace', 'name'), ('services', 'inventory_missing'),
+            ('services', 'inventory_drift'), ('ingresses', 'inventory_missing'),
+            ('networkpolicies', 'inventory_drift'),
+        )
+        for case in cases:
+            with self.subTest(mutation=case), self.assertRaises(module.CaptureError):
+                module.capture('disposable-k3s', PLAN, runner=Stub(tamper=case))
 
     def test_redacted_rejected_api_read(self):
         with self.assertRaisesRegex(module.CaptureError, 'request rejected') as ctx:
