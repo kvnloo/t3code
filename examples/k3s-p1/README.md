@@ -167,9 +167,13 @@ provision, mutate, link, cancel or delete a worker. It collects six named
 resources (Namespace, PVC, Deployment, Service, Ingress, NetworkPolicy) and
 five complete namespace inventories (policies, ingresses, services,
 ReplicaSets, Pods). Each is read twice and mismatches fail closed **before
-any output is published**. This catches a subset of mid-capture drift,
-but Kubernetes offers **no atomic cross-resource snapshot** here; a
-matching pair is not freshness, route integrity or runtime attestation.
+any output is published**. Named resources must have the planned Kubernetes
+kind/name/namespace and a UID; the named Service, Ingress and NetworkPolicy
+must also exactly match their corresponding namespace-inventory entry.
+This rejects mixed GET/LIST views even when each view is independently stable.
+It catches only a subset of mid-capture drift: Kubernetes offers **no atomic
+cross-resource snapshot** here, and matching objects do not prove freshness,
+route integrity or runtime attestation.
 
 Create a new path inside a private, caller-owned 0700 directory.
 Snapshot JSON may contain private addresses, labels, topology and paths,
