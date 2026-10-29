@@ -6,6 +6,7 @@ consent, a task completion, or a license to apply/delete any resources.
 """
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -46,6 +47,14 @@ def inspect(plan, namespace, pvc):
     expiry = plan.get('expiresAt')
     if not isinstance(expiry, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', expiry):
         raise ObservationError('invalid lease expiry')
+    # A stable Namespace/PVC is not enough: the same key must not silently
+    # rebind to a different image. Hash the *whole* pinned reference so the
+    # private binding receipt never exposes the registry or image name.
+    image = plan.get('image')
+    if (not isinstance(image, str) or not re.fullmatch(
+            r'(?=.{1,255}$)[a-z0-9][a-z0-9._:/-]*/[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}', image)
+            or '..' in image or '//' in image):
+        raise ObservationError('invalid immutable image reference')
 
     _require(namespace.get('kind'), 'Namespace', 'namespace kind')
     nmeta = namespace.get('metadata', {})
@@ -75,9 +84,10 @@ def inspect(plan, namespace, pvc):
     if not isinstance(volume, str) or not volume or len(volume) > 253:
         raise ObservationError('PVC has no bound PersistentVolume name')
 
-    return {'format': 't3-k3s-p1-binding-v1', 'leaseHash': lease_hash,
+    return {'format': 't3-k3s-p1-binding-v2', 'leaseHash': lease_hash,
             'namespace': name, 'namespaceUID': _uid(namespace, 'namespace'),
             'pvcUID': _uid(pvc, 'PVC'), 'volumeName': volume,
+            'imageRefSha256': hashlib.sha256(image.encode('ascii')).hexdigest(),
             'expiresAt': expiry, 'retention': 'retain'}
 
 
