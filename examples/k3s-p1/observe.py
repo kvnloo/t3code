@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from datetime import datetime
 import re
 
 
@@ -28,7 +29,7 @@ def _uid(obj, label):
     return value
 
 
-def inspect(plan, namespace, pvc, deployment):
+def _inspect(plan, namespace, pvc, deployment):
     """Verify immutable lease identity and bound storage from API JSON objects.
 
     Inputs must be collected from one explicitly approved Kubernetes context.
@@ -47,6 +48,12 @@ def inspect(plan, namespace, pvc, deployment):
     expiry = plan.get('expiresAt')
     if not isinstance(expiry, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z', expiry):
         raise ObservationError('invalid lease expiry')
+    try:
+        expiry_date = datetime.strptime(expiry, '%Y-%m-%dT%H:%M:%SZ')
+    except ValueError as exc:
+        raise ObservationError('invalid lease expiration calendar date') from exc
+    if expiry_date.year < 2020 or expiry_date.year > 2100:
+        raise ObservationError('lease expiration is outside planning bounds')
     # A stable Namespace/PVC is not enough: the same key must not silently
     # rebind to a different image. Hash the *whole* pinned reference so the
     # private binding receipt never exposes the registry or image name.
@@ -199,6 +206,16 @@ def inspect(plan, namespace, pvc, deployment):
             'volumeName': volume,
             'imageRefSha256': hashlib.sha256(image.encode('ascii')).hexdigest(),
             'expiresAt': expiry, 'retention': 'retain'}
+
+
+def inspect(plan, namespace, pvc, deployment):
+    """Treat malformed API JSON as a failed binding, without leaking details."""
+    try:
+        return _inspect(plan, namespace, pvc, deployment)
+    except (AttributeError, KeyError, TypeError) as exc:
+        # Fetched Kubernetes objects may contain unexpected null/list values.
+        # Never let a malformed snapshot escape as an unhandled traceback.
+        raise ObservationError('malformed JSON object in P1 binding observation') from exc
 
 
 def compare(current, baseline):
