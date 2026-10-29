@@ -17,6 +17,12 @@ ResourceQuota, no-token ServiceAccount, separate PVC, one Recreate Deployment
 running a headless T3 server, ClusterIP Service, private Tailscale Ingress and
 an ingress-only NetworkPolicy.
 
+The offline route checker also rejects unexpected Service annotations, including
+`tailscale.com/expose`, on both the named object and its namespace inventory.
+A `ClusterIP` Service with that annotation can create a separate Tailscale L3
+proxy without a second Ingress. A matching snapshot is still **not** network
+isolation, TLS, ACL or peer-authorization proof.
+
 The separate [offline UID observation helper](OBSERVATION.md) checks a
 reported Kubernetes Namespace/PVC/Deployment binding **and immutable
 image-reference fingerprint** against the plan and an earlier v3 baseline.
