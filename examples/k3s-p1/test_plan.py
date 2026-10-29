@@ -5,6 +5,7 @@ import json
 import os
 import tempfile
 import unittest
+from unittest import mock
 
 import yaml
 
@@ -91,6 +92,42 @@ class P1PlanTests(unittest.TestCase):
             path.chmod(0o644)
             with self.assertRaisesRegex(p.PlanError, 'unsafe'):
                 p.lock(base, plan)
+
+    def test_concurrent_identical_receipt_publish_is_atomic(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp) / 'private'
+            base.mkdir(mode=0o700)
+            plan, _ = p.build('race:1', IMAGE, EXPIRY)
+            original_link = os.link
+            entered = False
+
+            def publish_with_competitor(*args, **kwargs):
+                nonlocal entered
+                if not entered:
+                    entered = True
+                    # The first publisher has written its private temp file
+                    # but has not exposed a final receipt. A competing retry
+                    # can publish a whole receipt without seeing partial bytes.
+                    self.assertTrue(p.lock(base, plan))
+                return original_link(*args, **kwargs)
+
+            with mock.patch.object(p.os, 'link', side_effect=publish_with_competitor):
+                self.assertFalse(p.lock(base, plan))
+            self.assertTrue(entered)
+            self.assertEqual(len(list(base.iterdir())), 1)
+            self.assertEqual(len(list(base.glob('*.json'))), 1)
+            self.assertFalse(p.lock(base, plan))
+
+    def test_failed_atomic_publish_leaves_no_conflicting_receipt(self):
+        with tempfile.TemporaryDirectory() as temp:
+            base = Path(temp) / 'private'
+            base.mkdir(mode=0o700)
+            plan, _ = p.build('write:1', IMAGE, EXPIRY)
+            with mock.patch.object(p.os, 'link', side_effect=OSError('simulated I/O failure')):
+                with self.assertRaisesRegex(p.PlanError, 'cannot establish'):
+                    p.lock(base, plan)
+            self.assertEqual(list(base.iterdir()), [])
+            self.assertTrue(p.lock(base, plan))
 
     def test_rejects_symlinked_or_public_plan_directory(self):
         with tempfile.TemporaryDirectory() as temp:
