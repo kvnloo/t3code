@@ -124,6 +124,19 @@ def inspect(plan, namespace, pvc, deployment):
         _require(security.get(field), value, 'deployment container security')
     if security.get('privileged') not in (None, False):
         raise ObservationError('deployment privileged container')
+    # Container-level overrides take precedence over Pod securityContext.
+    # Only allow safe equivalent defaults; unknown keys fail closed.
+    allowed = {'allowPrivilegeEscalation', 'readOnlyRootFilesystem',
+               'capabilities', 'privileged', 'runAsNonRoot', 'runAsUser',
+               'runAsGroup', 'seccompProfile'}
+    if set(security) - allowed:
+        raise ObservationError('deployment unexpected container security override')
+    for field, expected in {
+        'runAsNonRoot': True, 'runAsUser': 10001, 'runAsGroup': 10001,
+        'seccompProfile': {'type': 'RuntimeDefault'},
+    }.items():
+        if field in security:
+            _require(security[field], expected, 'deployment container security override')
     for field in ('env', 'envFrom', 'command', 'args', 'lifecycle', 'volumeDevices'):
         if container.get(field):
             raise ObservationError('deployment unexpected injected container configuration')
