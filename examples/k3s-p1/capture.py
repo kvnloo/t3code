@@ -6,6 +6,8 @@ attestation or peer authorization. Private local output, not a lease.
 """
 
 import argparse
+import ctypes
+import errno
 import json
 import os
 from pathlib import Path
@@ -134,6 +136,25 @@ def capture(context, plan, runner=subprocess.run):
     return entries
 
 
+
+def _rename_directory_exclusive(source: Path, target: Path, parent_fd: int):
+    """Publish a directory atomically without clobbering another writer.
+
+    This is a Linux-only acceptance helper. Without renameat2's
+    RENAME_NOREPLACE support, fail closed rather than overwriting evidence.
+    """
+    renameat2 = getattr(ctypes.CDLL(None, use_errno=True), 'renameat2', None)
+    if renameat2 is None:
+        raise CaptureError('atomic no-replace directory publication unavailable')
+    renameat2.argtypes = (ctypes.c_int, ctypes.c_char_p,
+                          ctypes.c_int, ctypes.c_char_p, ctypes.c_uint)
+    renameat2.restype = ctypes.c_int
+    if renameat2(parent_fd, os.fsencode(source.name),
+                 parent_fd, os.fsencode(target.name), 1):  # RENAME_NOREPLACE
+        if ctypes.get_errno() == errno.EEXIST:
+            raise CaptureError('output directory already exists')
+        raise CaptureError('atomic no-replace directory publication unavailable')
+
 def publish(entries, output):
     """Atomically expose a new private directory only after all files sync."""
     if not output.is_absolute() or output.exists() or output.is_symlink():
@@ -157,7 +178,7 @@ def publish(entries, output):
                     file.write('\n')
                     file.flush()
                     os.fsync(file.fileno())
-            os.rename(temp, output)
+            _rename_directory_exclusive(temp, output, parent_fd)
             os.fsync(parent_fd)
         finally:
             if temp.exists():
