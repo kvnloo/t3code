@@ -25,11 +25,13 @@ isolation, TLS, ACL or peer-authorization proof.
 
 The separate [offline UID observation helper](OBSERVATION.md) checks a
 reported Kubernetes Namespace/PVC/Deployment binding **and immutable
-image-reference fingerprint** against the plan and an earlier v3 baseline.
+image-reference fingerprint** against the plan and an earlier v4 baseline. The v4 binding also pins
+the Deployment generation, preventing a same-UID spec update from passing a
+later Pod check without renewed human review.
 It checks the Deployment's desired template image, PVC/SA mounting,
 non-root Pod/container security, resources and probes, and rejects host access,
 additional containers and injected credentials/command overrides,
-not the image of a live Pod. Legacy v1/v2 baselines are rejected. It never contacts a cluster or proves a live T3 worker.
+not the image of a live Pod. Legacy v1/v2/v3 baselines are rejected. It never contacts a cluster or proves a live T3 worker.
 
 After the offline desired Deployment/PVC binding, the optional [Pod snapshot checker](OBSERVATION.md#optional-read-only-pod-runtime-snapshot--not-live-proof) can validate saved ReplicaSet→Pod controller UID, API-reported readiness and running image reference, and reject concurrent/mutated Pods, unexpected host ports, changed startup/probe behavior or injected post-start hooks. This is still **NOT live K3s proof**: its hashed imageID does not attest a multi-platform OCI digest, and it cannot establish persisted T3 identity, TLS, peer consent or successful delegation.
 
