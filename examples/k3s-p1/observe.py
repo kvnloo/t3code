@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""P1 offline binding check: observed Namespace and PVC UIDs, no K8s calls.
+"""P1 offline binding check: Namespace, PVC and desired Deployment; no K8s calls.
 
 A matching Kubernetes snapshot is NOT worker readiness, T3 identity, peer
 consent, a task completion, or a license to apply/delete any resources.
@@ -28,14 +28,14 @@ def _uid(obj, label):
     return value
 
 
-def inspect(plan, namespace, pvc):
+def inspect(plan, namespace, pvc, deployment):
     """Verify immutable lease identity and bound storage from API JSON objects.
 
     Inputs must be collected from one explicitly approved Kubernetes context.
     This does not contact or attest that context; it also cannot prove PVC
     contents, live Pod ownership, TLS, peer OAuth, or CNI enforcement.
     """
-    if not all(isinstance(x, dict) for x in (plan, namespace, pvc)):
+    if not all(isinstance(x, dict) for x in (plan, namespace, pvc, deployment)):
         raise ObservationError('expected JSON objects')
     lease_hash = plan.get('leaseHash')
     if not isinstance(lease_hash, str) or not re.fullmatch('[0-9a-f]{64}', lease_hash):
@@ -55,6 +55,41 @@ def inspect(plan, namespace, pvc):
             r'(?=.{1,255}$)[a-z0-9][a-z0-9._:/-]*/[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}', image)
             or '..' in image or '//' in image):
         raise ObservationError('invalid immutable image reference')
+
+    # v3 binds the actual observed Deployment's *desired template* to the
+    # immutable plan. v2 hashed the plan alone and could miss image drift in
+    # Kubernetes. This still says nothing about which image a live Pod runs.
+    _require(deployment.get('kind'), 'Deployment', 'deployment kind')
+    dmeta = deployment.get('metadata', {})
+    _require(dmeta.get('name'), 't3-worker', 'deployment name')
+    _require(dmeta.get('namespace'), name, 'deployment namespace')
+    if dmeta.get('deletionTimestamp'):
+        raise ObservationError('deployment is deleting')
+    deployment_uid = _uid(deployment, 'deployment')
+    dspec = deployment.get('spec', {})
+    _require(dspec.get('replicas'), 1, 'deployment replicas')
+    _require(dspec.get('strategy', {}).get('type'), 'Recreate', 'deployment strategy')
+    expected_labels = {'app': 't3-worker'}
+    _require(dspec.get('selector', {}).get('matchLabels'), expected_labels, 'deployment selector')
+    template = dspec.get('template', {})
+    _require(template.get('metadata', {}).get('labels'), expected_labels, 'deployment Pod labels')
+    pod = template.get('spec', {})
+    _require(pod.get('serviceAccountName'), 't3-worker', 'deployment ServiceAccount')
+    _require(pod.get('automountServiceAccountToken'), False, 'deployment API token')
+    containers = pod.get('containers')
+    if not isinstance(containers, list) or len(containers) != 1 or not isinstance(containers[0], dict):
+        raise ObservationError('deployment must have exactly one T3 container')
+    container = containers[0]
+    _require(container.get('name'), 't3', 'deployment container')
+    _require(container.get('image'), image, 'observed deployment image')
+    _require(container.get('volumeMounts'), [
+        {'name': 'data', 'mountPath': '/data'},
+        {'name': 'tmp', 'mountPath': '/tmp'},
+    ], 'deployment volume mounts')
+    _require(pod.get('volumes'), [
+        {'name': 'data', 'persistentVolumeClaim': {'claimName': 't3-worker-data'}},
+        {'name': 'tmp', 'emptyDir': {'sizeLimit': '1Gi'}},
+    ], 'deployment volumes')
 
     _require(namespace.get('kind'), 'Namespace', 'namespace kind')
     nmeta = namespace.get('metadata', {})
@@ -84,9 +119,10 @@ def inspect(plan, namespace, pvc):
     if not isinstance(volume, str) or not volume or len(volume) > 253:
         raise ObservationError('PVC has no bound PersistentVolume name')
 
-    return {'format': 't3-k3s-p1-binding-v2', 'leaseHash': lease_hash,
+    return {'format': 't3-k3s-p1-binding-v3', 'leaseHash': lease_hash,
             'namespace': name, 'namespaceUID': _uid(namespace, 'namespace'),
-            'pvcUID': _uid(pvc, 'PVC'), 'volumeName': volume,
+            'pvcUID': _uid(pvc, 'PVC'), 'deploymentUID': deployment_uid,
+            'volumeName': volume,
             'imageRefSha256': hashlib.sha256(image.encode('ascii')).hexdigest(),
             'expiresAt': expiry, 'retention': 'retain'}
 
@@ -101,11 +137,13 @@ def main():
     parser.add_argument('--plan', type=Path, required=True, help='private immutable lease-plan receipt')
     parser.add_argument('--namespace', type=Path, required=True, help='kubectl get namespace -o json')
     parser.add_argument('--pvc', type=Path, required=True, help='kubectl get pvc -o json')
+    parser.add_argument('--deployment', type=Path, required=True,
+                        help='kubectl get deployment t3-worker -o json')
     parser.add_argument('--baseline', type=Path, help='previously verified private binding JSON')
     args = parser.parse_args()
     try:
         documents = [json.loads(path.read_text(encoding='utf-8'))
-                     for path in (args.plan, args.namespace, args.pvc)]
+                     for path in (args.plan, args.namespace, args.pvc, args.deployment)]
         binding = inspect(*documents)
         if args.baseline is not None:
             compare(binding, json.loads(args.baseline.read_text(encoding='utf-8')))
@@ -113,7 +151,7 @@ def main():
         # Avoid echoing object contents or OS errors with private host paths.
         parser.exit(1, f'FAIL: P1 lease/PVC binding could not be verified ({type(exc).__name__})\n')
     print(json.dumps(binding, sort_keys=True))
-    print('UID BINDING ONLY: NOT worker readiness, HTTPS, OAuth or delegation proof', file=__import__('sys').stderr)
+    print('DESIRED-SPEC BINDING ONLY: NOT live Pod image, readiness, HTTPS, OAuth or delegation proof', file=__import__('sys').stderr)
 
 
 if __name__ == '__main__':
