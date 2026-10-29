@@ -47,12 +47,17 @@ def inspect(plan, binding, deployment, replicasets, pods):
          r'(?=.{1,255}$)[a-z0-9][a-z0-9._:/-]*/[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}', image)
          and '..' not in image and '//' not in image, 'image not pinned')
     image_hash = hashlib.sha256(image.encode('ascii')).hexdigest()
-    need(plan.get('namespace') == ns and binding.get('format') == 't3-k3s-p1-binding-v3'
+    need(plan.get('namespace') == ns and binding.get('format') == 't3-k3s-p1-binding-v4'
          and binding.get('namespace') == ns and binding.get('leaseHash') == lease
          and binding.get('imageRefSha256') == image_hash, 'lease binding mismatch')
     dmeta = meta(deployment, 'Deployment', ns)
     need(dmeta.get('name') == 't3-worker' and dmeta['uid'] == binding.get('deploymentUID'),
          'deployment binding drift')
+    # A Deployment may keep its UID while its desired spec is changed. The
+    # read-only binding must be refreshed and re-reviewed for any new generation.
+    need(type(dmeta.get('generation')) is int and dmeta['generation'] > 0
+         and binding.get('deploymentGeneration') == dmeta['generation'],
+         'deployment changed since verified binding')
     ds = deployment.get('spec', {})
     template = ds.get('template', {}).get('spec', {})
     need(isinstance(template, dict) and isinstance(template.get('containers'), list)
