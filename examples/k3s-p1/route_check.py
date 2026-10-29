@@ -30,6 +30,16 @@ def _meta(obj, kind, name, namespace):
     return meta
 
 
+def _safe_annotations(obj, kind):
+    # Controllers can act on Service annotations even for a ClusterIP.
+    # In particular, tailscale.com/expose enables an additional L3 proxy
+    # that does not appear in the ordinary Service/Ingress inventories.
+    annotations = obj['metadata'].get('annotations', {})
+    if (not isinstance(annotations, dict)
+            or set(annotations) - {'kubectl.kubernetes.io/last-applied-configuration'}):
+        raise RouteError(f'{kind} has unexpected route-affecting annotations')
+
+
 def _route_status(obj, kind, ns):
     """Fail closed on an API-advertised public/extra route, even if spec is private.
 
@@ -71,6 +81,8 @@ def verify(plan, service, ingress, policy, all_policies, all_ingresses, all_serv
     _meta(service, 'Service', 't3-worker', ns)
     _meta(ingress, 'Ingress', 't3-worker', ns)
     _meta(policy, 'NetworkPolicy', 'worker-ingress', ns)
+    _safe_annotations(service, 'Service')
+    _safe_annotations(ingress, 'Ingress')
 
     _route_status(service, 'Service', ns)
     _route_status(ingress, 'Ingress', ns)
@@ -91,10 +103,6 @@ def verify(plan, service, ingress, policy, all_policies, all_ingresses, all_serv
     if port.get('nodePort') not in (None, 0):
         raise RouteError('Service NodePort forbidden')
 
-    imeta = ingress['metadata']
-    annotations = imeta.get('annotations') or {}
-    if not isinstance(annotations, dict) or set(annotations) - {'kubectl.kubernetes.io/last-applied-configuration'}:
-        raise RouteError('unexpected ingress annotations require review')
     ispec = ingress.get('spec')
     if not isinstance(ispec, dict):
         raise RouteError('invalid Ingress spec')
@@ -146,6 +154,7 @@ def verify(plan, service, ingress, policy, all_policies, all_ingresses, all_serv
             raise RouteError(f'{kind} namespace inventory is missing or ambiguous')
         listed = inventory['items'][0]
         listed_meta = _meta(listed, kind, 't3-worker', ns)
+        _safe_annotations(listed, kind)
         expected_uid = expected['metadata'].get('uid')
         if (not isinstance(expected_uid, str)
                 or not re.fullmatch(r'[a-zA-Z0-9-]{8,128}', expected_uid)
