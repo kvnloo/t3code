@@ -107,7 +107,7 @@ class ObserveTests(unittest.TestCase):
         deleted = copy.deepcopy(NS)
         deleted['metadata']['deletionTimestamp'] = '2026-10-28T01:00:00Z'
         with self.assertRaises(p.ObservationError):
-            p.inspect(PLAN, deleted, PVC)
+            p.inspect(PLAN, deleted, PVC, DEPLOYMENT)
 
     def test_changed_pinned_image_invalidates_existing_binding(self):
         first = p.inspect(PLAN, NS, PVC, DEPLOYMENT)
