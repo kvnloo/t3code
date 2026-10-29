@@ -23,7 +23,13 @@ PUID = '33333333-3333-4333-8333-333333333333'
 PLAN = {'format': 't3-k3s-p1-plan-v1', 'leaseHash': HASH, 'namespace': NS, 'image': IMAGE}
 BINDING = {'format': 't3-k3s-p1-binding-v3', 'leaseHash': HASH, 'namespace': NS,
            'deploymentUID': DUID, 'imageRefSha256': hashlib.sha256(IMAGE.encode()).hexdigest()}
-CONTAINER = {'name': 't3', 'image': IMAGE, 'securityContext': {'readOnlyRootFilesystem': True},
+CONTAINER = {'name': 't3', 'image': IMAGE, 'workingDir': '/data',
+             'imagePullPolicy': 'IfNotPresent',
+             'ports': [{'name': 'http', 'containerPort': 3773}],
+             'startupProbe': {'tcpSocket': {'port': 'http'}, 'periodSeconds': 5,
+                              'failureThreshold': 60},
+             'readinessProbe': {'tcpSocket': {'port': 'http'}, 'periodSeconds': 5},
+             'securityContext': {'readOnlyRootFilesystem': True},
              'resources': {'limits': {'memory': '4Gi'}},
              'volumeMounts': [{'name': 'data', 'mountPath': '/data'}]}
 PODSPEC = {'serviceAccountName': 't3-worker', 'automountServiceAccountToken': False,
@@ -133,6 +139,38 @@ class RuntimeTests(unittest.TestCase):
             args[idx] = None
             with self.subTest(idx=idx), self.assertRaises((pc.PodError, TypeError, AttributeError)):
                 pc.inspect(*args)
+
+    def test_reject_admitted_startup_and_network_drift(self):
+        for path, value in [
+            (('containers', 0, 'lifecycle'),
+             {'postStart': {'exec': {'command': ['/bin/sh', '-c', 'true']}}}),
+            (('containers', 0, 'ports', 0, 'hostPort'), 3773),
+            (('containers', 0, 'ports', 0, 'containerPort'), 9876),
+            (('containers', 0, 'startupProbe'),
+             {'exec': {'command': ['/bin/sh']}, 'periodSeconds': 5,
+              'failureThreshold': 60}),
+            (('containers', 0, 'readinessProbe', 'tcpSocket', 'port'), 9876),
+            (('containers', 0, 'workingDir'), '/tmp'),
+            (('containers', 0, 'imagePullPolicy'), 'Always'),
+            (('hostname',), 'unexpected-host'),
+        ]:
+            args = fixture()
+            obj = args[4]['items'][0]['spec']
+            for key in path[:-1]:
+                obj = obj[key]
+            obj[path[-1]] = value
+            with self.subTest(path=path), self.assertRaises(pc.PodError):
+                pc.inspect(*args)
+
+        args = fixture()
+        admitted = args[4]['items'][0]['spec']['containers'][0]
+        # Kubernetes fills omitted probe defaults and TCP protocol.
+        admitted['ports'][0]['protocol'] = 'TCP'
+        for probe in ('startupProbe', 'readinessProbe'):
+            admitted[probe].update({'timeoutSeconds': 1, 'successThreshold': 1,
+                                    'initialDelaySeconds': 0})
+        admitted['readinessProbe']['failureThreshold'] = 3
+        pc.inspect(*args)
 
     def test_cli_sanitizes_private_details(self):
         with tempfile.TemporaryDirectory() as d:
