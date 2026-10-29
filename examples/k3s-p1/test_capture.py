@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 spec = importlib.util.spec_from_file_location('capture', Path(__file__).with_name('capture.py'))
 module = importlib.util.module_from_spec(spec)
@@ -114,6 +115,29 @@ class CaptureTests(unittest.TestCase):
         with self.assertRaisesRegex(module.CaptureError, 'request rejected') as ctx:
             module.capture('disposable-k3s', PLAN, runner=Stub(broken='pods'))
         self.assertNotIn('private', str(ctx.exception))
+
+    def test_concurrent_empty_destination_cannot_replace_existing_evidence(self):
+        # Reproduce a writer creating the final directory after publish()'s
+        # initial absence check. Plain os.rename() would replace that empty
+        # directory; renameat2(RENAME_NOREPLACE) must preserve its inode.
+        with tempfile.TemporaryDirectory() as temp:
+            parent = Path(temp) / 'owner'
+            parent.mkdir(mode=0o700)
+            target = parent / 'snapshot'
+            make_temp = module.tempfile.mkdtemp
+            competing_inode = []
+
+            def race(*args, **kwargs):
+                staging = make_temp(*args, **kwargs)
+                target.mkdir()
+                competing_inode.append(target.stat().st_ino)
+                return staging
+
+            with mock.patch.object(module.tempfile, 'mkdtemp', side_effect=race):
+                with self.assertRaises(module.CaptureError):
+                    module.publish({'pods': {'kind': 'PodList', 'items': []}}, target)
+            self.assertEqual(target.stat().st_ino, competing_inode[0])
+            self.assertEqual(list(parent.iterdir()), [target])
 
     def test_publish_private_atomic_and_no_overwrite(self):
         with tempfile.TemporaryDirectory() as temp:
