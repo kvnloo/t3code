@@ -47,10 +47,13 @@ def verify(context: str, runner=subprocess.run) -> None:
                      runner=runner)
 
     version = read("get", "--raw=/version")
-    match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)(?:[+\-].*)?",
-                         version.get("gitVersion", ""))
+    git_version = version.get("gitVersion")
+    # Other Kubernetes distributions can pass every remaining prerequisite.
+    # This P0 proof must target a real, stable K3s build, not a generic cluster.
+    match = (re.fullmatch(r"v(\d+)\.(\d+)\.(\d+)\+k3s[1-9]\d*", git_version)
+             if isinstance(git_version, str) else None)
     if not match or tuple(map(int, match.groups()[:2])) < (1, 28):
-        raise PreflightError("Kubernetes server must be version 1.28 or newer")
+        raise PreflightError("K3s server must be version 1.28+ with a stable +k3sN build")
 
     nodes = read("get", "nodes", "-o", "json").get("items")
     if not isinstance(nodes, list) or len(nodes) != 1:
