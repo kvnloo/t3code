@@ -50,6 +50,16 @@ class P0PreflightTests(unittest.TestCase):
     def test_passes_disposable_ready_single_node(self):
         preflight.verify("isolated-k3s", runner=fake_run(RESPONSES))
 
+    def test_rejects_non_k3s_and_malformed_server_versions(self):
+        # A generic Kubernetes cluster can meet every other read-only check.
+        # This P0 proof is explicitly K3s-only; never report it as K3s.
+        for version in ("v1.37.1", "v1.37.1+k0s1", "v1.37.1+k3s",
+                        "v1.27.9+k3s1", None, 137):
+            mapping = copy.deepcopy(RESPONSES)
+            mapping[("get", "--raw=/version")] = {"gitVersion": version}
+            with self.subTest(version=version), self.assertRaises(preflight.PreflightError):
+                preflight.verify("isolated-k3s", runner=fake_run(mapping))
+
     def test_rejects_missing_or_invalid_context(self):
         for context in ("", "-danger", " isolated-k3s", "isolated-k3s\n", "a\x00b"):
             with self.subTest(context=repr(context)), self.assertRaises(preflight.PreflightError):
