@@ -160,9 +160,9 @@ proof of the data plane.
 ## Optional read-only, revision-checked snapshot collection
 
 **NOT RUN on any cluster.** Only after a human has separately approved a
-*disposable* P1 K3s worker and its exact context, the new \`capture.py\`
+*disposable* P1 K3s worker and its exact context, the new `capture.py`
 reduces mistakes in the manual observation commands above. It uses only
-explicit-context \`kubectl get -o json\` calls with deadlines; it cannot
+explicit-context `kubectl get -o json` calls with deadlines; it cannot
 provision, mutate, link, cancel or delete a worker. It collects six named
 resources (Namespace, PVC, Deployment, Service, Ingress, NetworkPolicy) and
 five complete namespace inventories (policies, ingresses, services,
@@ -175,38 +175,38 @@ Create a new path inside a private, caller-owned 0700 directory.
 Snapshot JSON may contain private addresses, labels, topology and paths,
 so **never commit or share the output**.
 
-\`\`\`sh
+```sh
 umask 077
 mkdir -m 700 /tmp/t3-p1-captures
 python3 examples/k3s-p1/capture.py \
   --context YOUR_APPROVED_DISPOSABLE_CONTEXT \
   --plan /tmp/k3s-p1-receipts/YOUR_FULL_LEASE_SHA256.json \
   --output-dir /tmp/t3-p1-captures/first
-\`\`\`
+```
 
 The command refuses existing destination paths, non-private parents,
 invalid plans or inconsistent repeated reads. It writes each JSON as 0600
 and atomically publishes the directory after all writes are synced. Run
-existing \`observe.py\`, \`pod_check.py\` and \`route_check.py\` on these
-**saved files**, using \`first/namespace.json\`, \`first/pvc.json\`,
-\`first/deployment.json\`, \`first/service.json\`,
-\`first/ingress.json\`, \`first/policy.json\`,
-\`first/all-policies.json\`, \`first/all-ingresses.json\`,
-\`first/all-services.json\`, \`first/replicasets.json\`, and
-\`first/pods.json\`. Never overwrite a previously accepted baseline.
+existing `observe.py`, `pod_check.py` and `route_check.py` on these
+**saved files**, using `first/namespace.json`, `first/pvc.json`,
+`first/deployment.json`, `first/service.json`,
+`first/ingress.json`, `first/policy.json`,
+`first/all-policies.json`, `first/all-ingresses.json`,
+`first/all-services.json`, `first/replicasets.json`, and
+`first/pods.json`. Never overwrite a previously accepted baseline.
 Repeat capture into a *new* private directory when observing recovery.
 
 For credential-free development tests (does **not** contact kubectl):
 
-\`\`\`sh
+```sh
 python3 -m unittest discover -s examples/k3s-p1 -p 'test_capture.py' -v
 python3 -m py_compile examples/k3s-p1/capture.py examples/k3s-p1/test_capture.py
-\`\`\`
+```
 
-Upstream \`main@08a463e29976617134de01e9341f898bc881d0eb\` (2026-10-29)
-documents linked-environment \`delegate_task\` and permissioned peer linking
-in \`docs/user/remote-access.md\` and
-\`docs/internals/remote.md\`; this is source-level availability on
-\`main\`, **not** verified compatibility of the P0 \`v0.1.3\` image.
+Upstream `main@08a463e29976617134de01e9341f898bc881d0eb` (2026-10-29)
+documents linked-environment `delegate_task` and permissioned peer linking
+in `docs/user/remote-access.md` and
+`docs/internals/remote.md`; this is source-level availability on
+`main`, **not** verified compatibility of the P0 `v0.1.3` image.
 Upstream record-before-launch issue #17051 remains open. Human-approved
 live P0 persistence/route/client proof and P1 OAuth/delegation are still HOLD.
