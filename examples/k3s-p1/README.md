@@ -31,6 +31,8 @@ non-root Pod/container security, resources and probes, and rejects host access,
 additional containers and injected credentials/command overrides,
 not the image of a live Pod. Legacy v1/v2 baselines are rejected. It never contacts a cluster or proves a live T3 worker.
 
+After the offline desired Deployment/PVC binding, the optional [Pod snapshot checker](OBSERVATION.md#optional-read-only-pod-runtime-snapshot--not-live-proof) can validate saved ReplicaSet→Pod controller UID, API-reported readiness and running image reference, and reject concurrent/mutated Pods. This is still **NOT live K3s proof**: its hashed imageID does not attest a multi-platform OCI digest, and it cannot establish persisted T3 identity, TLS, peer consent or successful delegation.
+
 The local private mode-0600 receipt is create-once and atomically published only after a synced write. Concurrent identical requests reuse the complete receipt; a failed publish leaves no half-written final record. A retry with identical
 arguments renders identical YAML. Reusing the key with changed image/expiry
 fails closed rather than silently rebinding a purported lease. The receipt
