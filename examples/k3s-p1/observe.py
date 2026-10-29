@@ -100,8 +100,16 @@ def inspect(plan, namespace, pvc, deployment):
             raise ObservationError('deployment unexpected Pod credential or container path')
     _require(container.get('workingDir'), '/data', 'deployment working directory')
     _require(container.get('imagePullPolicy'), 'IfNotPresent', 'deployment pull policy')
-    _require(container.get('ports'), [{'name': 'http', 'containerPort': 3773}],
-             'deployment HTTP port')
+    # Kubernetes defaults protocol=TCP in the observed object, even when
+    # omitted from the manifest. Accept that default but never hostPorts.
+    ports = container.get('ports')
+    if not isinstance(ports, list) or len(ports) != 1 or not isinstance(ports[0], dict):
+        raise ObservationError('deployment HTTP port shape changed')
+    _require(ports[0].get('name'), 'http', 'deployment HTTP port name')
+    _require(ports[0].get('containerPort'), 3773, 'deployment HTTP port')
+    _require(ports[0].get('protocol', 'TCP'), 'TCP', 'deployment HTTP protocol')
+    if ports[0].get('hostPort') not in (None, 0) or ports[0].get('hostIP'):
+        raise ObservationError('deployment host port is forbidden')
     _require(container.get('resources'), {
         'requests': {'cpu': '500m', 'memory': '1Gi', 'ephemeral-storage': '512Mi'},
         'limits': {'cpu': '2', 'memory': '4Gi', 'ephemeral-storage': '2Gi'},
@@ -119,12 +127,22 @@ def inspect(plan, namespace, pvc, deployment):
     for field in ('env', 'envFrom', 'command', 'args', 'lifecycle', 'volumeDevices'):
         if container.get(field):
             raise ObservationError('deployment unexpected injected container configuration')
-    _require(container.get('startupProbe'), {
-        'tcpSocket': {'port': 'http'}, 'periodSeconds': 5, 'failureThreshold': 60,
-    }, 'deployment startup probe')
-    _require(container.get('readinessProbe'), {
-        'tcpSocket': {'port': 'http'}, 'periodSeconds': 5,
-    }, 'deployment readiness probe')
+    # Kubernetes may add probe defaults to fetched API JSON.
+    for probe_name, failures in (('startupProbe', 60), ('readinessProbe', 3)):
+        probe = container.get(probe_name)
+        if not isinstance(probe, dict):
+            raise ObservationError('deployment probe missing')
+        _require(probe.get('tcpSocket'), {'port': 'http'}, 'deployment probe target')
+        _require(probe.get('periodSeconds'), 5, 'deployment probe frequency')
+        _require(probe.get('failureThreshold', 3), failures, 'deployment probe failures')
+        _require(probe.get('timeoutSeconds', 1), 1, 'deployment probe timeout')
+        _require(probe.get('successThreshold', 1), 1, 'deployment probe successes')
+        _require(probe.get('initialDelaySeconds', 0), 0, 'deployment probe initial delay')
+        if any(key not in {
+            'tcpSocket', 'periodSeconds', 'failureThreshold', 'timeoutSeconds',
+            'successThreshold', 'initialDelaySeconds',
+        } for key in probe):
+            raise ObservationError('deployment unexpected probe configuration')
     _require(container.get('volumeMounts'), [
         {'name': 'data', 'mountPath': '/data'},
         {'name': 'tmp', 'mountPath': '/tmp'},
