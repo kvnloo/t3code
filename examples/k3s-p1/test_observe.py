@@ -92,6 +92,34 @@ class ObserveTests(unittest.TestCase):
         with self.assertRaises(p.ObservationError):
             p.inspect(PLAN, deleted, PVC)
 
+    def test_changed_pinned_image_invalidates_existing_binding(self):
+        first = p.inspect(PLAN, NS, PVC)
+        self.assertEqual(first['format'], 't3-k3s-p1-binding-v2')
+        self.assertEqual(len(first['imageRefSha256']), 64)
+        self.assertNotIn(PLAN['image'], json.dumps(first))
+        changed = copy.deepcopy(PLAN)
+        changed['image'] = 'ghcr.io/owned/other@sha256:' + 'c' * 64
+        later = p.inspect(changed, NS, PVC)
+        self.assertNotEqual(first['imageRefSha256'], later['imageRefSha256'])
+        with self.assertRaisesRegex(p.ObservationError, 'binding changed'):
+            p.compare(later, first)
+
+    def test_invalid_image_and_legacy_binding_are_rejected(self):
+        for image in (None, 't3:latest', 'ghcr.io/owned/t3-worker:latest',
+                      'ghcr.io/owned/t3-worker@sha256:' + 'Z' * 64,
+                      'ghcr.io/owned/../other@sha256:' + 'a' * 64,
+                      'ghcr.io//owned/t3@sha256:' + 'a' * 64):
+            with self.subTest(image=image), self.assertRaisesRegex(
+                    p.ObservationError, 'immutable image'):
+                bad = copy.deepcopy(PLAN)
+                bad['image'] = image
+                p.inspect(bad, NS, PVC)
+        current = p.inspect(PLAN, NS, PVC)
+        legacy = dict(current, format='t3-k3s-p1-binding-v1')
+        legacy.pop('imageRefSha256')
+        with self.assertRaisesRegex(p.ObservationError, 'binding changed'):
+            p.compare(current, legacy)
+
     def test_cli_rejects_invalid_binding_without_emitting_ids(self):
         with tempfile.TemporaryDirectory() as directory:
             paths = [Path(directory) / name for name in ('plan.json', 'ns.json', 'pvc.json')]
