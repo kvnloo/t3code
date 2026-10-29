@@ -90,13 +90,40 @@ def inspect(plan, binding, deployment, replicasets, pods):
     rs_template = rs.get('spec', {}).get('template')
     need(isinstance(rs_template, dict) and isinstance(rs_template.get('spec'), dict)
          and rs_template['spec'] == template, 'active ReplicaSet template drift')
+    # Spec equality alone misses an edited replacement template's labels,
+    # selector or annotations. Those can change routing or trigger admission
+    # sidecars when the ReplicaSet creates a replacement Pod.
+    desired_meta = ds.get('template', {}).get('metadata')
+    replacement_meta = rs_template.get('metadata')
+    need(isinstance(desired_meta, dict) and isinstance(replacement_meta, dict)
+         and set(desired_meta) <= {'labels', 'annotations', 'creationTimestamp'}
+         and set(replacement_meta) <= {'labels', 'annotations', 'creationTimestamp'}
+         and desired_meta.get('creationTimestamp') is None
+         and replacement_meta.get('creationTimestamp') is None
+         and desired_meta.get('labels') == {'app': 't3-worker'}
+         and not desired_meta.get('annotations')
+         and not replacement_meta.get('annotations'),
+         'replacement Pod template metadata drift')
+    replacement_labels = replacement_meta.get('labels')
+    need(isinstance(replacement_labels, dict)
+         and set(replacement_labels) == {'app', 'pod-template-hash'}
+         and replacement_labels.get('app') == 't3-worker'
+         and isinstance(replacement_labels.get('pod-template-hash'), str)
+         and re.fullmatch(r'[a-z0-9-]{1,63}', replacement_labels['pod-template-hash']),
+         'replacement Pod template labels drift')
+    selector = rs.get('spec', {}).get('selector')
+    need(isinstance(selector, dict)
+         and selector.get('matchLabels') == replacement_labels
+         and not selector.get('matchExpressions')
+         and set(selector) <= {'matchLabels', 'matchExpressions'},
+         'active ReplicaSet selector drift')
     need(isinstance(pods, dict) and pods.get('kind') == 'PodList'
          and isinstance(pods.get('items'), list) and len(pods['items']) == 1,
          'worker namespace does not have exactly one Pod')
     pod = pods['items'][0]
     pm = meta(pod, 'Pod', ns)
     controller(pod, 'ReplicaSet', rm.get('name'), rm['uid'])
-    need(pm.get('labels', {}).get('app') == 't3-worker', 'Pod selector drift')
+    need(pm.get('labels') == replacement_labels, 'Pod selector drift')
     ps = pod.get('spec', {})
     need(isinstance(ps, dict) and ps.get('serviceAccountName') == 't3-worker'
          and ps.get('automountServiceAccountToken') is False

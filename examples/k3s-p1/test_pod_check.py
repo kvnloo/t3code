@@ -38,16 +38,21 @@ PODSPEC = {'serviceAccountName': 't3-worker', 'automountServiceAccountToken': Fa
            'containers': [copy.deepcopy(CONTAINER)]}
 D = {'kind': 'Deployment', 'metadata': {'name': 't3-worker', 'uid': DUID,
      'namespace': NS, 'generation': 2},
-     'spec': {'template': {'spec': copy.deepcopy(PODSPEC)}},
+     'spec': {'template': {'metadata': {'labels': {'app': 't3-worker'}},
+                           'spec': copy.deepcopy(PODSPEC)}},
      'status': {'observedGeneration': 2, 'replicas': 1, 'readyReplicas': 1,
                 'availableReplicas': 1, 'updatedReplicas': 1}}
 RS = {'kind': 'ReplicaSet', 'metadata': {'name': 't3-worker-abcdef', 'uid': RUID,
       'namespace': NS, 'ownerReferences': [{'kind': 'Deployment', 'name': 't3-worker',
                                            'uid': DUID, 'controller': True}]},
-      'spec': {'replicas': 1, 'template': {'spec': copy.deepcopy(PODSPEC)}},
+      'spec': {'replicas': 1,
+               'selector': {'matchLabels': {'app': 't3-worker', 'pod-template-hash': 'abcdef'}},
+               'template': {'metadata': {'labels': {'app': 't3-worker',
+                                                    'pod-template-hash': 'abcdef'}},
+                            'spec': copy.deepcopy(PODSPEC)}},
       'status': {'readyReplicas': 1, 'replicas': 1}}
 POD = {'kind': 'Pod', 'metadata': {'name': 't3-worker-abcdef-0123', 'namespace': NS,
-       'uid': PUID, 'labels': {'app': 't3-worker'}, 'ownerReferences': [
+       'uid': PUID, 'labels': {'app': 't3-worker', 'pod-template-hash': 'abcdef'}, 'ownerReferences': [
            {'kind': 'ReplicaSet', 'name': RS['metadata']['name'], 'uid': RUID,
             'controller': True}]}, 'spec': copy.deepcopy(PODSPEC),
        'status': {'phase': 'Running', 'conditions': [{'type': 'Ready', 'status': 'True'}],
@@ -111,9 +116,9 @@ class RuntimeTests(unittest.TestCase):
     def test_reject_active_replicaset_template_drift(self):
         # A clean Pod can be replaced from an altered ReplicaSet template.
         baseline = fixture()
-        baseline[3]['items'][0]['spec']['template']['metadata'] = {
-            'labels': {'pod-template-hash': 'abcdef'}}
-        pc.inspect(*baseline)  # Controller-added template metadata is expected.
+        baseline[2]['spec']['template']['metadata']['creationTimestamp'] = None
+        baseline[3]['items'][0]['spec']['template']['metadata']['creationTimestamp'] = None
+        pc.inspect(*baseline)  # Kubernetes's harmless null timestamp is expected.
         for change in ('missing', 'sidecar', 'image', 'service-account', 'volume'):
             args = fixture()
             spec = args[3]['items'][0]['spec']
@@ -130,6 +135,31 @@ class RuntimeTests(unittest.TestCase):
                 spec['template']['spec']['volumes'] = [{'name': 'data', 'hostPath': {'path': '/host'}}]
             with self.subTest(change=change), self.assertRaisesRegex(
                     pc.PodError, 'ReplicaSet template'):
+                pc.inspect(*args)
+
+    def test_reject_replacement_metadata_or_selector_drift(self):
+        for change in ('sidecar-annotation', 'extra-label', 'wrong-hash',
+                       'wrong-selector', 'extra-selector', 'pod-label', 'desired-annotation'):
+            args = fixture()
+            desired = args[2]['spec']['template']['metadata']
+            rs_spec = args[3]['items'][0]['spec']
+            rs_meta = rs_spec['template']['metadata']
+            if change == 'sidecar-annotation':
+                rs_meta['annotations'] = {'sidecar.istio.io/inject': 'true'}
+            elif change == 'extra-label':
+                rs_meta['labels']['expose'] = 'public'
+            elif change == 'wrong-hash':
+                rs_meta['labels']['pod-template-hash'] = 'wrong'
+            elif change == 'wrong-selector':
+                rs_spec['selector']['matchLabels']['app'] = 'another'
+            elif change == 'extra-selector':
+                rs_spec['selector']['matchExpressions'] = [
+                    {'key': 'tier', 'operator': 'Exists'}]
+            elif change == 'pod-label':
+                args[4]['items'][0]['metadata']['labels']['expose'] = 'public'
+            else:
+                desired['annotations'] = {'sidecar.istio.io/inject': 'true'}
+            with self.subTest(change=change), self.assertRaises(pc.PodError):
                 pc.inspect(*args)
 
     def test_reject_false_readiness_and_concurrent_pods(self):

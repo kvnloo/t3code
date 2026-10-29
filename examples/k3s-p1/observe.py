@@ -82,7 +82,14 @@ def _inspect(plan, namespace, pvc, deployment):
     expected_labels = {'app': 't3-worker'}
     _require(dspec.get('selector', {}).get('matchLabels'), expected_labels, 'deployment selector')
     template = dspec.get('template', {})
-    _require(template.get('metadata', {}).get('labels'), expected_labels, 'deployment Pod labels')
+    template_meta = template.get('metadata', {})
+    _require(template_meta.get('labels'), expected_labels, 'deployment Pod labels')
+    # Admission-triggering metadata can change a future replacement Pod even
+    # when the approved image, ServiceAccount and persistent volume match.
+    if (set(template_meta) - {'labels', 'annotations', 'creationTimestamp'}
+            or template_meta.get('creationTimestamp') is not None
+            or template_meta.get('annotations')):
+        raise ObservationError('deployment unexpected Pod template metadata')
     pod = template.get('spec', {})
     _require(pod.get('serviceAccountName'), 't3-worker', 'deployment ServiceAccount')
     _require(pod.get('automountServiceAccountToken'), False, 'deployment API token')

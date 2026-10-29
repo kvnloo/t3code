@@ -220,6 +220,24 @@ class ObserveTests(unittest.TestCase):
             p.compare(p.inspect(PLAN, NS, PVC, replaced),
                       p.inspect(PLAN, NS, PVC, DEPLOYMENT))
 
+    def test_template_metadata_cannot_trigger_admission_on_restart(self):
+        for change in ('annotation', 'extra-field', 'timestamp'):
+            bad = copy.deepcopy(DEPLOYMENT)
+            meta = bad['spec']['template']['metadata']
+            if change == 'annotation':
+                meta['annotations'] = {'sidecar.istio.io/inject': 'true'}
+            elif change == 'extra-field':
+                meta['finalizers'] = ['unexpected.example/finalizer']
+            else:
+                meta['creationTimestamp'] = '2026-10-29T00:00:00Z'
+            with self.subTest(change=change), self.assertRaisesRegex(
+                    p.ObservationError, 'template metadata'):
+                p.inspect(PLAN, NS, PVC, bad)
+        defaulted = copy.deepcopy(DEPLOYMENT)
+        defaulted['spec']['template']['metadata'].update(
+            {'annotations': {}, 'creationTimestamp': None})
+        p.inspect(PLAN, NS, PVC, defaulted)
+
     def test_expected_kubernetes_api_defaults_do_not_false_reject(self):
         defaulted = copy.deepcopy(DEPLOYMENT)
         container = defaulted['spec']['template']['spec']['containers'][0]
