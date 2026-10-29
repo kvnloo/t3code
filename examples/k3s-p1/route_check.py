@@ -30,6 +30,35 @@ def _meta(obj, kind, name, namespace):
     return meta
 
 
+def _route_status(obj, kind, ns):
+    """Fail closed on an API-advertised public/extra route, even if spec is private.
+
+    An empty status is valid for an unapplied desired spec, NOT evidence of
+    HTTPS reachability or a trustworthy tailnet identity.
+    """
+    status = obj.get('status', {})
+    if not isinstance(status, dict):
+        raise RouteError(f'{kind} has malformed route status')
+    lb = status.get('loadBalancer', {})
+    if not isinstance(lb, dict):
+        raise RouteError(f'{kind} has malformed load-balancer status')
+    routes = lb.get('ingress', [])
+    if not isinstance(routes, list):
+        raise RouteError(f'{kind} advertises malformed routes')
+    if kind == 'Service':
+        if routes:
+            raise RouteError('ClusterIP Service advertises an unexpected external route')
+        return
+    if not routes:
+        return  # Unscheduled ingress: desired spec only, not an HTTPS proof.
+    if len(routes) != 1 or not isinstance(routes[0], dict):
+        raise RouteError('Ingress advertises unexpected extra routes')
+    entry = routes[0]
+    if (set(entry) != {'hostname'} or not isinstance(entry['hostname'], str)
+            or not re.fullmatch(re.escape(ns) + r'\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.ts\.net', entry['hostname'])):
+        raise RouteError('Ingress does not advertise the private expected hostname')
+
+
 def verify(plan, service, ingress, policy, all_policies, all_ingresses, all_services):
     """Fail closed for route/spec drift; no cluster writes or readiness claims."""
     if not isinstance(plan, dict) or plan.get('format') != 't3-k3s-p1-plan-v1':
@@ -42,6 +71,9 @@ def verify(plan, service, ingress, policy, all_policies, all_ingresses, all_serv
     _meta(service, 'Service', 't3-worker', ns)
     _meta(ingress, 'Ingress', 't3-worker', ns)
     _meta(policy, 'NetworkPolicy', 'worker-ingress', ns)
+
+    _route_status(service, 'Service', ns)
+    _route_status(ingress, 'Ingress', ns)
 
     spec = service.get('spec')
     if not isinstance(spec, dict):
@@ -120,6 +152,9 @@ def verify(plan, service, ingress, policy, all_policies, all_ingresses, all_serv
                 or listed_meta.get('uid') != expected_uid):
             raise RouteError(f'{kind} identity differs across snapshots')
         _same(listed.get('spec'), expected.get('spec'), f'inventory {kind} spec')
+        _route_status(listed, kind, ns)
+        _same(listed.get('status', {}), expected.get('status', {}),
+              f'inventory {kind} advertised route status')
 
 
 def main():
