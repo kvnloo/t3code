@@ -90,10 +90,13 @@ No upstream writes and no READY status.
 ## Offline private-route drift check (no cluster calls)
 
 `route_check.py` compares a private P1 plan receipt with saved Kubernetes
-**Service, Ingress and NetworkPolicy JSON**. It rejects a public
+**Service, Ingress, named NetworkPolicy and full namespace-wide NetworkPolicyList JSON**. It rejects a public
 LoadBalancer/NodePort, external IP, wrong backend, non-Tailscale IngressClass,
 Funnel/unreviewed ingress annotations, extra ingress rules, changed tailnet
-hostname, or a widened NetworkPolicy. The checked-in
+hostname, a widened NetworkPolicy, **or an additional wildcard-allow policy**.
+Kubernetes ingress policy rules are additive; checking the named policy alone
+cannot exclude another policy that exposes the worker. The inventory must
+contain exactly that one named policy with the same UID and spec. The checked-in
 `test_route_check.py` covers those regressions. This is a **static desired
 spec check**: a matching snapshot does **not** prove a trusted API response,
 correct CNI enforcement, private Tailscale TLS/ACLs, OAuth permission or
@@ -108,15 +111,19 @@ mkdir -p /tmp/t3-p1-private
 kubectl --context YOUR_APPROVED_DISPOSABLE_CONTEXT -n YOUR_P1_NAMESPACE get service t3-worker -o json > /tmp/t3-p1-private/service.json
 kubectl --context YOUR_APPROVED_DISPOSABLE_CONTEXT -n YOUR_P1_NAMESPACE get ingress t3-worker -o json > /tmp/t3-p1-private/ingress.json
 kubectl --context YOUR_APPROVED_DISPOSABLE_CONTEXT -n YOUR_P1_NAMESPACE get networkpolicy worker-ingress -o json > /tmp/t3-p1-private/policy.json
+kubectl --context YOUR_APPROVED_DISPOSABLE_CONTEXT -n YOUR_P1_NAMESPACE get networkpolicies -o json > /tmp/t3-p1-private/all-policies.json
 python3 examples/k3s-p1/route_check.py \
   --plan /tmp/k3s-p1-receipts/YOUR_FULL_LEASE_SHA256.json \
   --service /tmp/t3-p1-private/service.json \
   --ingress /tmp/t3-p1-private/ingress.json \
-  --network-policy /tmp/t3-p1-private/policy.json
+  --network-policy /tmp/t3-p1-private/policy.json \
+  --all-network-policies /tmp/t3-p1-private/all-policies.json
 ```
 
 A failed check requires manual review, never automatic rollback or deletion.
-Unexpected admission-controller annotations intentionally fail closed. Also
-check actual DNS, HTTPS certificate, peer identity, private ACL negative test
+Unexpected admission-controller annotations and any additional network
+policy fail closed. A saved inventory can be stale or collected mid-change;
+repeat the approved-context read and independently inspect effective CNI rules.
+Also check actual DNS, HTTPS certificate, peer identity, private ACL negative test
 and CNI policy enforcement independently; do not treat these API objects as
 proof of the data plane.
