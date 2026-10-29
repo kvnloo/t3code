@@ -25,7 +25,7 @@ non-root Pod/container security, resources and probes, and rejects host access,
 additional containers and injected credentials/command overrides,
 not the image of a live Pod. Legacy v1/v2 baselines are rejected. It never contacts a cluster or proves a live T3 worker.
 
-The local private mode-0600 receipt is create-once. A retry with identical
+The local private mode-0600 receipt is create-once and atomically published only after a synced write. Concurrent identical requests reuse the complete receipt; a failed publish leaves no half-written final record. A retry with identical
 arguments renders identical YAML. Reusing the key with changed image/expiry
 fails closed rather than silently rebinding a purported lease. The receipt
 is **not** a distributed lock or a cluster reservation. Expiration is advisory
