@@ -33,7 +33,7 @@ non-root Pod/container security, resources and probes, and rejects host access,
 additional containers and injected credentials/command overrides,
 not the image of a live Pod. Legacy v1/v2/v3 baselines are rejected. It never contacts a cluster or proves a live T3 worker.
 
-After the offline desired Deployment/PVC binding, the optional [Pod snapshot checker](OBSERVATION.md#optional-read-only-pod-runtime-snapshot--not-live-proof) can validate saved ReplicaSet→Pod controller UID, API-reported readiness and running image reference, and reject concurrent/mutated Pods, unexpected host ports, changed startup/probe behavior or injected post-start hooks. This is still **NOT live K3s proof**: its hashed imageID does not attest a multi-platform OCI digest, and it cannot establish persisted T3 identity, TLS, peer consent or successful delegation.
+After the offline desired Deployment/PVC binding, the optional [Pod snapshot checker](OBSERVATION.md#optional-read-only-pod-runtime-snapshot--not-live-proof) can validate saved ReplicaSet→Pod controller UID, API-reported readiness and running image reference, and reject concurrent/mutated Pods, unexpected host ports, changed startup/probe behavior or injected post-start hooks. It also compares the active ReplicaSet's replacement-Pod spec with the approved Deployment template, rejecting drift that could affect a future Pod after restart/eviction. This is still **NOT live K3s proof**: its hashed imageID does not attest a multi-platform OCI digest, and it cannot establish persisted T3 identity, TLS, peer consent or successful delegation.
 
 The local private mode-0600 receipt is create-once and atomically published only after a synced write. Concurrent identical requests reuse the complete receipt; a failed publish leaves no half-written final record. A retry with identical
 arguments renders identical YAML. Reusing the key with changed image/expiry
@@ -89,7 +89,10 @@ fails instead of overwriting it.
    assume worker and owner share a filesystem, provider secrets or GPUs.
 
 The original P0 image is pinned to T3 release v0.1.3; latest-main beta
-compatibility is **unverified**. This preview does not install tools,
+compatibility is **unverified**. At upstream main `960d5761c13f68a2f10635bcd26489a5fa404ec1`
+(2026-10-29), linked-environment `RemoteDelegation.ts` exists but still launches a
+remote child before recording the owning task ([#17051](https://github.com/pingdotgg/t3code/issues/17051));
+its restart durability is not proven. This preview does not install tools,
 clone repositories, contact Kubernetes, link agents, grant credentials,
 launch workers or alter the current deployment.
 
