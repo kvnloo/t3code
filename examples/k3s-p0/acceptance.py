@@ -68,13 +68,17 @@ def verify_admitted_pod_confinement(pod: dict) -> None:
     if not isinstance(app, dict):
         raise EvidenceError("P0 owner container is invalid")
     security = app.get("securityContext")
+    capabilities = security.get("capabilities") if isinstance(security, dict) else None
+    seccomp = security.get("seccompProfile", {}) if isinstance(security, dict) else None
     if (not isinstance(security, dict)
+            or not isinstance(capabilities, dict)
+            or not isinstance(seccomp, dict)
             or security.get("allowPrivilegeEscalation") is not False
             or security.get("readOnlyRootFilesystem") is not True
             or security.get("privileged") is True
-            or security.get("capabilities", {}).get("drop") != ["ALL"]
-            or security.get("capabilities", {}).get("add")
-            or security.get("seccompProfile", {}).get("type", "RuntimeDefault") != "RuntimeDefault"
+            or capabilities.get("drop") != ["ALL"]
+            or capabilities.get("add")
+            or seccomp.get("type", "RuntimeDefault") != "RuntimeDefault"
             or security.get("procMount", "Default") != "Default"
             or any(app.get(field) for field in ("env", "envFrom", "command", "args"))):
         raise EvidenceError("P0 owner container privilege or command drifted")
@@ -85,13 +89,17 @@ def verify_admitted_pod_confinement(pod: dict) -> None:
         raise EvidenceError("P0 Pod contains unexpected volumes")
     named = {volume.get("name"): volume for volume in volumes}
     data, tmp = named.get("data", {}), named.get("tmp", {})
+    data_source = data.get("persistentVolumeClaim")
+    tmp_source = tmp.get("emptyDir")
     if (set(named) != {"data", "tmp"}
             or set(data) != {"name", "persistentVolumeClaim"}
-            or data["persistentVolumeClaim"].get("claimName") != "t3-p0-data"
-            or data["persistentVolumeClaim"].get("readOnly") is True
+            or not isinstance(data_source, dict)
+            or data_source.get("claimName") != "t3-p0-data"
+            or data_source.get("readOnly") is True
             or set(tmp) != {"name", "emptyDir"}
-            or tmp["emptyDir"].get("sizeLimit") != "1Gi"
-            or tmp["emptyDir"].get("medium") not in (None, "")):
+            or not isinstance(tmp_source, dict)
+            or tmp_source.get("sizeLimit") != "1Gi"
+            or tmp_source.get("medium") not in (None, "")):
         raise EvidenceError("P0 Pod volume source drifted")
     mounts = app.get("volumeMounts")
     expected_mounts = {("data", "/data"), ("tmp", "/tmp")}
