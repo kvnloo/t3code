@@ -297,6 +297,42 @@ def verify_exclusive_routes(service: dict, ingress: dict,
             raise EvidenceError(f"P0 has an extra, missing, or changed {name} route")
 
 
+def verify_persistent_volume(pvc: dict, pv: dict) -> tuple[str, str]:
+    """Verify exact owner PVC/PV binding, not on-disk durability or backups."""
+    if not isinstance(pvc, dict) or not isinstance(pv, dict):
+        raise EvidenceError("P0 PVC/PV binding objects are invalid")
+    cm, cs, ct = (pvc.get(k) for k in ("metadata", "spec", "status"))
+    vm, vs, vt = (pv.get(k) for k in ("metadata", "spec", "status"))
+    if not all(isinstance(o, dict) for o in (cm, cs, ct, vm, vs, vt)):
+        raise EvidenceError("P0 PVC/PV binding fields are missing")
+    claim = vs.get("claimRef")
+    class_name = cs.get("storageClassName")
+    if (cm.get("name") != "t3-p0-data" or cm.get("namespace") != NAMESPACE
+            or not isinstance(cm.get("uid"), str) or not cm["uid"]
+            or not isinstance(vm.get("uid"), str) or not vm["uid"]
+            or cm.get("deletionTimestamp") or vm.get("deletionTimestamp")
+            or ct.get("phase") != "Bound" or vt.get("phase") != "Bound"
+            or vm.get("name") != cs.get("volumeName")
+            or not isinstance(claim, dict)
+            or claim.get("name") != "t3-p0-data"
+            or claim.get("namespace") != NAMESPACE
+            or claim.get("uid") != cm["uid"]):
+        raise EvidenceError("P0 PVC/PV is not bound to this exact owner claim")
+    if (cs.get("accessModes") != ["ReadWriteOnce"]
+            or vs.get("accessModes") != ["ReadWriteOnce"]
+            or cs.get("volumeMode") != "Filesystem"
+            or vs.get("volumeMode") != "Filesystem"
+            or cs.get("resources", {}).get("requests", {}).get("storage") != "10Gi"
+            or cs.get("dataSource") or cs.get("dataSourceRef")
+            or not isinstance(class_name, str) or not class_name
+            or vs.get("storageClassName") != class_name):
+        raise EvidenceError("P0 PVC/PV access, storage class or source drifted")
+    reclaim = vs.get("persistentVolumeReclaimPolicy")
+    if reclaim not in ("Delete", "Retain"):
+        raise EvidenceError("P0 PV has an unrecognized reclaim policy")
+    return vm["uid"], reclaim
+
+
 def collect(context: str, read=kubectl) -> dict[str, str]:
     def get(kind: str, name: str) -> dict:
         try:
@@ -344,8 +380,19 @@ def collect(context: str, read=kubectl) -> dict[str, str]:
         raise EvidenceError("P0 selected Pod must be Running, Ready, and not deleting")
 
     pvc = get("pvc", "t3-p0-data")
-    if pvc.get("status", {}).get("phase") != "Bound" or not pvc.get("metadata", {}).get("uid"):
-        raise EvidenceError("P0 PVC is not Bound or missing its UID")
+    # Do not pass an untrusted API volume name to kubectl as a CLI option.
+    pv_name = pvc.get("spec", {}).get("volumeName")
+    if (not isinstance(pv_name, str) or not (1 <= len(pv_name) <= 253)
+            or pv_name[0] not in "abcdefghijklmnopqrstuvwxyz0123456789"
+            or pv_name[-1] not in "abcdefghijklmnopqrstuvwxyz0123456789"
+            or any(ch not in "abcdefghijklmnopqrstuvwxyz0123456789.-"
+                   for ch in pv_name)):
+        raise EvidenceError("P0 PVC has an invalid bound PV name")
+    try:
+        pv = json.loads(read(context, "get", "pv", pv_name, "-o", "json"))
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise EvidenceError("invalid kubectl PV JSON") from exc
+    pv_uid, reclaim_policy = verify_persistent_volume(pvc, pv)
     service = get("service", "t3-owner")
     if service.get("spec", {}).get("type") != "ClusterIP":
         raise EvidenceError("P0 Service is not private ClusterIP")
@@ -394,10 +441,12 @@ def collect(context: str, read=kubectl) -> dict[str, str]:
     if not raw_id or len(raw_id) > 512 or "\n" in raw_id or "\r" in raw_id:
         raise EvidenceError("missing or malformed persisted T3 environment ID")
     return {
-        "format": "t3-k3s-p0-identity-v2",
+        "format": "t3-k3s-p0-identity-v3",
         "environmentIdHash": hashlib.sha256(raw_id.encode("utf-8")).hexdigest(),
         "podUid": pod_uid,
         "pvcUid": pvc["metadata"]["uid"],
+        "pvUid": pv_uid,
+        "pvReclaimPolicy": reclaim_policy,
         "endpointHost": hostname,
         "deploymentImage": containers[0]["image"],
     }
@@ -421,7 +470,7 @@ def check_baseline(path: Path, record: dict) -> None:
         raise EvidenceError("baseline format mismatch")
     if not old.get("podUid") or old["podUid"] == record["podUid"]:
         raise EvidenceError("P0 Pod UID unchanged; rollout restart not observed")
-    for field in ("environmentIdHash", "pvcUid", "endpointHost", "deploymentImage"):
+    for field in ("environmentIdHash", "pvcUid", "pvUid", "pvReclaimPolicy", "endpointHost", "deploymentImage"):
         if old.get(field) != record[field]:
             raise EvidenceError(f"P0 restart changed {field}; do not claim persistence")
 
