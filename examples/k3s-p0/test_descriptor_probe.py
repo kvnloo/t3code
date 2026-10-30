@@ -107,11 +107,12 @@ class P0TlsDescriptorTest(unittest.TestCase):
                     probe.verify_private_descriptor(HOST, IDENTITY_HASH,
                                                     connection_for(error=error))
 
-    def test_requires_private_v2_baseline(self):
+    def test_requires_private_v3_baseline(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "evidence.json"
-            baseline = {"format": "t3-k3s-p0-identity-v2", "podUid": "pod-1",
-                        "pvcUid": "pvc-1", "endpointHost": HOST,
+            baseline = {"format": "t3-k3s-p0-identity-v3", "podUid": "pod-1",
+                        "pvcUid": "pvc-1", "pvUid": "pv-1",
+                         "pvReclaimPolicy": "Delete", "endpointHost": HOST,
                         "environmentIdHash": IDENTITY_HASH}
             path.write_text(json.dumps(baseline), encoding="utf-8")
             path.chmod(0o600)
@@ -120,7 +121,12 @@ class P0TlsDescriptorTest(unittest.TestCase):
             with self.assertRaisesRegex(probe.EvidenceError, "private"):
                 probe.read_baseline(path)
             path.chmod(0o600)
-            baseline["format"] = "t3-k3s-p0-identity-v1"
+            baseline["pvUid"] = ""
+            path.write_text(json.dumps(baseline), encoding="utf-8")
+            with self.assertRaisesRegex(probe.EvidenceError, "PV"):
+                probe.read_baseline(path)
+            baseline["pvUid"] = "pv-1"
+            baseline["format"] = "t3-k3s-p0-identity-v2"
             path.write_text(json.dumps(baseline), encoding="utf-8")
             with self.assertRaisesRegex(probe.EvidenceError, "format"):
                 probe.read_baseline(path)
