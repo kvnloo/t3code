@@ -147,6 +147,14 @@ home machine. The checked-in YAML intentionally has an unpullable image token.
    requests. It also verifies actual Pod image/labels, PVC mount, no API-token
    mount or hostPath, Service selector/port, private Ingress backend/TLS,
    and live EndpointSlice target Pod UID, IP, readiness and T3 port 3773.
+   It additionally rejects an *admitted Pod* whose service account, host
+   process/network namespaces, non-root/seccomp settings, container privilege,
+   commands/environments, or exact PVC/tmp mounts differ from the reviewed
+   fixture. A safe Deployment template alone cannot attest the effective Pod
+   after admission. These metadata checks do **not** prove Pod Security
+   Admission is enabled, that the node enforces confinement, or that resource
+   quotas and NetworkPolicies protect the running workload; verify those on
+   the disposable cluster.
    It checks the **exact requested** `t3-k3s-p0.<tailnet>.ts.net` Ingress
    hostname and rejects additional reported ingress addresses. It checks
    **all namespace Services and Ingresses** against the one approved owner
