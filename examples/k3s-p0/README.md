@@ -72,7 +72,9 @@ docker buildx build --platform linux/amd64 -f examples/k3s-p0/Dockerfile \
 
 For a real test, push to a registry you control, find its pushed **manifest**
 digest (not the local image ID), and render a copy. The renderer rejects tags,
-missing digests, YAML injection and direct modification of tracked source:
+missing digests, YAML injection and direct modification of tracked source.
+It stages a private mode-0600 file, then publishes it without overwriting an
+existing path or following an output symlink. Use a fresh output path on reruns:
 
 ```sh
 python3 examples/k3s-p0/render.py \

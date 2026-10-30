@@ -7,7 +7,9 @@ network access. This is not a worker broker.
 
 import argparse
 from pathlib import Path
+import os
 import re
+import tempfile
 
 PLACEHOLDER = "REPLACE_WITH_PINNED_IMAGE_DIGEST"
 # Deliberately conservative; reject whitespace, tags without digests,
@@ -23,6 +25,28 @@ def render(source: str, image: str) -> str:
     return source.replace(PLACEHOLDER, image)
 
 
+def write_new_output(path: Path, content: str) -> None:
+    """Publish complete private YAML without following or replacing an output path.
+
+    Stage in the same directory, sync the complete file, then hard-link with
+    exclusive-create semantics. A failed link leaves the existing path intact.
+    """
+    staged = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent,
+            prefix=f".{path.name}.", suffix=".tmp", delete=False,
+        ) as handle:
+            staged = Path(handle.name)
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.link(staged, path)
+    finally:
+        if staged is not None:
+            staged.unlink(missing_ok=True)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", required=True, help="pushed image ref pinned at sha256 digest")
@@ -35,7 +59,10 @@ def main() -> None:
         output = render(source.read_text(encoding="utf-8"), args.image)
     except ValueError as error:
         parser.error(str(error))
-    args.output.write_text(output, encoding="utf-8")
+    try:
+        write_new_output(args.output, output)
+    except OSError as error:
+        parser.error(f"refusing to replace output or could not create private file: {error.strerror}")
 
 
 if __name__ == "__main__":
