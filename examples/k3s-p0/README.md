@@ -148,7 +148,13 @@ home machine. The checked-in YAML intentionally has an unpullable image token.
    mount or hostPath, Service selector/port, private Ingress backend/TLS,
    and live EndpointSlice target Pod UID, IP, readiness and T3 port 3773.
    It checks the **exact requested** `t3-k3s-p0.<tailnet>.ts.net` Ingress
-   hostname, rejects additional reported ingress addresses, and verifies that
+   hostname and rejects additional reported ingress addresses. It checks
+   **all namespace Services and Ingresses** against the one approved owner
+   route, rejecting hidden secondary/public routes, ClusterIP
+   `tailscale.com/expose` annotations, unexpected controller annotations and
+   external Service load-balancer status. This strict inventory can reject
+   operator-added routes until a human reviews them; a snapshot cannot rule
+   out resources added after the read. It also verifies that
    **the namespace has exactly one unchanged, narrow ingress NetworkPolicy**.
    Kubernetes policies are additive, so a second broad allow would invalidate
    the isolation claim. This is intentionally strict for this isolated fixture:
