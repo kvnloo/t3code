@@ -152,10 +152,11 @@ home machine. The checked-in YAML intentionally has an unpullable image token.
    requests and limits, non-root/seccomp settings, container privilege,
    commands/environments, or exact PVC/tmp mounts differ from the reviewed
    fixture. A safe Deployment template alone cannot attest the effective Pod
-   after admission. These metadata checks do **not** prove Pod Security
-   Admission is enabled, that the node enforces confinement, or that resource
-   quotas and NetworkPolicies protect the running workload; verify those on
-   the disposable cluster.
+   after admission. It also verifies the P0 ResourceQuota's exact hard
+   limits, reconciled status and absence of scopes, plus the ServiceAccount's
+   disabled token automount and absence of secret references. These API checks
+   do **not** prove Pod Security Admission or quota/NetworkPolicy enforcement;
+   test those on the disposable cluster.
    It checks the **exact requested** `t3-k3s-p0.<tailnet>.ts.net` Ingress
    hostname and rejects additional reported ingress addresses. It checks
    **all namespace Services and Ingresses** against the one approved owner
@@ -168,8 +169,8 @@ home machine. The checked-in YAML intentionally has an unpullable image token.
    Kubernetes policies are additive, so a second broad allow would invalidate
    the isolation claim. This is intentionally strict for this isolated fixture:
    additional operator-injected policies require review instead of a green
-   acceptance result. The check needs permission to **list NetworkPolicies**
-   and `pods/exec` permission to read the environment ID; it is not a
+   acceptance result. The check needs permission to **list NetworkPolicies**,
+   **get ResourceQuotas/ServiceAccounts**, and `pods/exec` permission to read the environment ID; it is not a
    read-only-RBAC-only Kubernetes probe. It also rejects an
    unobserved/incomplete Deployment rollout. This closes
    false-green checks where an unrelated/stale Pod or Service looks Ready
