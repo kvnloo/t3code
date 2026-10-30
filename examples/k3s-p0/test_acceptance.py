@@ -29,12 +29,27 @@ def fake_reads(identity="stable-id", ready=True, host="t3-k3s-p0.tailxxx.ts.net"
             "metadata": {"name": "t3-owner-test", "uid": pod_uid,
                          "labels": {"app": "t3-owner"},
                          **({"deletionTimestamp": "2026-10-28T00:00:00Z"} if deleting else {})},
-            "spec": {"automountServiceAccountToken": False,
+            "spec": {"serviceAccountName": "t3-p0",
+                     "automountServiceAccountToken": False,
+                     "securityContext": {
+                         "runAsNonRoot": True, "runAsUser": 10001,
+                         "runAsGroup": 10001, "fsGroup": 10001,
+                         "seccompProfile": {"type": "RuntimeDefault"},
+                     },
                      "containers": [{"name": "t3",
                                      "image": image or "ghcr.io/me/t3@sha256:" + "a" * 64,
-                                     "volumeMounts": [{"name": "data", "mountPath": "/data"}]}],
+                                     "securityContext": {
+                                         "allowPrivilegeEscalation": False,
+                                         "readOnlyRootFilesystem": True,
+                                         "capabilities": {"drop": ["ALL"]},
+                                     },
+                                     "volumeMounts": [
+                                         {"name": "data", "mountPath": "/data"},
+                                         {"name": "tmp", "mountPath": "/tmp"},
+                                     ]}],
                      "volumes": [{"name": "data", "persistentVolumeClaim": {
-                         "claimName": "t3-p0-data"}}]},
+                         "claimName": "t3-p0-data"}},
+                         {"name": "tmp", "emptyDir": {"sizeLimit": "1Gi"}}]},
             "status": {"phase": "Running", "podIP": "10.42.0.9",
                        "podIPs": [{"ip": "10.42.0.9"}],
                        "containerStatuses": [
@@ -228,6 +243,50 @@ class P0EvidenceTest(unittest.TestCase):
                     edit(doc)
                     return json.dumps(doc)
                 with self.assertRaisesRegex(module.EvidenceError, "Service|Ingress"):
+                    module.collect("disposable-test", altered)
+
+    def test_rejects_unsafe_admitted_pod_mutations(self):
+        # Kubernetes admission can mutate a safe Deployment template before
+        # the Pod starts; Ready status must not be a false security receipt.
+        edits = [
+            lambda s: s.update(serviceAccountName="default"),
+            lambda s: s.update(automountServiceAccountToken=True),
+            lambda s: s.update(hostNetwork=True),
+            lambda s: s.update(hostPID=True),
+            lambda s: s.update(hostIPC=True),
+            lambda s: s.update(shareProcessNamespace=True),
+            lambda s: s.update(imagePullSecrets=[{"name": "credentials"}]),
+            lambda s: s.update(initContainers=[{"name": "init"}]),
+            lambda s: s.update(ephemeralContainers=[{"name": "debug"}]),
+            lambda s: s["securityContext"].update(runAsUser=0),
+            lambda s: s["securityContext"].update(seccompProfile={"type": "Unconfined"}),
+            lambda s: s["containers"][0]["securityContext"].update(
+                allowPrivilegeEscalation=True),
+            lambda s: s["containers"][0]["securityContext"].update(
+                readOnlyRootFilesystem=False),
+            lambda s: s["containers"][0]["securityContext"]["capabilities"].update(
+                add=["SYS_ADMIN"]),
+            lambda s: s["containers"][0]["securityContext"].update(
+                seccompProfile={"type": "Unconfined"}),
+            lambda s: s["containers"][0].update(command=["/bin/sh"]),
+            lambda s: s["containers"][0].update(envFrom=[{"secretRef": {"name": "all"}}]),
+            lambda s: s["containers"][0]["volumeMounts"].append(
+                {"name": "token", "mountPath": "/var/run/secrets"}),
+            lambda s: s["volumes"].append({"name": "token", "secret": {"secretName": "all"}}),
+            lambda s: s["volumes"][1]["emptyDir"].update(sizeLimit="100Gi"),
+        ]
+        self.assertTrue(module.collect("disposable-test", fake_reads()[0]))
+        for index, edit in enumerate(edits):
+            with self.subTest(index=index):
+                reader, _ = fake_reads()
+                def altered(context, *args):
+                    result = reader(context, *args)
+                    if args[3] != "pods":
+                        return result
+                    doc = json.loads(result)
+                    edit(doc["items"][0]["spec"])
+                    return json.dumps(doc)
+                with self.assertRaisesRegex(module.EvidenceError, "P0"):
                     module.collect("disposable-test", altered)
 
     def test_rejects_wrong_pod_image_pvc_or_token_mount(self):
