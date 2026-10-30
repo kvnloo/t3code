@@ -368,9 +368,14 @@ def verify_persistent_volume(pvc: dict, pv: dict) -> tuple[str, str]:
 def collect(context: str, read=kubectl) -> dict[str, str]:
     def get(kind: str, name: str) -> dict:
         try:
-            return json.loads(read(context, "-n", NAMESPACE, "get", kind, name, "-o", "json"))
+            obj = json.loads(read(context, "-n", NAMESPACE, "get", kind, name, "-o", "json"))
         except (json.JSONDecodeError, TypeError) as exc:
             raise EvidenceError("invalid kubectl JSON") from exc
+        # Even valid JSON can be a scalar/list. Never let a wrong API shape
+        # escape as AttributeError while collecting private restart evidence.
+        if not isinstance(obj, dict):
+            raise EvidenceError("invalid kubectl object")
+        return obj
 
     deployment = get("deployment", "t3-owner")
     pod_spec = deployment.get("spec", {}).get("template", {}).get("spec", {})
