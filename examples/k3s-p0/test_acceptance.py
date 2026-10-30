@@ -142,6 +142,20 @@ def fake_reads(identity="stable-id", ready=True, host="t3-k3s-p0.tailxxx.ts.net"
 
 
 class P0EvidenceTest(unittest.TestCase):
+    def test_rejects_non_object_named_api_responses(self):
+        # A syntactically valid scalar/list is not a Kubernetes resource.
+        # Each object response must fail closed, not raise AttributeError.
+        for kind in ("deployment", "pvc", "service", "ingress"):
+            for bad in ([], None, "not-an-object", 123):
+                with self.subTest(kind=kind, payload=repr(bad)):
+                    valid, _ = fake_reads()
+                    def malformed(context, *args):
+                        if args[:4] == ("-n", module.NAMESPACE, "get", kind):
+                            return json.dumps(bad)
+                        return valid(context, *args)
+                    with self.assertRaisesRegex(module.EvidenceError, "invalid kubectl object"):
+                        module.collect("disposable-test", malformed)
+
     def test_same_id_survives_restart_without_leaking_raw_id(self):
         reader, calls = fake_reads(pod_uid="pod-before")
         before = module.collect("disposable-test", reader)
