@@ -83,6 +83,26 @@ class P0PreflightTests(unittest.TestCase):
             with self.subTest(key=key, value=value), self.assertRaises(preflight.PreflightError):
                 preflight.verify("isolated-k3s", runner=fake_run(values))
 
+    def test_malformed_api_objects_fail_with_safe_preflight_error(self):
+        # JSON can be syntactically valid yet structurally incompatible with
+        # Kubernetes resources; never print a Python traceback or API contents.
+        cases = [
+            (("get", "nodes", "-o", "json"), {"items": [{"spec": None, "status": {"conditions": [{"type": "Ready", "status": "True"}]}}]}),
+            (("get", "nodes", "-o", "json"), {"items": [{"spec": {"taints": None}, "status": {"conditions": [{"type": "Ready", "status": "True"}]}}]}),
+            (("get", "nodes", "-o", "json"), {"items": [{"spec": {"taints": ["bad"]}, "status": {"conditions": [{"type": "Ready", "status": "True"}]}}]}),
+            (("get", "nodes", "-o", "json"), {"items": [{"spec": {}, "status": {"conditions": ["bad"]}}]}),
+            (("get", "nodes", "-o", "json"), {"items": [{"spec": {}, "status": {"conditions": None}}]}),
+            (("get", "namespace", "tailscale", "-o", "json"), {"metadata": None}),
+            (("get", "ingressclass", "tailscale", "-o", "json"), {"spec": "unexpected"}),
+            (("get", "storageclasses", "-o", "json"), {"items": [None]}),
+            (("get", "storageclasses", "-o", "json"), {"items": [{"metadata": {"annotations": None}}]}),
+        ]
+        for key, response in cases:
+            values = copy.deepcopy(RESPONSES)
+            values[key] = response
+            with self.subTest(response=response), self.assertRaises(preflight.PreflightError):
+                preflight.verify("isolated-k3s", runner=fake_run(values))
+
     def test_fails_closed_on_query_error_and_malformed_json(self):
         with self.assertRaisesRegex(preflight.PreflightError, "unavailable"):
             preflight.verify("isolated-k3s", runner=fake_run(RESPONSES, error=OSError("denied")))

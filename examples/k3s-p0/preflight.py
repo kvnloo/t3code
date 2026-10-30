@@ -40,6 +40,13 @@ def query(context: str, *args: str, optional_absent: bool = False,
     return value
 
 
+def require_object(value, label: str) -> dict:
+    """Reject malformed resource fields without exposing response contents."""
+    if not isinstance(value, dict):
+        raise PreflightError(f"Kubernetes returned malformed {label}")
+    return value
+
+
 def verify(context: str, runner=subprocess.run) -> None:
     """Check only prerequisites safe to prove using GET requests."""
     def read(*args, optional_absent=False):
@@ -58,14 +65,21 @@ def verify(context: str, runner=subprocess.run) -> None:
     nodes = read("get", "nodes", "-o", "json").get("items")
     if not isinstance(nodes, list) or len(nodes) != 1:
         raise PreflightError("P0 proof requires exactly one disposable test node")
-    node = nodes[0]
-    if not isinstance(node, dict) or node.get("spec", {}).get("unschedulable") is True:
+    node = require_object(nodes[0], "Node")
+    spec = require_object(node.get("spec"), "Node spec")
+    status = require_object(node.get("status"), "Node status")
+    if spec.get("unschedulable") not in (None, False):
         raise PreflightError("P0 test node is unschedulable")
-    if any(t.get("effect") in ("NoSchedule", "NoExecute")
-           for t in node.get("spec", {}).get("taints", [])):
+    taints = spec.get("taints", [])
+    if not isinstance(taints, list) or any(not isinstance(t, dict) for t in taints):
+        raise PreflightError("Kubernetes returned malformed Node taints")
+    if any(t.get("effect") in ("NoSchedule", "NoExecute") for t in taints):
         raise PreflightError("P0 test node has an untolerated scheduling taint")
+    conditions = status.get("conditions")
+    if not isinstance(conditions, list) or any(not isinstance(c, dict) for c in conditions):
+        raise PreflightError("Kubernetes returned malformed Node conditions")
     if not any(c.get("type") == "Ready" and c.get("status") == "True"
-               for c in node.get("status", {}).get("conditions", [])):
+               for c in conditions):
         raise PreflightError("P0 test node is not Ready")
 
     namespace = read("get", "namespace", "t3-k3s-p0", "--ignore-not-found",
@@ -74,18 +88,25 @@ def verify(context: str, runner=subprocess.run) -> None:
         raise PreflightError("P0 namespace already exists; refuse possible overwrite")
 
     tail_ns = read("get", "namespace", "tailscale", "-o", "json")
-    if tail_ns.get("metadata", {}).get("name") != "tailscale":
+    if require_object(tail_ns.get("metadata"), "Tailscale Namespace metadata").get("name") != "tailscale":
         raise PreflightError("default Tailscale proxy namespace is not present")
     ingress_class = read("get", "ingressclass", "tailscale", "-o", "json")
-    if ingress_class.get("spec", {}).get("controller") != "tailscale.com/ts-ingress":
+    if require_object(ingress_class.get("spec"), "IngressClass spec").get("controller") != "tailscale.com/ts-ingress":
         raise PreflightError("Tailscale IngressClass controller does not match")
 
     storage = read("get", "storageclasses", "-o", "json").get("items")
     if not isinstance(storage, list):
         raise PreflightError("StorageClass listing unavailable")
-    defaults = [item for item in storage if item.get("metadata", {}).get(
-        "annotations", {}).get("storageclass.kubernetes.io/is-default-class") == "true"]
-    if len(defaults) != 1 or not defaults[0].get("metadata", {}).get("name"):
+    defaults = []
+    for item in storage:
+        meta = require_object(require_object(item, "StorageClass").get("metadata"),
+                              "StorageClass metadata")
+        annotations = meta.get("annotations", {})
+        if not isinstance(annotations, dict):
+            raise PreflightError("Kubernetes returned malformed StorageClass annotations")
+        if annotations.get("storageclass.kubernetes.io/is-default-class") == "true":
+            defaults.append(meta)
+    if len(defaults) != 1 or not defaults[0].get("name"):
         raise PreflightError("P0 requires exactly one named default StorageClass")
 
 
