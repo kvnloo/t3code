@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -177,6 +178,43 @@ class P0EvidenceTest(unittest.TestCase):
                            {"endpointHost": "new.tail.ts.net"}):
                 with self.assertRaises(module.EvidenceError):
                     module.check_baseline(path, {**original, **change, "podUid": "after"})
+
+    def test_rejects_unsafe_or_corrupt_restart_baseline(self):
+        before = module.collect("disposable-test", fake_reads(pod_uid="before")[0])
+        after = module.collect("disposable-test", fake_reads(pod_uid="after")[0])
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "identity.json"
+            module.write_baseline(path, before)
+            module.check_baseline(path, after)
+
+            path.chmod(0o644)
+            with self.assertRaisesRegex(module.EvidenceError, "private regular"):
+                module.check_baseline(path, after)
+            path.chmod(0o600)
+
+            if hasattr(os, "O_NOFOLLOW"):
+                link = Path(folder) / "alias.json"
+                link.symlink_to(path)
+                with self.assertRaises(OSError):
+                    module.check_baseline(link, after)
+
+            for data, message in (
+                (b"x" * 4097, "4096"),
+                (b"{", "JSON is invalid"),
+                (b"[]", "identity fields"),
+                (json.dumps({k: v for k, v in before.items()
+                             if k != "pvUid"}).encode(), "identity fields"),
+            ):
+                with self.subTest(message=message):
+                    path.write_bytes(data)
+                    with self.assertRaisesRegex(module.EvidenceError, message):
+                        module.check_baseline(path, after)
+
+            if hasattr(os, "mkfifo"):
+                path.unlink()
+                os.mkfifo(path, 0o600)
+                with self.assertRaisesRegex(module.EvidenceError, "private regular"):
+                    module.check_baseline(path, after)
 
     def test_not_ready_and_funnel_rejected(self):
         for kwargs in ({"ready": False}, {"funnel": True}, {"host": "example.org"},
