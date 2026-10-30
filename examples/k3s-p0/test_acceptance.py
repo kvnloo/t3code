@@ -266,6 +266,10 @@ class P0EvidenceTest(unittest.TestCase):
                 readOnlyRootFilesystem=False),
             lambda s: s["containers"][0]["securityContext"]["capabilities"].update(
                 add=["SYS_ADMIN"]),
+            lambda s: s["containers"][0]["securityContext"].update(capabilities=None),
+            lambda s: s["containers"][0]["securityContext"].update(seccompProfile=None),
+            lambda s: s["volumes"][0].update(persistentVolumeClaim=None),
+            lambda s: s["volumes"][1].update(emptyDir=None),
             lambda s: s["containers"][0]["securityContext"].update(
                 seccompProfile={"type": "Unconfined"}),
             lambda s: s["containers"][0].update(command=["/bin/sh"]),
