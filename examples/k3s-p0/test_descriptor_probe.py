@@ -3,6 +3,9 @@
 import hashlib
 import importlib.util
 import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 import ssl
 import tempfile
@@ -156,6 +159,35 @@ class P0TlsDescriptorTest(unittest.TestCase):
             alias.symlink_to(original)
             with self.assertRaises(OSError):
                 probe.read_baseline(alias)
+
+
+    @unittest.skipUnless(hasattr(os, "mkfifo") and hasattr(os, "O_NONBLOCK"),
+                         "requires POSIX nonblocking FIFO support")
+    def test_rejects_fifo_baseline_without_blocking(self):
+        # A mode-0600 FIFO passes the permissions check, but a blocking open
+        # never reaches fstat unless another process opens the write end.
+        # Test in a subprocess so a regression fails on a timeout, not a hang.
+        with tempfile.TemporaryDirectory() as temp:
+            fifo = Path(temp) / "evidence.fifo"
+            os.mkfifo(fifo, 0o600)
+            script = """
+import importlib.util
+from pathlib import Path
+import sys
+spec = importlib.util.spec_from_file_location("probe", sys.argv[1])
+probe = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(probe)
+try:
+    probe.read_baseline(Path(sys.argv[2]))
+except probe.EvidenceError:
+    sys.exit(0)
+sys.exit(2)
+"""
+            completed = subprocess.run(
+                [sys.executable, "-c", script, str(ROOT / "descriptor_probe.py"), str(fifo)],
+                check=False, capture_output=True, text=True, timeout=2,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
 
 
 if __name__ == "__main__":

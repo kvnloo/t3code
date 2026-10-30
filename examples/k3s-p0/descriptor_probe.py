@@ -61,7 +61,7 @@ def verify_private_descriptor(hostname: str, expected_id_hash: str,
 
 def read_baseline(path: Path) -> tuple[str, str]:
     """Read the existing 0600 v3 baseline, not live credentials or T3 data."""
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     with os.fdopen(os.open(path, flags), "rb") as handle:
         metadata = os.fstat(handle.fileno())
         if (not stat.S_ISREG(metadata.st_mode)
