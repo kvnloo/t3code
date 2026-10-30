@@ -181,6 +181,7 @@ class P0EvidenceTest(unittest.TestCase):
                 {"kind": "Ingress", "metadata": {"name": "public"}})),
             ("services", lambda d: d["items"].clear()),
             ("ingresses", lambda d: d["items"][0]["metadata"].update(uid="new-uid")),
+            ("ingresses", lambda d: d["items"][0].update(metadata=None)),
             ("service", lambda d: d["metadata"].update(
                 annotations={"tailscale.com/expose": "true"})),
             ("ingress", lambda d: d["metadata"].update(
@@ -189,6 +190,8 @@ class P0EvidenceTest(unittest.TestCase):
                 status={"loadBalancer": {"ingress": [{"ip": "203.0.113.4"}]}})),
             ("service", lambda d: d["spec"].update(
                 externalName="public.example.invalid")),
+            ("service", lambda d: d["spec"].update(
+                publishNotReadyAddresses=True)),
         ]
         for index, (kind, edit) in enumerate(edits):
             with self.subTest(case=index, kind=kind):
