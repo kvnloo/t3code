@@ -73,6 +73,20 @@ def fake_reads(identity="stable-id", ready=True, host="t3-k3s-p0.tailxxx.ts.net"
                                  "name": "t3-owner", "port": {"name": "http"}}}},
                     "status": {"loadBalancer": {"ingress": [{"hostname": host}]}}},
     }
+    # GET and namespace LIST must agree on the same, unique routes.
+    for kind in ("service", "ingress"):
+        docs[kind]["kind"] = kind.capitalize()
+        docs[kind]["metadata"].update({
+            "name": "t3-owner", "namespace": "t3-k3s-p0",
+            "uid": kind + "-uid",
+        }) if kind == "ingress" else docs[kind].update(metadata={
+            "name": "t3-owner", "namespace": "t3-k3s-p0",
+            "uid": kind + "-uid",
+        })
+    docs["services"] = {"kind": "ServiceList", "items": [
+        json.loads(json.dumps(docs["service"]))]}
+    docs["ingresses"] = {"kind": "IngressList", "items": [
+        json.loads(json.dumps(docs["ingress"]))]}
     calls = []
     def read(context, *args):
         calls.append((context, args))
@@ -102,7 +116,7 @@ class P0EvidenceTest(unittest.TestCase):
         self.assertEqual(
             {k: v for k, v in before.items() if k != "podUid"},
             {k: v for k, v in after.items() if k != "podUid"})
-        self.assertEqual(len(calls), 8)
+        self.assertEqual(len(calls), 10)
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "identity.json"
             module.write_baseline(path, before)
@@ -158,6 +172,41 @@ class P0EvidenceTest(unittest.TestCase):
     def test_no_implicit_kubectl_context(self):
         with self.assertRaises(module.EvidenceError):
             module.kubectl("-unsafe", "get", "pods")
+
+    def test_rejects_hidden_routes_and_controller_exposure(self):
+        # A safe named Ingress alone is insufficient: a second Service,
+        # a second Ingress, or a ClusterIP annotation can expose the owner.
+        edits = [
+            ("services", lambda d: d["items"].append(
+                {"kind": "Service", "metadata": {"name": "public"},
+                 "spec": {"type": "LoadBalancer"}})),
+            ("ingresses", lambda d: d["items"].append(
+                {"kind": "Ingress", "metadata": {"name": "public"}})),
+            ("services", lambda d: d["items"].clear()),
+            ("ingresses", lambda d: d["items"][0]["metadata"].update(uid="new-uid")),
+            ("service", lambda d: d["metadata"].update(
+                annotations={"tailscale.com/expose": "true"})),
+            ("ingress", lambda d: d["metadata"].update(
+                annotations={"tailscale.com/funnel": "TRUE"})),
+            ("service", lambda d: d.update(
+                status={"loadBalancer": {"ingress": [{"ip": "203.0.113.4"}]}})),
+            ("service", lambda d: d["spec"].update(
+                externalName="public.example.invalid")),
+        ]
+        for index, (kind, edit) in enumerate(edits):
+            with self.subTest(case=index, kind=kind):
+                normal, _ = fake_reads()
+
+                def altered(context, *args):
+                    value = normal(context, *args)
+                    if args[3] != kind:
+                        return value
+                    payload = json.loads(value)
+                    edit(payload)
+                    return json.dumps(payload)
+
+                with self.assertRaises(module.EvidenceError):
+                    module.collect("disposable-test", altered)
 
     def test_rejects_service_and_ingress_misdirection(self):
         edits = [
