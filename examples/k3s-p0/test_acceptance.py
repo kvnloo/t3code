@@ -76,10 +76,7 @@ def fake_reads(identity="stable-id", ready=True, host="t3-k3s-p0.tailxxx.ts.net"
     # GET and namespace LIST must agree on the same, unique routes.
     for kind in ("service", "ingress"):
         docs[kind]["kind"] = kind.capitalize()
-        docs[kind]["metadata"].update({
-            "name": "t3-owner", "namespace": "t3-k3s-p0",
-            "uid": kind + "-uid",
-        }) if kind == "ingress" else docs[kind].update(metadata={
+        docs[kind].setdefault("metadata", {}).update({
             "name": "t3-owner", "namespace": "t3-k3s-p0",
             "uid": kind + "-uid",
         })
