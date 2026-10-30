@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Opt-in, credential-free HTTPS identity check from an authorized tailnet client.
 
-Run after acceptance.py saved a PRIVATE v2 Kubernetes identity baseline.
+Run after acceptance.py saved a PRIVATE v3 Kubernetes identity baseline.
 This does not read user tokens or grant access, and it never applies to K3s.
 """
 
@@ -59,7 +59,7 @@ def verify_private_descriptor(hostname: str, expected_id_hash: str,
 
 
 def read_baseline(path: Path) -> tuple[str, str]:
-    """Read the existing 0600 v2 baseline, not live credentials or T3 data."""
+    """Read the existing 0600 v3 baseline, not live credentials or T3 data."""
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     with os.fdopen(os.open(path, flags), "rb") as handle:
         metadata = os.fstat(handle.fileno())
@@ -74,17 +74,19 @@ def read_baseline(path: Path) -> tuple[str, str]:
         record = json.loads(data)
     except (UnicodeError, json.JSONDecodeError, ValueError) as exc:
         raise EvidenceError("baseline JSON is invalid") from exc
-    if not isinstance(record, dict) or record.get("format") != "t3-k3s-p0-identity-v2":
-        raise EvidenceError("baseline format mismatch; collect a fresh v2 baseline")
-    if not record.get("podUid") or not record.get("pvcUid"):
-        raise EvidenceError("baseline is missing Pod/PVC evidence")
+    if not isinstance(record, dict) or record.get("format") != "t3-k3s-p0-identity-v3":
+        raise EvidenceError("baseline format mismatch; collect a fresh v3 baseline")
+    if (not record.get("podUid") or not record.get("pvcUid")
+            or not record.get("pvUid")
+            or record.get("pvReclaimPolicy") not in ("Retain", "Delete")):
+        raise EvidenceError("baseline is missing Pod/PVC/PV evidence")
     return record.get("endpointHost"), record.get("environmentIdHash")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline", type=Path, required=True,
-                        help="local mode-0600 acceptance.py v2 baseline; keep outside Git")
+                        help="local mode-0600 acceptance.py v3 baseline; keep outside Git")
     args = parser.parse_args()
     try:
         host, identity_hash = read_baseline(args.baseline)
