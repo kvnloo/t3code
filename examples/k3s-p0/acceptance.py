@@ -87,6 +87,12 @@ def verify_admitted_pod_confinement(pod: dict) -> None:
             or capabilities.get("add")
             or seccomp.get("type", "RuntimeDefault") != "RuntimeDefault"
             or security.get("procMount", "Default") != "Default"
+            # Container-level identity settings override the safe Pod defaults.
+            # The reviewed template has none; even equal-value injections are drift.
+            or any(field in security for field in ("runAsUser", "runAsGroup",
+                                                   "runAsNonRoot"))
+            # An injected lifecycle hook can execute unreviewed commands.
+            or "lifecycle" in app
             or any(app.get(field) for field in ("env", "envFrom", "command", "args"))):
         raise EvidenceError("P0 owner container privilege or command drifted")
 

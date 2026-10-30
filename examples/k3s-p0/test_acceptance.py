@@ -293,6 +293,13 @@ class P0EvidenceTest(unittest.TestCase):
                 allowPrivilegeEscalation=True),
             lambda s: s["containers"][0]["securityContext"].update(
                 readOnlyRootFilesystem=False),
+            lambda s: s["containers"][0]["securityContext"].update(runAsUser=0),
+            lambda s: s["containers"][0]["securityContext"].update(runAsUser=10001),
+            lambda s: s["containers"][0]["securityContext"].update(runAsGroup=0),
+            lambda s: s["containers"][0]["securityContext"].update(runAsNonRoot=False),
+            lambda s: s["containers"][0].update(lifecycle={
+                "postStart": {"exec": {"command": ["/bin/sh", "-c", "id"]}}
+            }),
             lambda s: s["containers"][0]["resources"]["requests"].update(cpu="0"),
             lambda s: s["containers"][0]["resources"]["limits"].update(memory="8Gi"),
             lambda s: s["containers"][0].update(resources={}),
