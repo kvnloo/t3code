@@ -211,7 +211,8 @@ def verify_exclusive_routes(service: dict, ingress: dict,
                 or not isinstance(items, list) or len(items) != 1
                 or not isinstance(items[0], dict)
                 or items[0].get("kind") != item_kind
-                or items[0].get("metadata", {}).get("name") != "t3-owner"
+                or not isinstance(items[0].get("metadata"), dict)
+                or items[0]["metadata"].get("name") != "t3-owner"
                 or items[0] != expected):
             raise EvidenceError(f"P0 has an extra, missing, or changed {name} route")
 
