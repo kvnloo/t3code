@@ -52,6 +52,40 @@ NAMED_KINDS = {
 }
 
 
+
+# Exact P1 manifest controls from plan.py. ResourceQuota scopes can exempt a
+# worker from limits; named-object identity alone is not enough for review.
+# These API objects are snapshots, not proof of quota/RBAC enforcement.
+EXPECTED_QUOTA_HARD = {
+    'pods': '1', 'persistentvolumeclaims': '1',
+    'requests.cpu': '2', 'requests.memory': '4Gi',
+    'limits.cpu': '4', 'limits.memory': '8Gi',
+    'requests.storage': '20Gi',
+    'requests.ephemeral-storage': '2Gi',
+    'limits.ephemeral-storage': '4Gi',
+}
+
+
+def _validate_controls(entries):
+    quota = entries['quota']
+    service_account = entries['serviceaccount']
+    qmeta = quota['metadata']
+    smeta = service_account['metadata']
+    if qmeta.get('deletionTimestamp') or smeta.get('deletionTimestamp'):
+        raise CaptureError('worker control resource is deleting')
+    spec = quota.get('spec')
+    status = quota.get('status')
+    if (not isinstance(spec, dict) or set(spec) != {'hard'}
+            or spec.get('hard') != EXPECTED_QUOTA_HARD
+            or not isinstance(status, dict)
+            or status.get('hard') != EXPECTED_QUOTA_HARD):
+        raise CaptureError('worker quota scope, bounds, or reconciliation differs from plan')
+    if (service_account.get('automountServiceAccountToken') is not False
+            or service_account.get('secrets')
+            or service_account.get('imagePullSecrets')):
+        raise CaptureError('worker ServiceAccount credential policy differs from plan')
+
+
 def _read(context, namespace, resource, name, runner):
     command = ['kubectl', '--context', context, '--request-timeout=10s']
     if resource != 'namespace':
@@ -110,6 +144,7 @@ def capture(context, plan, runner=subprocess.run):
         elif meta.get('namespace') != namespace:
             raise CaptureError('named resource belongs to a different namespace')
         entries[key] = item
+    _validate_controls(entries)
     for key, resource, kind in LISTS:
         item = _read(context, namespace, resource, None, runner)
         if item.get('kind') != kind or not isinstance(item.get('items'), list):

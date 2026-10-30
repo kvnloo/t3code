@@ -58,6 +58,12 @@ class Stub:
             if resource != 'namespace':
                 meta['namespace'] = NAMESPACE
             obj = {'kind': kinds[resource], 'metadata': meta, 'spec': {'replicas': 1}}
+            if resource == 'resourcequota':
+                obj['spec'] = {'hard': module.EXPECTED_QUOTA_HARD.copy()}
+                obj['status'] = {'hard': module.EXPECTED_QUOTA_HARD.copy()}
+            if resource == 'serviceaccount':
+                obj.pop('spec')
+                obj['automountServiceAccountToken'] = False
         if self.tamper is not None and self.tamper[0] == resource:
             flaw = self.tamper[1]
             if flaw == 'kind':
@@ -72,6 +78,20 @@ class Stub:
                 obj['items'] = []
             elif flaw == 'inventory_drift':
                 obj['items'][0]['spec']['replicas'] = 2
+            elif flaw == 'quota_scope':
+                obj['spec']['scopeSelector'] = {'matchExpressions': []}
+            elif flaw == 'quota_hard':
+                obj['spec']['hard']['pods'] = '3'
+            elif flaw == 'quota_unreconciled':
+                obj.pop('status', None)
+            elif flaw == 'sa_automount':
+                obj['automountServiceAccountToken'] = True
+            elif flaw == 'sa_secret':
+                obj['secrets'] = [{'name': 'unapproved-token'}]
+            elif flaw == 'sa_pull_secret':
+                obj['imagePullSecrets'] = [{'name': 'unapproved-pull'}]
+            elif flaw == 'deleting':
+                obj['metadata']['deletionTimestamp'] = '2026-10-29T00:00:00Z'
         if self.drift == resource and len([c for c in self.calls if resource in c]) > 1:
             obj['metadata'] = {'resourceVersion': '3'}
         return subprocess.CompletedProcess(command, 0, json.dumps(obj), '')
@@ -112,6 +132,21 @@ class CaptureTests(unittest.TestCase):
             ('namespace', 'name'), ('services', 'inventory_missing'),
             ('services', 'inventory_drift'), ('ingresses', 'inventory_missing'),
             ('networkpolicies', 'inventory_drift'),
+        )
+        for case in cases:
+            with self.subTest(mutation=case), self.assertRaises(module.CaptureError):
+                module.capture('disposable-k3s', PLAN, runner=Stub(tamper=case))
+
+    def test_quota_scope_and_service_account_credentials_fail_closed(self):
+        cases = (
+            ('resourcequota', 'quota_scope'),
+            ('resourcequota', 'quota_hard'),
+            ('resourcequota', 'quota_unreconciled'),
+            ('resourcequota', 'deleting'),
+            ('serviceaccount', 'sa_automount'),
+            ('serviceaccount', 'sa_secret'),
+            ('serviceaccount', 'sa_pull_secret'),
+            ('serviceaccount', 'deleting'),
         )
         for case in cases:
             with self.subTest(mutation=case), self.assertRaises(module.CaptureError):

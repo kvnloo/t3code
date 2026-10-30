@@ -171,9 +171,13 @@ any output is published**. Named resources must have the planned Kubernetes
 kind/name/namespace and a UID; the named Service, Ingress and NetworkPolicy
 must also exactly match their corresponding namespace-inventory entry.
 This rejects mixed GET/LIST views even when each view is independently stable.
-The extra quota and no-token ServiceAccount snapshots are for *subsequent*
-human/offline security review; collection alone does **not** validate their
-specifications or prove admission limits and token restrictions are enforced.
+The capture now fail-closes if the named ResourceQuota has different
+hard limits, any scopes/scopeSelector, or an unreconciled `status.hard`,
+and if the named ServiceAccount is deleting, permits API-token automount,
+or references token/pull secrets. Matching *snapshots* do **not** prove
+Kubernetes quota enforcement, RBAC permissions or absence of admission
+mutation; human approval, CNI/ACL negative tests and live verification remain
+mandatory.
 It catches only a subset of mid-capture drift: Kubernetes offers **no atomic
 cross-resource snapshot** here, and matching objects do not prove freshness,
 route integrity or runtime attestation.
