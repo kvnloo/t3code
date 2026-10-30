@@ -365,6 +365,37 @@ def verify_persistent_volume(pvc: dict, pv: dict) -> tuple[str, str]:
     return vm["uid"], reclaim
 
 
+def verify_p0_namespace_controls(quota: dict, account: dict) -> None:
+    """Check admitted P0 namespace guardrails, not runtime admission enforcement."""
+    expected_hard = {
+        "pods": "1", "persistentvolumeclaims": "1",
+        "requests.cpu": "2", "requests.memory": "4Gi",
+        "limits.cpu": "4", "limits.memory": "8Gi",
+        "requests.storage": "20Gi", "requests.ephemeral-storage": "2Gi",
+        "limits.ephemeral-storage": "4Gi",
+    }
+    if not isinstance(quota, dict) or not isinstance(account, dict):
+        raise EvidenceError("P0 namespace controls are not Kubernetes objects")
+    qmeta, qspec, qstatus = (quota.get(k) for k in ("metadata", "spec", "status"))
+    if (not all(isinstance(o, dict) for o in (qmeta, qspec, qstatus))
+            or qmeta.get("name") != "t3-p0-quota"
+            or qmeta.get("namespace") != NAMESPACE
+            or qmeta.get("deletionTimestamp")
+            or set(qspec) != {"hard"}
+            or qspec.get("hard") != expected_hard
+            or qstatus.get("hard") != expected_hard):
+        raise EvidenceError("P0 ResourceQuota missing, widened, scoped, or unreconciled")
+    ameta = account.get("metadata")
+    if (not isinstance(ameta, dict)
+            or ameta.get("name") != "t3-p0"
+            or ameta.get("namespace") != NAMESPACE
+            or ameta.get("deletionTimestamp")
+            or account.get("automountServiceAccountToken") is not False
+            or account.get("secrets")
+            or account.get("imagePullSecrets")):
+        raise EvidenceError("P0 ServiceAccount allows credential or identity drift")
+
+
 def collect(context: str, read=kubectl) -> dict[str, str]:
     def get(kind: str, name: str) -> dict:
         try:
@@ -471,6 +502,12 @@ def collect(context: str, read=kubectl) -> dict[str, str]:
     except (json.JSONDecodeError, TypeError) as exc:
         raise EvidenceError("invalid kubectl NetworkPolicy JSON") from exc
     verify_private_network_policy(network_policies)
+
+    # A safe Pod alone cannot attest its namespace quota or ServiceAccount.
+    # Read both controls before fetching the persisted owner identity.
+    quota = get("resourcequota", "t3-p0-quota")
+    account = get("serviceaccount", "t3-p0")
+    verify_p0_namespace_controls(quota, account)
 
     # Explicitly read the owner's current identity; never log/print it.
     raw_id = read(context, "-n", NAMESPACE, "exec", f"pod/{pod_name}", "--",
