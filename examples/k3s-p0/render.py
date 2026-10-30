@@ -15,10 +15,26 @@ PLACEHOLDER = "REPLACE_WITH_PINNED_IMAGE_DIGEST"
 # Deliberately conservative; reject whitespace, tags without digests,
 # shell metacharacters and YAML injection. A registry/namespace is required.
 IMAGE = re.compile(r"(?=.{1,255}$)[a-z0-9][a-z0-9._:/-]*/[a-z0-9][a-z0-9._/-]*@sha256:[a-f0-9]{64}\Z")
+HOST_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\Z")
+REPOSITORY_COMPONENT = re.compile(r"[a-z0-9]+(?:(?:[._]|__|-+)[a-z0-9]+)*\Z")
+
+
+def valid_repository(image: str) -> bool:
+    """Reject tag syntax in paths and invalid registry ports before deployment."""
+    name = image.split("@sha256:", 1)[0]
+    registry, _, repository = name.partition("/")
+    host, sep, port = registry.partition(":")
+    return (bool(repository)
+            and all(HOST_LABEL.fullmatch(label) for label in host.split("."))
+            and (not sep or (port.isascii() and port.isdecimal()
+                             and 1 <= int(port) <= 65535))
+            and all(REPOSITORY_COMPONENT.fullmatch(segment)
+                    for segment in repository.split("/")))
 
 
 def render(source: str, image: str) -> str:
-    if not IMAGE.fullmatch(image) or ".." in image or "//" in image:
+    if (not IMAGE.fullmatch(image) or ".." in image or "//" in image
+            or not valid_repository(image)):
         raise ValueError("image must be an OCI repository@sha256:<64 lowercase hex> reference")
     if source.count(PLACEHOLDER) != 1:
         raise ValueError("expected exactly one image placeholder")
