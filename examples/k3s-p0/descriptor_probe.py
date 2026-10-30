@@ -6,6 +6,7 @@ This does not read user tokens or grant access, and it never applies to K3s.
 """
 
 import argparse
+from contextlib import closing
 import hashlib
 import http.client
 import json
@@ -32,7 +33,7 @@ def verify_private_descriptor(hostname: str, expected_id_hash: str,
             or not re.fullmatch(r"[a-f0-9]{64}", expected_id_hash)):
         raise EvidenceError("private HTTPS target or expected identity is invalid")
     try:
-        with connect(hostname, timeout=10, context=ssl.create_default_context()) as connection:
+        with closing(connect(hostname, timeout=10, context=ssl.create_default_context())) as connection:
             connection.request("GET", "/.well-known/t3/environment", headers={
                 "Accept": "application/json", "Cache-Control": "no-store",
             })

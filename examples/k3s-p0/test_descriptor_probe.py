@@ -40,12 +40,10 @@ class FakeTlsConnection:
         assert context.verify_mode == ssl.CERT_REQUIRED
         self.response = response if response is not None else FakeResponse()
         self.calls = []
+        self.closed = False
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *unused):
-        return None
+    def close(self):
+        self.closed = True
 
     def request(self, *args, **kwargs):
         self.calls.append((args, kwargs))
@@ -77,6 +75,21 @@ class P0TlsDescriptorTest(unittest.TestCase):
         with self.assertRaisesRegex(probe.EvidenceError, "non-200"):
             probe.verify_private_descriptor(HOST, IDENTITY_HASH,
                                             connection_for(FakeResponse(status=302)))
+
+    def test_plain_connection_closes_after_success_and_http_error(self):
+        # stdlib HTTPSConnection has close(), not __enter__/__exit__.
+        success = FakeTlsConnection(HOST, 10, ssl.create_default_context())
+        self.assertFalse(hasattr(success, "__enter__"))
+        probe.verify_private_descriptor(HOST, IDENTITY_HASH,
+                                        lambda *args, **kwargs: success)
+        self.assertTrue(success.closed)
+
+        failure = FakeTlsConnection(HOST, 10, ssl.create_default_context(),
+                                    response=FakeResponse(status=503))
+        with self.assertRaisesRegex(probe.EvidenceError, "non-200"):
+            probe.verify_private_descriptor(HOST, IDENTITY_HASH,
+                                            lambda *args, **kwargs: failure)
+        self.assertTrue(failure.closed)
 
     def test_rejects_misdirected_hosts_and_invalid_hash(self):
         for host in ("http://" + HOST, "t3-k3s-p0..ts.net",
