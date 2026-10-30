@@ -99,6 +99,20 @@ def fake_reads(identity="stable-id", ready=True, host="t3-k3s-p0.tailxxx.ts.net"
                 }],
             },
         }]},
+        "resourcequota": {
+            "metadata": {"name": "t3-p0-quota", "namespace": "t3-k3s-p0"},
+            "spec": {"hard": {
+                "pods": "1", "persistentvolumeclaims": "1",
+                "requests.cpu": "2", "requests.memory": "4Gi",
+                "limits.cpu": "4", "limits.memory": "8Gi",
+                "requests.storage": "20Gi", "requests.ephemeral-storage": "2Gi",
+                "limits.ephemeral-storage": "4Gi",
+            }},
+        },
+        "serviceaccount": {
+            "metadata": {"name": "t3-p0", "namespace": "t3-k3s-p0"},
+            "automountServiceAccountToken": False,
+        },
         "service": {"spec": {"type": "ClusterIP", "selector": {"app": "t3-owner"},
                              "ports": [{"name": "http", "port": 80, "targetPort": "http"}]}},
         "ingress": {"metadata": {"annotations": {"tailscale.com/funnel": "true"} if funnel else {}},
@@ -108,6 +122,8 @@ def fake_reads(identity="stable-id", ready=True, host="t3-k3s-p0.tailxxx.ts.net"
                                  "name": "t3-owner", "port": {"name": "http"}}}},
                     "status": {"loadBalancer": {"ingress": [{"hostname": host}]}}},
     }
+    docs["resourcequota"]["status"] = {
+        "hard": json.loads(json.dumps(docs["resourcequota"]["spec"]["hard"]))}
     # GET and namespace LIST must agree on the same, unique routes.
     for kind in ("service", "ingress"):
         docs[kind]["kind"] = kind.capitalize()
@@ -155,6 +171,37 @@ class P0EvidenceTest(unittest.TestCase):
                         return valid(context, *args)
                     with self.assertRaisesRegex(module.EvidenceError, "invalid kubectl object"):
                         module.collect("disposable-test", malformed)
+
+    def test_rejects_quota_or_service_account_drift(self):
+        edits = [
+            ("resourcequota", lambda d: d["spec"]["hard"].update(pods="9")),
+            ("resourcequota", lambda d: d["status"]["hard"].update(pods="9")),
+            ("resourcequota", lambda d: d["spec"].update(scopes=["BestEffort"])),
+            ("resourcequota", lambda d: d["spec"].update(scopeSelector={})),
+            ("resourcequota", lambda d: d["metadata"].update(deletionTimestamp="now")),
+            ("resourcequota", lambda d: d["metadata"].update(namespace="default")),
+            ("resourcequota", lambda d: d.update(spec=[])),
+            ("resourcequota", lambda d: d.pop("status")),
+            ("serviceaccount", lambda d: d.update(automountServiceAccountToken=True)),
+            ("serviceaccount", lambda d: d.pop("automountServiceAccountToken")),
+            ("serviceaccount", lambda d: d.update(imagePullSecrets=[{"name": "creds"}])),
+            ("serviceaccount", lambda d: d.update(secrets=[{"name": "token"}])),
+            ("serviceaccount", lambda d: d["metadata"].update(deletionTimestamp="now")),
+            ("serviceaccount", lambda d: d["metadata"].update(name="default")),
+            ("serviceaccount", lambda d: d.update(metadata=None)),
+        ]
+        for kind, edit in edits:
+            with self.subTest(kind=kind, case=str(edit)):
+                valid, _ = fake_reads()
+                def changed(context, *args):
+                    raw = valid(context, *args)
+                    if args[:4] != ("-n", module.NAMESPACE, "get", kind):
+                        return raw
+                    document = json.loads(raw)
+                    edit(document)
+                    return json.dumps(document)
+                with self.assertRaisesRegex(module.EvidenceError, "P0"):
+                    module.collect("disposable-test", changed)
 
     def test_same_id_survives_restart_without_leaking_raw_id(self):
         reader, calls = fake_reads(pod_uid="pod-before")
