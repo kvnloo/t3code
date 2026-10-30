@@ -183,7 +183,8 @@ home machine. The checked-in YAML intentionally has an unpullable image token.
    human-triggered rollout, while checking unchanged hashed environment ID,
    PVC UID, bound PV UID and reclaim policy, ingress hostname and pinned image
    digest. It checks the PV's claimRef UID, ReadWriteOnce Filesystem mode,
-   10Gi request and matching storage class; an orphaned/rebound PV fails closed.
+   10Gi request, 10Gi reported PVC/PV capacity and matching storage class;
+   missing/undersized backing capacity or an orphaned/rebound PV fails closed.
    A PV with a `Delete` reclaim policy can still erase data if its claim
    is deleted. The probe does not change reclaim behavior or prove on-disk
    durability; it needs cluster-scoped permission to `get persistentvolumes`.

@@ -350,6 +350,15 @@ def verify_persistent_volume(pvc: dict, pv: dict) -> tuple[str, str]:
             or not isinstance(class_name, str) or not class_name
             or vs.get("storageClassName") != class_name):
         raise EvidenceError("P0 PVC/PV access, storage class or source drifted")
+    # The PVC request alone does not attest its bound backing capacity.
+    # This fixed-size P0 fixture requires both API-reported capacities to
+    # match 10Gi; actual bytes/durability still need physical validation.
+    pv_capacity = vs.get("capacity")
+    pvc_capacity = ct.get("capacity")
+    if (not isinstance(pv_capacity, dict) or pv_capacity.get("storage") != "10Gi"
+            or not isinstance(pvc_capacity, dict)
+            or pvc_capacity.get("storage") != "10Gi"):
+        raise EvidenceError("P0 PVC/PV bound capacity differs from 10Gi fixture")
     reclaim = vs.get("persistentVolumeReclaimPolicy")
     if reclaim not in ("Delete", "Retain"):
         raise EvidenceError("P0 PV has an unrecognized reclaim policy")
