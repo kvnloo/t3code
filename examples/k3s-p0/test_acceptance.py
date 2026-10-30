@@ -55,7 +55,19 @@ def fake_reads(identity="stable-id", ready=True, host="t3-k3s-p0.tailxxx.ts.net"
                        "containerStatuses": [
                 {"name": "t3", "ready": pod_ready}]},
         } for _ in range(pod_count)]},
-        "pvc": {"metadata": {"uid": "stable-pvc-uid"}, "status": {"phase": "Bound"}},
+        "pvc": {"metadata": {"name": "t3-p0-data", "namespace": "t3-k3s-p0",
+                              "uid": "stable-pvc-uid"},
+                "spec": {"volumeName": "pvc-stable-volume", "storageClassName": "local-path",
+                         "accessModes": ["ReadWriteOnce"], "volumeMode": "Filesystem",
+                         "resources": {"requests": {"storage": "10Gi"}}},
+                "status": {"phase": "Bound"}},
+        "pv": {"metadata": {"name": "pvc-stable-volume", "uid": "stable-pv-uid"},
+               "spec": {"claimRef": {"name": "t3-p0-data", "namespace": "t3-k3s-p0",
+                                     "uid": "stable-pvc-uid"},
+                        "accessModes": ["ReadWriteOnce"], "volumeMode": "Filesystem",
+                        "storageClassName": "local-path",
+                        "persistentVolumeReclaimPolicy": "Delete"},
+               "status": {"phase": "Bound"}},
         "endpointslices": {"items": [{
             "metadata": {"labels": {"kubernetes.io/service-name": "t3-owner"}},
             "ports": [{"name": "http", "port": 3773, "protocol": "TCP"}],
@@ -104,6 +116,9 @@ def fake_reads(identity="stable-id", ready=True, host="t3-k3s-p0.tailxxx.ts.net"
         calls.append((context, args))
         assert context == "disposable-test"
         assert "apply" not in args and "delete" not in args and "rollout" not in args
+        if args[:2] == ("get", "pv"):
+            assert args[2:] == ("pvc-stable-volume", "-o", "json")
+            return json.dumps(docs["pv"])
         if "exec" in args:
             assert args[3] == "pod/t3-owner-test"
             return identity + "\n"
@@ -128,7 +143,7 @@ class P0EvidenceTest(unittest.TestCase):
         self.assertEqual(
             {k: v for k, v in before.items() if k != "podUid"},
             {k: v for k, v in after.items() if k != "podUid"})
-        self.assertEqual(len(calls), 10)
+        self.assertEqual(len(calls), 11)
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "identity.json"
             module.write_baseline(path, before)
@@ -151,7 +166,9 @@ class P0EvidenceTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "identity.json"
             module.write_baseline(path, original)
-            for change in ({"pvcUid": "new"}, {"endpointHost": "new.tail.ts.net"}):
+            for change in ({"pvcUid": "new"}, {"pvUid": "new"},
+                           {"pvReclaimPolicy": "Retain"},
+                           {"endpointHost": "new.tail.ts.net"}):
                 with self.assertRaises(module.EvidenceError):
                     module.check_baseline(path, {**original, **change, "podUid": "after"})
 
@@ -317,6 +334,39 @@ class P0EvidenceTest(unittest.TestCase):
                 with self.assertRaises(module.EvidenceError):
                     module.collect("disposable-test", altered)
 
+
+    def test_rejects_wrong_pv_binding_and_pvc_storage_drift(self):
+        cases = [
+            ("pvc", lambda d: d["metadata"].update(uid="other-claim")),
+            ("pvc", lambda d: d["spec"].update(volumeName="--kubeconfig=/tmp/oops")),
+            ("pvc", lambda d: d["spec"].update(accessModes=["ReadWriteMany"])),
+            ("pvc", lambda d: d["spec"].update(volumeMode="Block")),
+            ("pvc", lambda d: d["spec"]["resources"]["requests"].update(storage="1Gi")),
+            ("pvc", lambda d: d["spec"].update(storageClassName="other-class")),
+            ("pvc", lambda d: d["spec"].update(dataSource={"name": "other"})),
+            ("pvc", lambda d: d["metadata"].update(deletionTimestamp="now")),
+            ("pv", lambda d: d["spec"]["claimRef"].update(uid="different-claim")),
+            ("pv", lambda d: d["spec"]["claimRef"].update(namespace="unrelated")),
+            ("pv", lambda d: d["spec"].update(accessModes=["ReadWriteMany"])),
+            ("pv", lambda d: d["spec"].update(storageClassName="other-class")),
+            ("pv", lambda d: d["spec"].update(persistentVolumeReclaimPolicy="Recycle")),
+            ("pv", lambda d: d["metadata"].update(deletionTimestamp="now")),
+            ("pv", lambda d: d["status"].update(phase="Released")),
+        ]
+        self.assertTrue(module.collect("disposable-test", fake_reads()[0]))
+        for i, (kind, mutate) in enumerate(cases):
+            with self.subTest(i=i, kind=kind):
+                read, _ = fake_reads()
+                def altered(context, *args):
+                    raw = read(context, *args)
+                    target = "pv" if args[:2] == ("get", "pv") else args[3]
+                    if target != kind:
+                        return raw
+                    doc = json.loads(raw)
+                    mutate(doc)
+                    return json.dumps(doc)
+                with self.assertRaisesRegex(module.EvidenceError, "PV|PVC"):
+                    module.collect("disposable-test", altered)
 
     def test_rejects_stale_service_endpoints(self):
         edits = [
