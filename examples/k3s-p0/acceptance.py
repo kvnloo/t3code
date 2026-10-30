@@ -59,7 +59,27 @@ def verify_p0_wiring(pod: dict, deployment_image: str, service: dict, ingress: d
                        for volume in volumes)):
         raise EvidenceError("selected Pod is not backed by the expected persistent T3 PVC")
 
+    # The Ingress is not the only Kubernetes route to this Service. Even a
+    # ClusterIP can gain an independent tailnet proxy via tailscale.com/expose.
+    # Require an exact opt-in route contract; reject injected controller hooks.
+    for kind, obj in (("Service", service), ("Ingress", ingress)):
+        metadata = obj.get("metadata")
+        annotations = metadata.get("annotations", {}) if isinstance(metadata, dict) else None
+        if (not isinstance(annotations, dict)
+                or set(annotations) - {"kubectl.kubernetes.io/last-applied-configuration"}):
+            raise EvidenceError(f"P0 {kind} has unapproved exposure annotations")
+    status = service.get("status", {})
+    if (not isinstance(status, dict)
+            or not isinstance(status.get("loadBalancer", {}), dict)
+            or status.get("loadBalancer", {}).get("ingress")):
+        raise EvidenceError("P0 Service advertises an unexpected external route")
+
     svc = service.get("spec", {})
+    if any(svc.get(field) for field in ("externalName", "loadBalancerIP",
+                                       "loadBalancerClass", "externalTrafficPolicy",
+                                       "healthCheckNodePort", "publishNotReadyAddresses",
+                                       "allocateLoadBalancerNodePorts")):
+        raise EvidenceError("P0 Service has unapproved exposure fields")
     ports = svc.get("ports", [])
     if (svc.get("type") != "ClusterIP" or svc.get("externalIPs")
             or svc.get("selector") != {"app": "t3-owner"}
@@ -175,6 +195,27 @@ def verify_private_network_policy(policies: dict) -> None:
     if item.get("spec") != expected:
         raise EvidenceError("P0 NetworkPolicy allows a different ingress scope")
 
+def verify_exclusive_routes(service: dict, ingress: dict,
+                            services: dict, ingresses: dict) -> None:
+    """Reject a second namespace route to the P0 owner, including public ones.
+
+    API snapshots do not establish actual CNI/tailnet enforcement or prevent
+    later mutations; those require separate negative runtime probes.
+    """
+    for name, listed, expected, list_kind, item_kind in (
+        ("Service", services, service, "ServiceList", "Service"),
+        ("Ingress", ingresses, ingress, "IngressList", "Ingress"),
+    ):
+        items = listed.get("items") if isinstance(listed, dict) else None
+        if (not isinstance(listed, dict) or listed.get("kind") != list_kind
+                or not isinstance(items, list) or len(items) != 1
+                or not isinstance(items[0], dict)
+                or items[0].get("kind") != item_kind
+                or items[0].get("metadata", {}).get("name") != "t3-owner"
+                or items[0] != expected):
+            raise EvidenceError(f"P0 has an extra, missing, or changed {name} route")
+
+
 def collect(context: str, read=kubectl) -> dict[str, str]:
     def get(kind: str, name: str) -> dict:
         try:
@@ -235,6 +276,17 @@ def collect(context: str, read=kubectl) -> dict[str, str]:
     hostname = verify_private_ingress(ingress)
 
     verify_p0_wiring(pod, containers[0]["image"], service, ingress)
+
+    # P0 has a dedicated namespace. A second Service or Ingress can expose
+    # the very same Pod despite a safe-looking named Tailscale Ingress.
+    try:
+        all_services = json.loads(read(context, "-n", NAMESPACE, "get",
+                                       "services", "-o", "json"))
+        all_ingresses = json.loads(read(context, "-n", NAMESPACE, "get",
+                                        "ingresses", "-o", "json"))
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise EvidenceError("invalid kubectl route inventory JSON") from exc
+    verify_exclusive_routes(service, ingress, all_services, all_ingresses)
 
     # A matching Service selector is not proof that kube-proxy is directing
     # traffic to this Pod. Reconcile the live EndpointSlices and Pod UID/IP.
