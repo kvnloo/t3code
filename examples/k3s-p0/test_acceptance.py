@@ -30,6 +30,7 @@ def fake_reads(identity="stable-id", ready=True, host="t3-k3s-p0.tailxxx.ts.net"
                          "labels": {"app": "t3-owner"},
                          **({"deletionTimestamp": "2026-10-28T00:00:00Z"} if deleting else {})},
             "spec": {"serviceAccountName": "t3-p0",
+                     "hostname": "t3-owner",
                      "automountServiceAccountToken": False,
                      "securityContext": {
                          "runAsNonRoot": True, "runAsUser": 10001,
@@ -38,6 +39,11 @@ def fake_reads(identity="stable-id", ready=True, host="t3-k3s-p0.tailxxx.ts.net"
                      },
                      "containers": [{"name": "t3",
                                      "image": image or "ghcr.io/me/t3@sha256:" + "a" * 64,
+                                     "resources": {
+                                         "requests": {"cpu": "500m", "memory": "1Gi",
+                                                      "ephemeral-storage": "512Mi"},
+                                         "limits": {"cpu": "2", "memory": "4Gi",
+                                                    "ephemeral-storage": "2Gi"}},
                                      "securityContext": {
                                          "allowPrivilegeEscalation": False,
                                          "readOnlyRootFilesystem": True,
@@ -269,6 +275,12 @@ class P0EvidenceTest(unittest.TestCase):
             lambda s: s.update(serviceAccountName="default"),
             lambda s: s.update(automountServiceAccountToken=True),
             lambda s: s.update(hostNetwork=True),
+            lambda s: s.update(hostname="injected-host"),
+            lambda s: s.pop("hostname"),
+            lambda s: s.update(subdomain="other"),
+            lambda s: s.update(setHostnameAsFQDN=True),
+            lambda s: s.update(hostAliases=[{"ip": "203.0.113.5",
+                                             "hostnames": ["other"]}]),
             lambda s: s.update(hostPID=True),
             lambda s: s.update(hostIPC=True),
             lambda s: s.update(shareProcessNamespace=True),
@@ -281,6 +293,9 @@ class P0EvidenceTest(unittest.TestCase):
                 allowPrivilegeEscalation=True),
             lambda s: s["containers"][0]["securityContext"].update(
                 readOnlyRootFilesystem=False),
+            lambda s: s["containers"][0]["resources"]["requests"].update(cpu="0"),
+            lambda s: s["containers"][0]["resources"]["limits"].update(memory="8Gi"),
+            lambda s: s["containers"][0].update(resources={}),
             lambda s: s["containers"][0]["securityContext"]["capabilities"].update(
                 add=["SYS_ADMIN"]),
             lambda s: s["containers"][0]["securityContext"].update(capabilities=None),

@@ -148,7 +148,8 @@ home machine. The checked-in YAML intentionally has an unpullable image token.
    mount or hostPath, Service selector/port, private Ingress backend/TLS,
    and live EndpointSlice target Pod UID, IP, readiness and T3 port 3773.
    It additionally rejects an *admitted Pod* whose service account, host
-   process/network namespaces, non-root/seccomp settings, container privilege,
+   process/network namespaces, stable hostname/host aliases, CPU/memory/ephemeral
+   requests and limits, non-root/seccomp settings, container privilege,
    commands/environments, or exact PVC/tmp mounts differ from the reviewed
    fixture. A safe Deployment template alone cannot attest the effective Pod
    after admission. These metadata checks do **not** prove Pod Security

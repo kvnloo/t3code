@@ -43,6 +43,13 @@ def verify_admitted_pod_confinement(pod: dict) -> None:
     spec = pod.get("spec")
     if not isinstance(spec, dict):
         raise EvidenceError("P0 Pod spec is missing")
+    # Usage host identity depends on os.hostname(); a webhook may mutate the
+    # admitted Pod independently of the stable Deployment template.
+    if (spec.get("hostname") != "t3-owner"
+            or spec.get("subdomain") not in (None, "")
+            or spec.get("setHostnameAsFQDN") not in (None, False)
+            or spec.get("hostAliases")):
+        raise EvidenceError("P0 Pod hostname or host aliases drifted")
     if (spec.get("serviceAccountName") != "t3-p0"
             or spec.get("automountServiceAccountToken") is not False
             or any(spec.get(flag) for flag in ("hostNetwork", "hostPID", "hostIPC",
@@ -82,6 +89,15 @@ def verify_admitted_pod_confinement(pod: dict) -> None:
             or security.get("procMount", "Default") != "Default"
             or any(app.get(field) for field in ("env", "envFrom", "command", "args"))):
         raise EvidenceError("P0 owner container privilege or command drifted")
+
+    resources = app.get("resources")
+    if (not isinstance(resources, dict)
+            or resources.get("requests") != {
+                "cpu": "500m", "memory": "1Gi", "ephemeral-storage": "512Mi"}
+            or resources.get("limits") != {
+                "cpu": "2", "memory": "4Gi", "ephemeral-storage": "2Gi"}
+            or set(resources) != {"requests", "limits"}):
+        raise EvidenceError("P0 admitted container resource bounds drifted")
 
     volumes = spec.get("volumes")
     if (not isinstance(volumes, list) or len(volumes) != 2
