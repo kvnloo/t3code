@@ -1,0 +1,24 @@
+name: K3s P1 plan contract
+on:
+  pull_request:
+    paths:
+      - "examples/k3s-p1/**"
+      - ".github/workflows/k3s-p1-plan.yml"
+  push:
+    branches-ignore: [main]
+    paths:
+      - "examples/k3s-p1/**"
+      - ".github/workflows/k3s-p1-plan.yml"
+  workflow_dispatch:
+jobs:
+  offline:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install "PyYAML==6.0.2"
+      - run: python -m unittest discover -s examples/k3s-p1 -p 'test_*.py' -v
