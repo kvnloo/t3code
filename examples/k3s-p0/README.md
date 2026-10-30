@@ -124,7 +124,7 @@ home machine. The checked-in YAML intentionally has an unpullable image token.
 
    From an **authorized tailnet client**, independently check that the
    **actual HTTPS endpoint** answers as the same persisted environment. Use the
-   private v2 baseline created above, before **and again after** the human
+   private v3 baseline created above, before **and again after** the human
    restart. This second script sends only a credential-free GET to the public
    T3 descriptor, `/.well-known/t3/environment`, with a fresh HTTPS connection,
    OS-trusted certificate and hostname verification. It compares the returned
@@ -180,9 +180,14 @@ home machine. The checked-in YAML intentionally has an unpullable image token.
    access from an unauthorized tailnet identity and unrelated Pod namespace. It requires
    **one Running/Ready Pod with a new Pod UID** after the
    human-triggered rollout, while checking unchanged hashed environment ID,
-   PVC UID, ingress hostname and pinned image digest. Merely running the probe
-   twice without restarting must fail. Each baseline is format v2; discard any
-   earlier offline v1 baseline and collect a new pre-restart sample. It never
+   PVC UID, bound PV UID and reclaim policy, ingress hostname and pinned image
+   digest. It checks the PV's claimRef UID, ReadWriteOnce Filesystem mode,
+   10Gi request and matching storage class; an orphaned/rebound PV fails closed.
+   A PV with a `Delete` reclaim policy can still erase data if its claim
+   is deleted. The probe does not change reclaim behavior or prove on-disk
+   durability; it needs cluster-scoped permission to `get persistentvolumes`.
+   Merely running the probe twice without restarting must fail. Each baseline
+   is format v3; discard offline v1/v2 baselines and collect a new sample. It never
    prints the raw ID, grants access, restarts a server or applies/deletes
    resources. Keep the private identity fingerprint out of Git. A PASS is **not** proof of
    working HTTPS, ACL enforcement, client pairing, saved threads, app readiness
