@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import stat
 
 NAMESPACE = "t3-k3s-p0"
 
@@ -484,10 +485,39 @@ def write_baseline(path: Path, record: dict) -> None:
         handle.write("\n")
 
 
+def read_private_baseline(path: Path) -> dict[str, str]:
+    """Bound and validate untrusted local evidence before comparing restart identity.
+
+    Never follow a symlink or open a FIFO with a blocking read. A v3 baseline
+    is private local evidence, not a bearer token or authority to pair a peer.
+    """
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    with os.fdopen(os.open(path, flags), "rb") as handle:
+        metadata = os.fstat(handle.fileno())
+        if (not stat.S_ISREG(metadata.st_mode)
+                or stat.S_IMODE(metadata.st_mode) & 0o077
+                or metadata.st_size > 4096):
+            raise EvidenceError("baseline must be a private regular file no larger than 4096 bytes")
+        payload = handle.read(4097)
+    if len(payload) > 4096:
+        raise EvidenceError("baseline exceeds 4096 bytes")
+    try:
+        old = json.loads(payload)
+    except (UnicodeError, json.JSONDecodeError, ValueError) as exc:
+        raise EvidenceError("baseline JSON is invalid") from exc
+    fields = {"format", "environmentIdHash", "podUid", "pvcUid",
+              "pvUid", "pvReclaimPolicy", "endpointHost", "deploymentImage"}
+    if (not isinstance(old, dict) or set(old) != fields
+            or old.get("format") != "t3-k3s-p0-identity-v3"
+            or any(not isinstance(old[key], str) or not old[key]
+                   for key in fields - {"format"})
+            or old["pvReclaimPolicy"] not in ("Retain", "Delete")):
+        raise EvidenceError("baseline v3 identity fields are invalid")
+    return old
+
+
 def check_baseline(path: Path, record: dict) -> None:
-    flags = os.O_RDONLY | (getattr(os, "O_NOFOLLOW", 0))
-    with os.fdopen(os.open(path, flags), encoding="utf-8") as handle:
-        old = json.load(handle)
+    old = read_private_baseline(path)
     if old.get("format") != record["format"]:
         raise EvidenceError("baseline format mismatch")
     if not old.get("podUid") or old["podUid"] == record["podUid"]:
