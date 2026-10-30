@@ -33,6 +33,76 @@ def kubectl(context: str, *args: str) -> str:
     return result.stdout
 
 
+def verify_admitted_pod_confinement(pod: dict) -> None:
+    """Reject unsafe admission mutations to the actual P0 owner Pod.
+
+    A safe Deployment template or a Ready Pod alone cannot prove the running
+    Pod retained the intended process, credential, mount and network limits.
+    This remains API evidence, not proof the node/CNI enforces the settings.
+    """
+    spec = pod.get("spec")
+    if not isinstance(spec, dict):
+        raise EvidenceError("P0 Pod spec is missing")
+    if (spec.get("serviceAccountName") != "t3-p0"
+            or spec.get("automountServiceAccountToken") is not False
+            or any(spec.get(flag) for flag in ("hostNetwork", "hostPID", "hostIPC",
+                                              "shareProcessNamespace"))
+            or spec.get("initContainers") or spec.get("ephemeralContainers")
+            or spec.get("imagePullSecrets")):
+        raise EvidenceError("P0 Pod has unsafe process, network or credential access")
+    pod_security = spec.get("securityContext")
+    expected_pod_security = {
+        "runAsNonRoot": True, "runAsUser": 10001, "runAsGroup": 10001,
+        "fsGroup": 10001, "seccompProfile": {"type": "RuntimeDefault"},
+    }
+    if (not isinstance(pod_security, dict)
+            or any(pod_security.get(key) != value
+                   for key, value in expected_pod_security.items())
+            or pod_security.get("sysctls")):
+        raise EvidenceError("P0 Pod security context drifted from restricted template")
+
+    containers = spec.get("containers")
+    if not isinstance(containers, list) or len(containers) != 1:
+        raise EvidenceError("P0 Pod must have exactly one owner container")
+    app = containers[0]
+    if not isinstance(app, dict):
+        raise EvidenceError("P0 owner container is invalid")
+    security = app.get("securityContext")
+    if (not isinstance(security, dict)
+            or security.get("allowPrivilegeEscalation") is not False
+            or security.get("readOnlyRootFilesystem") is not True
+            or security.get("privileged") is True
+            or security.get("capabilities", {}).get("drop") != ["ALL"]
+            or security.get("capabilities", {}).get("add")
+            or security.get("seccompProfile", {}).get("type", "RuntimeDefault") != "RuntimeDefault"
+            or security.get("procMount", "Default") != "Default"
+            or any(app.get(field) for field in ("env", "envFrom", "command", "args"))):
+        raise EvidenceError("P0 owner container privilege or command drifted")
+
+    volumes = spec.get("volumes")
+    if (not isinstance(volumes, list) or len(volumes) != 2
+            or any(not isinstance(volume, dict) for volume in volumes)):
+        raise EvidenceError("P0 Pod contains unexpected volumes")
+    named = {volume.get("name"): volume for volume in volumes}
+    data, tmp = named.get("data", {}), named.get("tmp", {})
+    if (set(named) != {"data", "tmp"}
+            or set(data) != {"name", "persistentVolumeClaim"}
+            or data["persistentVolumeClaim"].get("claimName") != "t3-p0-data"
+            or data["persistentVolumeClaim"].get("readOnly") is True
+            or set(tmp) != {"name", "emptyDir"}
+            or tmp["emptyDir"].get("sizeLimit") != "1Gi"
+            or tmp["emptyDir"].get("medium") not in (None, "")):
+        raise EvidenceError("P0 Pod volume source drifted")
+    mounts = app.get("volumeMounts")
+    expected_mounts = {("data", "/data"), ("tmp", "/tmp")}
+    if (not isinstance(mounts, list) or len(mounts) != 2
+            or any(not isinstance(mount, dict) for mount in mounts)
+            or {(mount.get("name"), mount.get("mountPath")) for mount in mounts} != expected_mounts
+            or any(set(mount) - {"name", "mountPath", "readOnly"}
+                   or mount.get("readOnly") is True for mount in mounts)):
+        raise EvidenceError("P0 owner container has unexpected mounts")
+
+
 def verify_p0_wiring(pod: dict, deployment_image: str, service: dict, ingress: dict) -> None:
     """Fail closed when Ready resources are not wired to this exact T3 owner.
 
@@ -58,6 +128,8 @@ def verify_p0_wiring(pod: dict, deployment_image: str, service: dict, ingress: d
                        and volume.get("persistentVolumeClaim", {}).get("claimName") == "t3-p0-data"
                        for volume in volumes)):
         raise EvidenceError("selected Pod is not backed by the expected persistent T3 PVC")
+
+    verify_admitted_pod_confinement(pod)
 
     # The Ingress is not the only Kubernetes route to this Service. Even a
     # ClusterIP can gain an independent tailnet proxy via tailscale.com/expose.
