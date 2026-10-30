@@ -109,6 +109,28 @@ class P0ContractTest(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 with self.assertRaises(ValueError):
                     renderer.render(source, invalid)
+        # A digest does not make an invalid repository path or registry port valid.
+        # Reject images that would otherwise render but fail Kubernetes image pulls.
+        for invalid_repository in (
+            "ghcr.io/example:latest/t3-p0",
+            "ghcr.io/example/t3-p0:tag/extra",
+            "registry:bad/example/t3-p0",
+            "registry:65536/example/t3-p0",
+            "ghcr.io/foo-_/bar",
+            "ghcr.io/team.name-/t3",
+        ):
+            with self.subTest(invalid_repository=invalid_repository):
+                with self.assertRaises(ValueError):
+                    renderer.render(source, invalid_repository + "@sha256:" + "a" * 64)
+        for valid_repository in (
+            "ghcr.io/example/t3-p0",
+            "localhost:5000/example/t3-p0",
+            "registry.example:443/team/underscored__name",
+            "registry/team/name--next",
+        ):
+            with self.subTest(valid_repository=valid_repository):
+                image = valid_repository + "@sha256:" + "a" * 64
+                self.assertIn(image, renderer.render(source, image))
         with self.assertRaises(ValueError):
             renderer.render("no placeholder", valid)
         with self.assertRaises(ValueError):
