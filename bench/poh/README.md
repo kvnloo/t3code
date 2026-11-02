@@ -70,6 +70,49 @@ stored byte length of every column of every row keyed by that thread (`thread_id
 for thread rows of `orchestration_events`), split into event log vs projections, and the thread event
 log by event type.
 
+## Accounting (`accounting.ts`, P2/01)
+
+Classifies every durable byte and projects the durable size under two eviction policies. It only
+ever opens copies.
+
+```bash
+# 1. One migration boot of this SHA on a copy of the seed, then a VACUUM INTO base copy and a second
+#    copy compacted by the real `t3 doctor --fix` CLI (its own base dir; no server stays up).
+flock "$HEAVY_LOCK" node bench/poh/accounting.ts prepare --seed .t3/userdata/statev2.sqlite --work .t3/bench/accounting
+# 2. Classify base and doctor DBs, simulate both policies on copies of the doctor DB, VACUUM, measure.
+flock "$HEAVY_LOCK" node bench/poh/accounting.ts analyze --work .t3/bench/accounting --out <raw dir>
+# 3. Markdown tables and ledger rows from <raw dir>/accounting.json.
+node bench/poh/accounting.ts report --out <raw dir> --md tables.md --ledger ledger.jsonl
+```
+
+Classes, by column and by top-level JSON key (unlisted keys are metadata):
+
+| class                                      | what                                                                                                                                               |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| message-text                               | user/assistant text in messages, `user_message`/`assistant_message` items, plans, todo lists, handoff history copies, V1 messages                  |
+| reasoning-text                             | `reasoning` item text                                                                                                                              |
+| tool-input                                 | tool call arguments (`dynamic_tool.input`, `command_execution.input`, search patterns)                                                             |
+| tool-output                                | `dynamic_tool.output`, `command_execution.output`, `file_change.diffStr`, `file_search.results`, `web_search.results`                              |
+| image                                      | inline base64 strings (≥256 chars) anywhere in a payload                                                                                           |
+| duplicate                                  | event bodies superseded by a later snapshot of the same `(stream, event type, $.id)`; subagent and commanded turn items are excluded, as in doctor |
+| t3-owned                                   | T3-authored item kinds (SURFACE-MAP §1.3), non-transcript events, and T3 state tables                                                              |
+| metadata                                   | ids, refs, timestamps, status, titles, other event columns, nodes, positions                                                                       |
+| fts / index / cell-overhead / slack / free | FTS shadow pages, index pages, record headers, unused bytes inside pages, free pages (`dbstat`)                                                    |
+
+Policies, applied to a copy of the doctor DB so doctor's savings are not counted twice:
+
+- **A, keep text, evict heavy:** tool-output and image values become `{$evicted, bytes, sha256}`;
+  superseded snapshot bodies become row tombstones (`id, type, role, runId, ordinal, status,
+  messageId, $evicted, bytes, sha256`); legacy `orchestration_v2_events` and V1
+  `projection_thread_messages` rows are deleted. All text, FTS and handoffs stay.
+- **B, provider owns everything:** A's duplicates and legacy rows, plus every transcript item,
+  message and plan becomes a row tombstone, handoff history becomes a tombstone, and the FTS index
+  is emptied.
+
+`report` also splits the evicted bytes by provider and states which share each provider could
+re-serve today (adapter `readThreadSnapshot` as written) and at its ceiling (native protocol or
+store, verified in source). The matrix and its caveats live in `RESERVE` in `accounting.ts`.
+
 ## Surfaces
 
 | surface                      | what maps                                                                                                                                                                    | not measured here                                                                |
