@@ -28,8 +28,17 @@ const { values: args } = NodeUtil.parseArgs({
     out: { type: "string" },
     seed: { type: "string", default: NodePath.join(repoRoot, ".t3/userdata/statev2.sqlite") },
     "keep-home": { type: "boolean", default: false },
+    // Extra server environment, e.g. --server-env T3CODE_EXPERIMENTAL_SNAPSHOT_FOLD=1 (A/B arms).
+    "server-env": { type: "string", multiple: true, default: [] },
   },
 });
+const serverEnv = Object.fromEntries(
+  (args["server-env"] ?? []).map((entry) => {
+    const at = entry.indexOf("=");
+    if (at <= 0) throw new Error(`--server-env expects KEY=VALUE, got ${entry}`);
+    return [entry.slice(0, at), entry.slice(at + 1)];
+  }),
+);
 const RUNS = Number(args.runs);
 const WARM = Number(args.warm);
 const TURNS_PER_BOOT = Number(args.turns);
@@ -287,6 +296,8 @@ function logicalDbBytes(dbPath: string, threadId: string) {
 const results: Record<string, unknown> = {
   sha,
   dirty,
+  seed: args.seed,
+  serverEnv,
   startedAt: new Date().toISOString(),
   host: {
     cpus: (await import("node:os")).availableParallelism(),
@@ -326,6 +337,7 @@ try {
     const server = await startServer({
       t3Home,
       benchHome,
+      env: serverEnv,
       logPath: NodePath.join(out, `server-boot-${boot}.log`),
     });
     try {

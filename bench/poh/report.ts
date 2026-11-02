@@ -10,6 +10,7 @@ const { values: args } = NodeUtil.parseArgs({
     md: { type: "string" },
     ledger: { type: "string" },
     experiment: { type: "string", default: "00-baseline" },
+    flag: { type: "string", default: "n/a (baseline)" },
   },
 });
 const dirs = (args.in ?? []).map((d) => NodePath.resolve(d));
@@ -297,7 +298,7 @@ for (const dir of dirs) {
       JSON.stringify({
         experiment: args.experiment,
         sha: run.sha,
-        flag: "n/a (baseline)",
+        flag: args.flag,
         metric: m.metric,
         unit: m.unit,
         n: m.values.length,
