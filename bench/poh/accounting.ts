@@ -544,7 +544,8 @@ function rowTombstone(raw: string, cls: Cls): string {
   return JSON.stringify(keep);
 }
 
-export type Policy = "A" | "B";
+/** D = dedupe only (duplicates + legacy rows), A = D + heavy parts, B = D + all transcript. */
+export type Policy = "D" | "A" | "B";
 
 export function simulate(
   source: string,
@@ -599,7 +600,7 @@ export function simulate(
           if (k in payload) payload[k] = tombstoneValue("message-text", payload[k]);
         updateEvent.run(JSON.stringify(payload), row.sequence);
       }
-    } else if (row.event_type === "turn-item.updated" && evictHeavy(payload)) {
+    } else if (policy === "A" && row.event_type === "turn-item.updated" && evictHeavy(payload)) {
       updateEvent.run(JSON.stringify(payload), row.sequence);
       counts.eventHeavy++;
     }
@@ -793,16 +794,20 @@ async function analyze(work: string, out: string) {
   }
 
   const dupAfterDoctor = new Set(doctorAccount.duplicateSequences);
+  const simD = NodePath.join(work, "policy-d.sqlite");
   const simA = NodePath.join(work, "policy-a.sqlite");
   const simB = NodePath.join(work, "policy-b.sqlite");
+  const countsD = timed("simulate D", () => simulate(doctorDb, simD, "D", dupAfterDoctor));
   const countsA = timed("simulate A", () => simulate(doctorDb, simA, "A", dupAfterDoctor));
   const countsB = timed("simulate B", () => simulate(doctorDb, simB, "B", dupAfterDoctor));
+  const accountD = timed("account D", () => account(simD));
   const accountA = timed("account A", () => account(simA));
   const accountB = timed("account B", () => account(simB));
   const durable = Object.fromEntries(
     [
       ["base", base],
       ["doctor", doctorDb],
+      ["policyD", simD],
       ["policyA", simA],
       ["policyB", simB],
     ].map(([k, p]) => {
@@ -830,6 +835,7 @@ async function analyze(work: string, out: string) {
     base: strip(baseAccount),
     doctor: strip(doctorAccount),
     removedByDoctor,
+    policyD: { counts: countsD, ...strip(accountD) },
     policyA: { counts: countsA, ...strip(accountA) },
     policyB: { counts: countsB, ...strip(accountB) },
     durable,
@@ -840,6 +846,7 @@ async function analyze(work: string, out: string) {
     threadId: id,
     base: baseAccount.perThread[id] ?? {},
     doctor: doctorAccount.perThread[id] ?? {},
+    policyD: accountD.perThread[id] ?? {},
     policyA: accountA.perThread[id] ?? {},
     policyB: accountB.perThread[id] ?? {},
   }));
@@ -877,6 +884,7 @@ const RESERVE: Array<{ match: RegExp; family: string; today: Cls[]; ceiling: Cls
 ];
 
 const MiB = (n: number) => `${(n / 2 ** 20).toFixed(1)} MiB`;
+const MiB2 = (n: number) => `${(n / 2 ** 20).toFixed(2)} MiB`;
 const pct = (a: number, b: number) => (b === 0 ? "n/a" : `${((100 * a) / b).toFixed(0)}%`);
 
 function render(
@@ -887,20 +895,25 @@ function render(
 ) {
   const r = JSON.parse(NodeFS.readFileSync(resultPath, "utf8"));
   const lines: string[] = [];
-  const dbs = ["base", "doctor", "policyA", "policyB"] as const;
+  const dbs = ["base", "doctor", "policyD", "policyA", "policyB"] as const;
   const label = {
     base: "origin/main after migrations (VACUUM'd)",
     doctor: "+ `t3 doctor --fix`",
+    policyD: "+ policy D: dedupe only (no provider needed)",
     policyA: "+ policy A: keep text, evict heavy",
     policyB: "+ policy B: provider owns everything",
   };
-  lines.push("| DB | file | vs doctor | per-thread p50 | p90 | max | attributed total |");
+  lines.push(
+    "| DB | file | Δ (doctor vs base; policies vs doctor) | per-thread p50 | p90 | max | attributed total |",
+  );
   lines.push("|---|---|---|---|---|---|---|");
+  const ref = (k: string) =>
+    k === "doctor" ? r.durable.base.fileBytes : r.durable.doctor.fileBytes;
   for (const k of dbs) {
     const d = r.durable[k];
     const t = d.threadSummary;
     lines.push(
-      `| ${label[k]} | ${MiB(d.fileBytes)} | ${k === "base" ? "" : `${MiB(d.fileBytes - r.durable.doctor.fileBytes)} (${pct(d.fileBytes - r.durable.doctor.fileBytes, r.durable.doctor.fileBytes)})`} | ${MiB(t.p50)} | ${MiB(t.p90)} | ${MiB(t.max)} | ${MiB(t.total)} |`,
+      `| ${label[k]} | ${MiB(d.fileBytes)} | ${k === "base" ? "" : `${MiB(d.fileBytes - ref(k))} (${pct(d.fileBytes - ref(k), ref(k))})`} | ${MiB2(t.p50)} | ${MiB2(t.p90)} | ${MiB(t.max)} | ${MiB(t.total)} |`,
     );
   }
   lines.push("");
