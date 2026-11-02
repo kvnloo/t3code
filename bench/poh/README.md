@@ -101,11 +101,12 @@ Classes, by column and by top-level JSON key (unlisted keys are metadata):
 
 Policies, applied to a copy of the doctor DB so doctor's savings are not counted twice:
 
-- **A, keep text, evict heavy:** tool-output and image values become `{$evicted, bytes, sha256}`;
-  superseded snapshot bodies become row tombstones (`id, type, role, runId, ordinal, status,
-  messageId, $evicted, bytes, sha256`); legacy `orchestration_v2_events` and V1
-  `projection_thread_messages` rows are deleted. All text, FTS and handoffs stay.
-- **B, provider owns everything:** A's duplicates and legacy rows, plus every transcript item,
+- **D, dedupe only:** superseded snapshot bodies become row tombstones (`id, type, role, runId,
+  ordinal, status, messageId, $evicted, bytes, sha256`); legacy `orchestration_v2_events` and V1
+  `projection_thread_messages` rows are deleted. Needs no provider: the latest body stays.
+- **A, keep text, evict heavy:** D, plus tool-output and image values become
+  `{$evicted, bytes, sha256}`. All text, FTS and handoffs stay.
+- **B, provider owns everything:** D, plus every transcript item,
   message and plan becomes a row tombstone, handoff history becomes a tombstone, and the FTS index
   is emptied.
 
