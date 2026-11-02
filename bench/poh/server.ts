@@ -75,6 +75,7 @@ export async function startServer(options: {
   readonly benchHome: string;
   readonly logPath: string;
   readonly timeoutMs?: number;
+  readonly env?: Readonly<Record<string, string>>;
 }): Promise<RunningServer> {
   const port = await freePort();
   const devPort = await freePort();
@@ -89,6 +90,7 @@ export async function startServer(options: {
     T3CODE_TELEMETRY_ENABLED: "false",
     T3CODE_OTEL_SDK_DISABLED: "true",
     T3CODE_NO_BROWSER: "1",
+    ...options.env,
   };
   const child = NodeChildProcess.spawn(
     process.execPath,
