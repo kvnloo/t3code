@@ -224,7 +224,7 @@ export const make = (dependencies: Dependencies) => {
     },
   );
 
-  // Serialize presses so slower tick lookups cannot overwrite later unticks.
+  // Serialize presses so a slower tick (revision lookup, host node-id lookup) cannot overwrite a later untick.
   const filesViewedGates = new Map<
     string,
     { readonly gate: Semaphore.Semaphore; pending: number }
@@ -319,13 +319,17 @@ export const make = (dependencies: Dependencies) => {
       Effect.flatMap((project): Effect.Effect<void, PullRequestError> => {
         const write = project.api.setFilesViewed;
         if (project.api.capabilities.viewedFiles === "host" && write) {
-          return write({
-            cwd: project.project.workspaceRoot,
-            repository: project.repository,
-            host: project.host,
-            number: input.number,
-            files: input.files,
-          }).pipe(Effect.mapError(toPullRequestError("setFilesViewed")));
+          return inFilesViewedOrder(
+            project,
+            input.number,
+            write({
+              cwd: project.project.workspaceRoot,
+              repository: project.repository,
+              host: project.host,
+              number: input.number,
+              files: input.files,
+            }).pipe(Effect.mapError(toPullRequestError("setFilesViewed"))),
+          );
         }
         if (project.api.capabilities.viewedFiles === "environment") {
           return inFilesViewedOrder(

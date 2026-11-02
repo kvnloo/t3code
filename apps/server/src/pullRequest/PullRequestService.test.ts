@@ -3586,6 +3586,90 @@ it.effect("partial host viewed writes invalidate marks but keep the diff cached"
   }),
 );
 
+// The first press on a change request is the slow one: GitHub looks up its node id before writing.
+const heldHostViewedService = (held: Deferred.Deferred<void>, heldNumber: number) =>
+  Effect.gen(function* () {
+    const states = new Map<string, "viewed" | "unviewed">();
+    const writes: Array<string> = [];
+    const service = yield* makeService({
+      projects: [project({ id: "p1", title: "web", workspaceRoot: "/a", repository: "acme/web" })],
+      providers: [
+        fakePullRequestProvider(SourceControlProviderKind.make("github"), {
+          capabilities: {
+            ...fakePullRequestProvider(SourceControlProviderKind.make("github")).capabilities,
+            viewedFiles: "host",
+          },
+          getFilesViewed: (input) =>
+            Effect.sync(() => ({
+              files: [...states]
+                .filter(([key]) => key.startsWith(`${input.number} `))
+                .map(([key, state]) => ({ path: key.slice(key.indexOf(" ") + 1), state })),
+              truncated: false,
+            })),
+          setFilesViewed: (input) =>
+            (input.number === heldNumber && input.files.some((file) => file.viewed)
+              ? Deferred.await(held)
+              : Effect.void
+            ).pipe(
+              Effect.andThen(
+                Effect.sync(() => {
+                  for (const file of input.files) {
+                    writes.push(`${input.number} ${file.path} ${file.viewed}`);
+                    states.set(`${input.number} ${file.path}`, file.viewed ? "viewed" : "unviewed");
+                  }
+                }),
+              ),
+            ),
+        }),
+      ],
+    });
+    return { service, writes };
+  });
+
+it.effect("host viewed writes on one change request land in the order they were pressed", () =>
+  Effect.gen(function* () {
+    const held = yield* Deferred.make<void>();
+    const { service, writes } = yield* heldHostViewedService(held, 10);
+    const ref = { projectId: "p1" as ProjectId, repository: "acme/web", number: 10 };
+
+    const tick = service
+      .setFilesViewed({ ...ref, files: [{ path: "a.ts", viewed: true }] })
+      .pipe(Effect.runFork);
+    yield* TestClock.adjust("1 second");
+    const untick = service
+      .setFilesViewed({ ...ref, files: [{ path: "a.ts", viewed: false }] })
+      .pipe(Effect.runFork);
+    yield* TestClock.adjust("1 second");
+    yield* Deferred.succeed(held, undefined);
+    yield* Fiber.join(tick);
+    yield* Fiber.join(untick);
+
+    assert.deepStrictEqual(writes, ["10 a.ts true", "10 a.ts false"]);
+    assert.deepStrictEqual((yield* service.filesViewed(ref)).files, [
+      { path: "a.ts", state: "unviewed" },
+    ]);
+  }),
+);
+
+it.effect("a slow host viewed write does not hold up another change request", () =>
+  Effect.gen(function* () {
+    const held = yield* Deferred.make<void>();
+    const { service, writes } = yield* heldHostViewedService(held, 10);
+    const ref = { projectId: "p1" as ProjectId, repository: "acme/web", number: 10 };
+
+    const slow = service
+      .setFilesViewed({ ...ref, files: [{ path: "a.ts", viewed: true }] })
+      .pipe(Effect.runFork);
+    yield* TestClock.adjust("1 second");
+    yield* service.setFilesViewed({ ...ref, number: 11, files: [{ path: "b.ts", viewed: true }] });
+
+    assert.deepStrictEqual(writes, ["11 b.ts true"]);
+    yield* Deferred.succeed(held, undefined);
+    yield* Fiber.join(slow);
+    assert.deepStrictEqual(writes, ["11 b.ts true", "10 a.ts true"]);
+  }),
+);
+
 const environmentViewedProvider = (
   revisions: Map<string, string>,
   asked: Array<ReadonlyArray<string>>,
