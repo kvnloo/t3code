@@ -2,7 +2,7 @@ import { createParser } from "@openuidev/lang-core";
 import { createLibrary, defineComponent, Renderer } from "@openuidev/react-lang";
 import { memo, useMemo, useState } from "react";
 import { Pressable, View, type LayoutChangeEvent } from "react-native";
-import Svg, { Polygon } from "react-native-svg";
+import Svg, { Line, Polygon } from "react-native-svg";
 import { z } from "zod/v4";
 
 import {
@@ -10,6 +10,7 @@ import {
   OPENUI_CHART_LIMITS as LIMITS,
   OPENUI_SERIES_COLORS,
   bandPoints,
+  categoryX,
   buildTreemap,
   findTreemapNode,
   formatCount,
@@ -76,14 +77,14 @@ function Readout({ text }: { text: string }) {
   );
 }
 
-function Button({ label: text, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
+function Button({ label: text, onPress, disabled, selected }: { label: string; onPress: () => void; disabled?: boolean; selected?: boolean }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ disabled: Boolean(disabled) }}
+      accessibilityState={{ disabled: Boolean(disabled), selected: Boolean(selected) }}
       disabled={disabled}
       onPress={onPress}
-      className="rounded-md border border-border"
+      className={selected ? "rounded-md border border-primary bg-subtle" : "rounded-md border border-border"}
       style={{ minHeight: 40, paddingHorizontal: 12, justifyContent: "center", opacity: disabled ? 0.45 : 1 }}
     >
       <AppText className="text-sm">{text}</AppText>
@@ -94,9 +95,9 @@ function Button({ label: text, onPress, disabled }: { label: string; onPress: ()
 function ScaleLegend({ low, high, caption }: { low: string; high: string; caption: string }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-      <AppText className="text-xs text-muted-foreground">{low}</AppText>
+      <AppText className="text-xs text-foreground-muted">{low}</AppText>
       {[0, 0.33, 0.66, 1].map((step) => <View key={step} style={{ width: 14, height: 10, backgroundColor: sequentialColor(step) }} />)}
-      <AppText className="text-xs text-muted-foreground">{high} · {caption}</AppText>
+      <AppText className="text-xs text-foreground-muted">{high} · {caption}</AppText>
     </View>
   );
 }
@@ -116,13 +117,14 @@ const TreemapPanel = memo(function TreemapPanel({ props }: { props: z.infer<type
       <PanelTitle>{props.title}</PanelTitle>
       <View style={{ flexDirection: "row", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
         <Button label="← Back" disabled={folder === root} onPress={() => { setPath(folder.parent?.path ?? ""); setSelected(null); }} />
-        <AppText className="text-xs text-muted-foreground">{folder.path || "All files"}</AppText>
+        <AppText className="text-xs text-foreground-muted">{folder.path || "All files"}</AppText>
       </View>
       <View onLayout={onLayout} accessibilityLabel={`${props.title} treemap`} style={{ height: TREEMAP_HEIGHT }}>
         {tiles.map((tile) => {
           const intensity = shade(tile.node.color, maxColor);
           const isFolder = tile.node.children.length > 0;
-          const big = tile.width > 70 && tile.height > 34;
+          // Full label when it fits, name only for narrow tiles, nothing for slivers (tap still reads out).
+          const label = tile.width > 70 && tile.height > 34 ? "full" : tile.width > 30 && tile.height > 20 ? "name" : "none";
           return (
             <Pressable
               key={tile.node.path}
@@ -140,16 +142,14 @@ const TreemapPanel = memo(function TreemapPanel({ props }: { props: z.infer<type
                 top: tile.y,
                 width: tile.width,
                 height: tile.height,
-                padding: 6,
+                padding: label === "full" ? 6 : 3,
                 borderWidth: selected === tile.node.path ? 2 : 1,
                 borderColor: selected === tile.node.path ? "#f2c14e" : "rgba(255,255,255,0.85)",
                 backgroundColor: sequentialColor(intensity),
               }}
             >
-              {big ? <>
-                <AppText numberOfLines={1} style={{ color: sequentialLabelColor(intensity), fontSize: 12, fontWeight: "600" }}>{tile.node.name}{isFolder ? "/" : ""}</AppText>
-                <AppText numberOfLines={1} style={{ color: sequentialLabelColor(intensity), fontSize: 11 }}>{formatCount(tile.node.size)} {props.sizeLabel}</AppText>
-              </> : null}
+              {label !== "none" ? <AppText numberOfLines={1} style={{ color: sequentialLabelColor(intensity), fontSize: label === "full" ? 12 : 10, fontWeight: "600" }}>{tile.node.name}{isFolder ? "/" : ""}</AppText> : null}
+              {label === "full" ? <AppText numberOfLines={1} style={{ color: sequentialLabelColor(intensity), fontSize: 11 }}>{formatCount(tile.node.size)} {props.sizeLabel}</AppText> : null}
             </Pressable>
           );
         })}
@@ -174,7 +174,7 @@ const BarChartPanel = memo(function BarChartPanel({ props }: { props: z.infer<ty
           <AppText className="text-xs font-semibold" style={{ minWidth: 36, textAlign: "right" }}>{formatCount(bar.value)}</AppText>
         </View>
       ))}
-      {props.unit ? <AppText className="text-xs text-muted-foreground">Values in {props.unit}</AppText> : null}
+      {props.unit ? <AppText className="text-xs text-foreground-muted">Values in {props.unit}</AppText> : null}
     </View>
   );
 });
@@ -200,12 +200,16 @@ const StackedAreaPanel = memo(function StackedAreaPanel({ props }: { props: z.in
             {stack.bands.map((band, position) => (
               <Polygon key={band.name} points={bandPoints(band.lower, band.upper, stack.max, width, AREA_HEIGHT)} fill={OPENUI_SERIES_COLORS[position % OPENUI_SERIES_COLORS.length]} />
             ))}
+            {index !== null ? (() => {
+              const x = Math.min(width - 1, Math.max(1, categoryX(index, props.categories.length, width)));
+              return <Line x1={x} x2={x} y1={0} y2={AREA_HEIGHT} stroke="#f2c14e" strokeWidth={2} />;
+            })() : null}
           </Svg>
         ) : null}
       </View>
       <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
         {props.categories.map((category, position) => (
-          <Button key={`${category}-${position}`} label={category} onPress={() => setIndex(position)} />
+          <Button key={`${category}-${position}`} label={category} selected={index === position} onPress={() => setIndex(position)} />
         ))}
       </View>
       <Readout text={index === null ? `Peak ${formatCount(stack.max)}${props.unit ? ` ${props.unit}` : ""}. Tap a category for exact counts.` : stackedReadout(props.categories[index] ?? "", props.series, index, props.unit)} />
@@ -222,7 +226,7 @@ const HeatmapPanel = memo(function HeatmapPanel({ props }: { props: z.infer<type
       <View accessibilityLabel={`${props.title} heatmap`} style={{ gap: 4 }}>
         <View style={{ flexDirection: "row", gap: 4 }}>
           <View style={{ width: 44 }} />
-          {props.columns.map((column, index) => <AppText key={index} numberOfLines={1} className="text-xs text-muted-foreground" style={{ flex: 1, textAlign: "center" }}>{column}</AppText>)}
+          {props.columns.map((column, index) => <AppText key={index} numberOfLines={1} className="text-xs text-foreground-muted" style={{ flex: 1, textAlign: "center" }}>{column}</AppText>)}
         </View>
         {props.rows.map((row, rowIndex) => (
           <View key={rowIndex} style={{ flexDirection: "row", gap: 4, alignItems: "center" }}>
@@ -269,7 +273,7 @@ const Board = defineComponent({
       <View style={{ gap: 18, padding: 12 }}>
         <View style={{ gap: 4 }}>
           <AppText accessibilityRole="header" className="text-lg font-semibold">{props.title}</AppText>
-          <AppText selectable className="text-sm text-muted-foreground">{props.summary}</AppText>
+          <AppText selectable className="text-sm text-foreground-muted">{props.summary}</AppText>
         </View>
         {renderNode(props.panels)}
       </View>
@@ -296,7 +300,7 @@ export function inspectOpenUiChart(code: string) {
 
 export function OpenUiCharts({ code }: { code: string }) {
   const status = useMemo(() => inspectOpenUiChart(code), [code]);
-  if (status.kind !== "ready") return <AppText accessibilityRole="alert" className="p-3 text-sm text-muted-foreground">{status.reason}</AppText>;
+  if (status.kind !== "ready") return <AppText accessibilityRole="alert" className="p-3 text-sm text-foreground-muted">{status.reason}</AppText>;
   // No tool provider, actions or state callbacks: generated content has no action authority.
   return <Renderer response={code} library={library} isStreaming={false} />;
 }

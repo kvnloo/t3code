@@ -9,8 +9,10 @@ import {
   OPENUI_CHART_PROMPT,
   OPENUI_SERIES_COLORS,
   bandPoints,
+  categoryX,
   buildTreemap,
   findTreemapNode,
+  fitLabel,
   formatCount,
   heatmapReadout,
   inspectParsedChartBoard,
@@ -69,7 +71,7 @@ function ScaleLegend({ low, high, caption }: { low: string; high: string; captio
   );
 }
 
-const buttonClass = "min-h-10 rounded-md border border-border px-3 text-sm disabled:opacity-45";
+const buttonClass = "min-h-10 rounded-md border border-border px-3 text-sm disabled:opacity-45 aria-pressed:border-primary aria-pressed:bg-accent";
 
 const TreemapPanel = memo(function TreemapPanel({ props }: { props: z.infer<typeof treemapProps> }) {
   const root = useMemo(() => buildTreemap(props.rows), [props.rows]);
@@ -105,9 +107,11 @@ const TreemapPanel = memo(function TreemapPanel({ props }: { props: z.infer<type
               <rect x={tile.x} y={tile.y} width={tile.width} height={tile.height} fill={sequentialColor(intensity)}
                 stroke={selected === tile.node.path ? "#f2c14e" : "rgba(255,255,255,0.85)"} strokeWidth={selected === tile.node.path ? 3 : 1.5} />
               {tile.width > 90 && tile.height > 44 ? <>
-                <text x={tile.x + 8} y={tile.y + 22} fill={sequentialLabelColor(intensity)} fontSize={16} fontWeight={600} pointerEvents="none">{tile.node.name}{isFolder ? "/" : ""}</text>
-                <text x={tile.x + 8} y={tile.y + 42} fill={sequentialLabelColor(intensity)} fontSize={14} pointerEvents="none">{formatCount(tile.node.size)} {props.sizeLabel}</text>
-              </> : null}
+                <text x={tile.x + 8} y={tile.y + 22} fill={sequentialLabelColor(intensity)} fontSize={16} fontWeight={600} pointerEvents="none">{fitLabel(`${tile.node.name}${isFolder ? "/" : ""}`, tile.width - 16, 9)}</text>
+                <text x={tile.x + 8} y={tile.y + 42} fill={sequentialLabelColor(intensity)} fontSize={14} pointerEvents="none">{fitLabel(`${formatCount(tile.node.size)} ${props.sizeLabel}`, tile.width - 16, 8)}</text>
+              </> : tile.width > 40 && tile.height > 24 ? (
+                <text x={tile.x + 4} y={tile.y + 16} fill={sequentialLabelColor(intensity)} fontSize={12} fontWeight={600} pointerEvents="none">{fitLabel(`${tile.node.name}${isFolder ? "/" : ""}`, tile.width - 8, 7)}</text>
+              ) : null}
             </g>
           );
         })}
@@ -154,6 +158,10 @@ const StackedAreaPanel = memo(function StackedAreaPanel({ props }: { props: z.in
         {stack.bands.map((band, position) => (
           <polygon key={band.name} points={bandPoints(band.lower, band.upper, stack.max, AREA_WIDTH, AREA_HEIGHT)} fill={OPENUI_SERIES_COLORS[position % OPENUI_SERIES_COLORS.length]} />
         ))}
+        {index !== null ? (() => {
+          const x = Math.min(AREA_WIDTH - 1, Math.max(1, categoryX(index, props.categories.length, AREA_WIDTH)));
+          return <line x1={x} x2={x} y1={0} y2={AREA_HEIGHT} stroke="#f2c14e" strokeWidth={2} vectorEffect="non-scaling-stroke" />;
+        })() : null}
       </svg>
       <div className="flex flex-wrap gap-1.5">
         {props.categories.map((category, position) => (

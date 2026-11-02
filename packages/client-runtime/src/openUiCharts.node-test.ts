@@ -4,8 +4,10 @@ import test from "node:test";
 import {
   bandPoints,
   buildTreemap,
+  categoryX,
   chartPanelProblem,
   findTreemapNode,
+  fitLabel,
   heatmapReadout,
   layoutTreemap,
   shade,
@@ -67,4 +69,17 @@ test("cross-field problems are reported instead of rendered", () => {
   assert.equal(chartPanelProblem({ typeName: "Heatmap", props: { rows: ["Mon"], columns: ["0", "6"], counts: [[0, 0]] } }), null);
   assert.match(chartPanelProblem({ typeName: "Heatmap", props: { rows: ["Mon", "Tue"], columns: ["0"], counts: [[0]] } })!, /2 count rows/);
   assert.match(chartPanelProblem({ typeName: "Heatmap", props: { rows: ["Mon"], columns: ["0", "6"], counts: [[1]] } })!, /needs 2 counts/);
+});
+
+test("labels truncate to the space they have", () => {
+  assert.equal(fitLabel("tests/", 100, 9), "tests/");
+  assert.equal(fitLabel("qwen3-32b.gguf", 60, 9), "qwen3…");
+  assert.equal(fitLabel("tokens.ts", 9, 9), "…");
+  assert.equal(fitLabel("tokens.ts", 4, 9), "");
+});
+
+test("category markers line up with band vertices", () => {
+  const points = bandPoints([0, 0, 0], [1, 2, 3], 3, 300, 100).split(" ").slice(0, 3).map((point) => Number(point.split(",")[0]));
+  assert.deepEqual([0, 1, 2].map((index) => categoryX(index, 3, 300)), points);
+  assert.equal(categoryX(0, 1, 300), 0);
 });

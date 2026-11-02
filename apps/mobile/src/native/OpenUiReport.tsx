@@ -23,10 +23,10 @@ const Report = defineComponent({
     return (
       <View style={{ gap: 14, padding: 12 }}>
         <AppText accessibilityRole="header" className="text-lg font-semibold">{props.title}</AppText>
-        <AppText selectable className="text-sm text-muted-foreground">{props.summary}</AppText>
+        <AppText selectable className="text-sm text-foreground-muted">{props.summary}</AppText>
         {props.metrics.length > 0 && <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
           {props.metrics.map((metric, index) => <View key={index} className="border border-border" style={{ padding: 10, borderWidth: 1, borderRadius: 8 }}>
-            <AppText className="text-xs text-muted-foreground">{metric.label}</AppText>
+            <AppText className="text-xs text-foreground-muted">{metric.label}</AppText>
             <AppText selectable className="text-lg font-semibold">{metric.value}</AppText>
           </View>)}
         </View>}
@@ -43,7 +43,7 @@ const Report = defineComponent({
         {props.bars.map((bar, index) => <View key={index} accessible accessibilityRole="progressbar" accessibilityLabel={bar.label} accessibilityValue={{ min: 0, max: 100, now: bar.value }} style={{ gap: 4 }}>
           <AppText>{bar.label} · {bar.value}%</AppText>
           <View className="bg-border" style={{ height: 8, borderRadius: 4 }}>
-            <View className="bg-accent" style={{ height: 8, width: `${bar.value}%`, borderRadius: 4 }} />
+            <View className="bg-primary" style={{ height: 8, width: `${bar.value}%`, borderRadius: 4 }} />
           </View>
         </View>)}
       </View>
@@ -75,6 +75,6 @@ export function inspectOpenUiReport(code: string) {
 
 export function OpenUiReport({ code }: { code: string }) {
   const status = inspectOpenUiReport(code);
-  if (status.kind !== "ready") return <AppText accessibilityRole="alert" className="p-3 text-sm text-muted-foreground">{status.reason}</AppText>;
+  if (status.kind !== "ready") return <AppText accessibilityRole="alert" className="p-3 text-sm text-foreground-muted">{status.reason}</AppText>;
   return <Renderer response={code} library={library} isStreaming={false} />;
 }

@@ -248,6 +248,11 @@ export function stackSeries(series: ReadonlyArray<StackedSeries>, length: number
 }
 
 /** SVG polygon points for one stacked band across evenly spaced categories. */
+/** X position of category `index` in a chart `width` wide; matches `bandPoints`. */
+export function categoryX(index: number, count: number, width: number) {
+  return count > 1 ? (index * width) / (count - 1) : 0;
+}
+
 export function bandPoints(lower: ReadonlyArray<number>, upper: ReadonlyArray<number>, max: number, width: number, height: number) {
   const step = upper.length > 1 ? width / (upper.length - 1) : 0;
   const y = (value: number) => (max > 0 ? height - (value / max) * height : height);
@@ -276,6 +281,14 @@ export function sequentialLabelColor(intensity: number) {
 
 export function formatCount(value: number) {
   return Number.isInteger(value) ? value.toLocaleString("en-US") : value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
+
+/** Truncates a label with an ellipsis so it fits `widthPx` at roughly `charPx` per character (SVG text cannot clip itself). */
+export function fitLabel(text: string, widthPx: number, charPx: number) {
+  const max = Math.floor(widthPx / charPx);
+  if (max <= 0) return "";
+  const chars = Array.from(text);
+  return chars.length <= max ? text : max === 1 ? "…" : `${chars.slice(0, max - 1).join("")}…`;
 }
 
 const withUnit = (value: number, unit: string) => (unit ? `${formatCount(value)} ${unit}` : formatCount(value));
