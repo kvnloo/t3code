@@ -1274,3 +1274,101 @@ it.effect("merge-back rejects a second fork's context until the first is consume
     );
   }).pipe(Effect.provide(forkCases[0]!.layer)),
 );
+
+it.effect("binds a fork to a prepared worktree and refuses an unprepared one", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const eventSink = yield* EventSink.EventSinkV2;
+    const now = yield* DateTime.now;
+    const { instanceId, modelSelection } = forkCases[0]!;
+    const sourceThreadId = ThreadId.make("fork-workspace-source");
+    const sourceRunId = RunId.make("fork-workspace-source-run");
+
+    yield* orchestrator.dispatch({
+      type: "thread.create",
+      commandId: CommandId.make("fork-workspace-create"),
+      threadId: sourceThreadId,
+      projectId: ProjectId.make("fork-workspace-project"),
+      title: "Worktree source",
+      modelSelection,
+      runtimeMode: "full-access",
+      interactionMode: "default",
+      branch: "feature/source",
+      worktreePath: "/tmp/source-worktree",
+      createdBy: "user",
+      creationSource: "web",
+    });
+    yield* eventSink.write({
+      events: [
+        {
+          id: EventId.make("fork-workspace-source-run"),
+          type: "run.created",
+          threadId: sourceThreadId,
+          runId: sourceRunId,
+          occurredAt: now,
+          payload: {
+            id: sourceRunId,
+            threadId: sourceThreadId,
+            ordinal: 1,
+            providerInstanceId: instanceId,
+            modelSelection,
+            providerThreadId: null,
+            userMessageId: MessageId.make("fork-workspace-source-message"),
+            rootNodeId: null,
+            activeAttemptId: null,
+            status: "completed",
+            requestedAt: now,
+            startedAt: now,
+            completedAt: now,
+            checkpointId: null,
+            contextHandoffId: null,
+          },
+        },
+      ],
+    });
+    const fork = (targetThreadId: string, workspace?: { readonly type: "new_worktree" }) =>
+      orchestrator.dispatch({
+        type: "thread.fork",
+        commandId: CommandId.make(`${targetThreadId}-command`),
+        sourceThreadId,
+        targetThreadId: ThreadId.make(targetThreadId),
+        sourcePoint: { type: "run", runId: sourceRunId },
+        ...(workspace === undefined ? {} : { workspace }),
+        createdBy: "user",
+        creationSource: "web",
+      });
+
+    yield* fork("fork-workspace-default");
+    const sameCheckout = yield* orchestrator.getThreadShell(
+      ThreadId.make("fork-workspace-default"),
+    );
+    assert.strictEqual(sameCheckout?.worktreePath, "/tmp/source-worktree");
+    assert.strictEqual(sameCheckout?.branch, "feature/source");
+
+    const unprepared = yield* fork("fork-workspace-unprepared", { type: "new_worktree" }).pipe(
+      Effect.flip,
+    );
+    assert.strictEqual(unprepared._tag, "OrchestratorDispatchError");
+    assert.isNull(yield* orchestrator.getThreadShell(ThreadId.make("fork-workspace-unprepared")));
+
+    yield* orchestrator.dispatch({
+      type: "thread.fork",
+      commandId: CommandId.make("fork-workspace-prepared-command"),
+      sourceThreadId,
+      targetThreadId: ThreadId.make("fork-workspace-prepared"),
+      sourcePoint: { type: "run", runId: sourceRunId },
+      workspace: {
+        type: "existing_worktree",
+        worktreePath: "/tmp/fork-worktree",
+        branch: "t3code/fork",
+      },
+      createdBy: "user",
+      creationSource: "web",
+    });
+    const ownCheckout = yield* orchestrator.getThreadShell(
+      ThreadId.make("fork-workspace-prepared"),
+    );
+    assert.strictEqual(ownCheckout?.worktreePath, "/tmp/fork-worktree");
+    assert.strictEqual(ownCheckout?.branch, "t3code/fork");
+  }).pipe(Effect.provide(forkCases[0]!.layer)),
+);

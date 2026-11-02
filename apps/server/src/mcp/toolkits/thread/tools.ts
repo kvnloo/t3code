@@ -165,7 +165,7 @@ const ThreadConfigureTool = Tool.make("t3_thread_configure", {
 const ThreadTransferTool = Tool.make("t3_thread_transfer", {
   ...commandTool,
   description:
-    "Move context between threads. Omit `threadId` for this thread. fork: copy it from `sourcePoint` (default latest stable run) into a new thread with the same setup; no turn runs yet. merge_back: merge it from `sourcePoint` into a related `targetThreadId` in the same project. status: its context transfers.",
+    "Move context between threads. Omit `threadId` for this thread. fork: copy it from `sourcePoint` (default latest stable run) into a new thread with the same setup; no turn runs yet. `workspace: new_worktree` gives the fork its own worktree with the fork point's files. merge_back: merge it from `sourcePoint` into a related `targetThreadId` in the same project. status: its context transfers.",
   parameters: Schema.Struct({
     action: Schema.Literals(["fork", "merge_back", "status"]),
     environmentId: OrchestratorMcpEnvironmentTarget,
@@ -173,9 +173,26 @@ const ThreadTransferTool = Tool.make("t3_thread_transfer", {
     sourcePoint: Schema.optional(OrchestrationV2ThreadForkSourcePoint),
     targetThreadId: Schema.optional(ThreadId),
     title: Schema.optional(TrimmedNonEmptyString),
+    workspace: Schema.optional(
+      Schema.Literals(["source", "new_worktree"]).annotate({
+        description: "fork only. Default source: share the source's checkout.",
+      }),
+    ),
   }),
   success: Schema.Union([
-    Schema.Struct({ sequence: NonNegativeInt, targetThreadId: ThreadId }),
+    Schema.Struct({
+      sequence: NonNegativeInt,
+      targetThreadId: ThreadId,
+      worktree: Schema.optional(
+        Schema.Struct({
+          worktreePath: TrimmedNonEmptyString,
+          branch: TrimmedNonEmptyString,
+          restoredFrom: Schema.Literals(["checkpoint", "head"]).annotate({
+            description: "head: no checkpoint existed, so files match the source's HEAD commit.",
+          }),
+        }),
+      ),
+    }),
     Schema.Struct({
       transfers: Schema.Array(
         Schema.Struct({

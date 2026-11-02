@@ -189,6 +189,18 @@ export const OrchestrationV2ThreadForkSourcePoint = Schema.Union([
 ]);
 export type OrchestrationV2ThreadForkSourcePoint = typeof OrchestrationV2ThreadForkSourcePoint.Type;
 
+/** Where a fork works. Omitted: the source's checkout. */
+export const OrchestrationV2ThreadForkWorkspace = Schema.Union([
+  /** A new worktree with the fork point's files; the server creates it, then binds it as existing_worktree. */
+  Schema.Struct({ type: Schema.Literal("new_worktree") }),
+  Schema.Struct({
+    type: Schema.Literal("existing_worktree"),
+    worktreePath: TrimmedNonEmptyString,
+    branch: TrimmedNonEmptyString,
+  }),
+]);
+export type OrchestrationV2ThreadForkWorkspace = typeof OrchestrationV2ThreadForkWorkspace.Type;
+
 export const OrchestrationV2ContextTransferResolution = Schema.Union([
   Schema.Struct({
     strategy: Schema.Literal("native_fork"),
@@ -3303,6 +3315,7 @@ export const OrchestrationV2Command = Schema.Union([
     sourcePoint: OrchestrationV2ThreadForkSourcePoint,
     title: Schema.optional(TrimmedNonEmptyString),
     sideChat: Schema.optional(Schema.Boolean),
+    workspace: Schema.optional(OrchestrationV2ThreadForkWorkspace),
     createdAt: Schema.optional(Schema.DateTimeUtc),
   }),
   Schema.Struct({

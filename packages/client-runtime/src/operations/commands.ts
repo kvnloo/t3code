@@ -221,6 +221,8 @@ export interface ForkThreadFromRunInput extends CommandMetadata {
   readonly targetThreadId: ThreadId;
   readonly runId: RunId;
   readonly title?: string;
+  /** new_worktree: the server creates a worktree with the fork point's files. */
+  readonly workspace?: "source" | "new_worktree";
 }
 
 export interface ForkSideChatInput extends CommandMetadata {
@@ -988,6 +990,7 @@ export const forkThreadFromRun = Effect.fn("EnvironmentCommands.forkThreadFromRu
     targetThreadId: input.targetThreadId,
     sourcePoint: { type: "run", runId: input.runId },
     ...(input.title === undefined ? {} : { title: input.title }),
+    ...(input.workspace === "new_worktree" ? { workspace: { type: "new_worktree" } } : {}),
   });
 });
 
