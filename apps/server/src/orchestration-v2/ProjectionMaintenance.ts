@@ -8,7 +8,10 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { SNAPSHOT_FOLD_METADATA_NAME } from "../persistence/OrchestrationEventStore.ts";
+import {
+  SNAPSHOT_FOLD_METADATA_NAME,
+  snapshotFoldThreadMetadataName,
+} from "../persistence/OrchestrationEventStore.ts";
 import * as EventStore from "./EventStore.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
 
@@ -511,18 +514,24 @@ export const layer: Layer.Layer<
                 }
                 const watermark = obsolete.reduce((max, sequence) => Math.max(max, sequence), 0);
                 const now = DateTime.formatIso(yield* DateTime.now);
-                yield* sql`
-                  INSERT INTO orchestration_v2_projection_metadata (
-                    projection_name,
-                    schema_version,
-                    last_sequence,
-                    updated_at
-                  )
-                  VALUES (${SNAPSHOT_FOLD_METADATA_NAME}, 1, ${watermark}, ${now})
-                  ON CONFLICT(projection_name) DO UPDATE SET
-                    last_sequence = MAX(last_sequence, excluded.last_sequence),
-                    updated_at = excluded.updated_at
-                `;
+                // One watermark per thread for thread resume, one global for shell resume.
+                for (const name of [
+                  SNAPSHOT_FOLD_METADATA_NAME,
+                  snapshotFoldThreadMetadataName(stream.stream_id),
+                ]) {
+                  yield* sql`
+                    INSERT INTO orchestration_v2_projection_metadata (
+                      projection_name,
+                      schema_version,
+                      last_sequence,
+                      updated_at
+                    )
+                    VALUES (${name}, 1, ${watermark}, ${now})
+                    ON CONFLICT(projection_name) DO UPDATE SET
+                      last_sequence = MAX(last_sequence, excluded.last_sequence),
+                      updated_at = excluded.updated_at
+                  `;
+                }
               }),
             );
             foldedEntityCount += folds.length;

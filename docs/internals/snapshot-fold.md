@@ -24,14 +24,15 @@ The fold skips an entity when:
 
 ## The replay watermark
 
-A client whose cursor lies between an entity's first and last row would miss the final state, because that state now lives behind its cursor. Each fold therefore raises a watermark: the highest deleted sequence, stored as the `event-snapshot-fold` row of `orchestration_v2_projection_metadata`.
+A client whose cursor lies between an entity's first and last row would miss the final state, because that state now lives behind its cursor. Each fold therefore raises two watermarks in `orchestration_v2_projection_metadata`: the highest deleted sequence of that thread (`event-snapshot-fold:<threadId>`) and the highest across all threads (`event-snapshot-fold`).
 
-- `OrchestrationEventStore.getAgentReplayStats` and `getReplayStats` report `crossesSnapshotFold` for any cursor below the watermark.
+- `OrchestrationEventStore.getAgentReplayStats` (thread resume) reports `crossesSnapshotFold` for a cursor below the thread's watermark.
+- `getReplayStats` (shell resume) reports it for a cursor below the global watermark.
 - `subscribeThread` and `subscribeShell` (`ws.ts`) treat it like an over-budget replay and send a snapshot instead.
 
 That snapshot path already serves gaps of more than 128 events, so clients need no change. This covers web and desktop IndexedDB caches and mobile SQLite caches.
 
-The watermark is global. After a fold pass, a reconnect whose cursor predates the pass gets one snapshot. Later resumes replay as before.
+Thread resume must use the thread's own watermark. An idle thread's snapshot cursor is its newest event, which stays below folds made later in other threads. With one global watermark, opening any old thread sent the full snapshot over the socket a second time; the first A/B run measured this. A fresh cursor is never below its own thread's watermark, because the fold never deletes a stream's newest row. After a fold pass, only a cursor taken inside a folded range gets one snapshot. Every other resume replays as before.
 
 ## What is unchanged
 

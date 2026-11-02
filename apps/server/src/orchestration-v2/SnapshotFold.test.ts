@@ -90,7 +90,7 @@ function itemEvent(
 ): OrchestrationV2DomainEvent {
   const growing = `${key}:${revision}:` + "x".repeat((revision + 1) * 128);
   const base = {
-    id: TurnItemId.make(`turn-item:fold:${key}`),
+    id: TurnItemId.make(`turn-item:fold:${threadId}:${key}`),
     threadId,
     runId: null,
     nodeId: null,
@@ -112,7 +112,7 @@ function itemEvent(
     payload = {
       ...base,
       type: "todo_list",
-      planId: PlanId.make("plan:fold"),
+      planId: PlanId.make(`plan:fold:${threadId}`),
       steps: [{ id: "step", text: growing, status: final ? "completed" : "running" }],
       explanation: growing,
     };
@@ -120,7 +120,7 @@ function itemEvent(
     payload = { ...base, type: "command_execution", input: `run ${key}`, output: growing };
   }
   return {
-    id: EventId.make(`event:fold:${key}:${revision}`),
+    id: EventId.make(`event:fold:${threadId}:${key}:${revision}`),
     type: "turn-item.updated",
     threadId,
     occurredAt: now,
@@ -135,12 +135,12 @@ function messageEvent(
   final: boolean,
 ): OrchestrationV2DomainEvent {
   return {
-    id: EventId.make(`event:fold:message:${revision}`),
+    id: EventId.make(`event:fold:${threadId}:message:${revision}`),
     type: "message.updated",
     threadId,
     occurredAt: now,
     payload: {
-      id: MessageId.make("message:fold"),
+      id: MessageId.make(`message:fold:${threadId}`),
       threadId,
       runId: null,
       nodeId: null,
@@ -162,12 +162,12 @@ function subagentItemEvent(
   revision: number,
 ): OrchestrationV2DomainEvent {
   return {
-    id: EventId.make(`event:fold:subagent-item:${revision}`),
+    id: EventId.make(`event:fold:${threadId}:subagent-item:${revision}`),
     type: "turn-item.updated",
     threadId,
     occurredAt: now,
     payload: {
-      id: TurnItemId.make("turn-item:fold:subagent"),
+      id: TurnItemId.make(`turn-item:fold:${threadId}:subagent`),
       threadId,
       runId: null,
       nodeId: null,
@@ -182,7 +182,7 @@ function subagentItemEvent(
       completedAt: null,
       updatedAt: now,
       type: "subagent",
-      subagentId: NodeId.make("subagent:fold"),
+      subagentId: NodeId.make(`subagent:fold:${threadId}`),
       origin: "provider_native",
       driver: providerDriver,
       providerInstanceId,
@@ -229,7 +229,7 @@ const seedThread = Effect.fn("seedThread")(function* (threadId: ThreadId, now: D
     // Commanded rows answer command-result replay, so the fold must leave this entity alone.
     writes.push(
       ...(yield* sink.write({
-        commandId: CommandId.make(`command:fold:${revision}`),
+        commandId: CommandId.make(`command:fold:${threadId}:${revision}`),
         events: [itemEvent(threadId, now, "commanded", revision, final)],
       })),
     );
@@ -279,6 +279,9 @@ it.effect("folds settled snapshots into their oldest row and rebuilds the same p
     const before = yield* projections.getThreadProjection(threadId);
     const beforeSnapshot = yield* projections.getThreadSnapshot(threadId);
     const highWater = yield* eventStore.latestSequence();
+    // A later thread folds rows above this thread's head; that must not touch this thread's resume.
+    const laterThreadId = ThreadId.make("thread:snapshot-fold-later");
+    const laterWrites = yield* seedThread(laterThreadId, now);
 
     // Doctor/background compaction first, exactly as the scheduled pass runs it.
     yield* maintenance.compactEventStore();
@@ -294,51 +297,63 @@ it.effect("folds settled snapshots into their oldest row and rebuilds the same p
     const finalWrite = (eventId: string) => writes.find((stored) => stored.event.id === eventId)!;
     // Folded entities keep exactly their oldest row, now carrying the newest body.
     for (const key of ["command", "reasoning"] as const) {
-      const rows = rowsFor((revision) => `event:fold:${key}:${revision}`);
+      const rows = rowsFor((revision) => `event:fold:${threadId}:${key}:${revision}`);
       assert.lengthOf(rows, 1, key);
-      assert.equal(rows[0]!.sequence, finalWrite(`event:fold:${key}:0`).sequence);
+      assert.equal(rows[0]!.sequence, finalWrite(`event:fold:${threadId}:${key}:0`).sequence);
       assert.deepEqual(
         rows[0]!.event.payload,
-        finalWrite(`event:fold:${key}:${REVISIONS - 1}`).event.payload,
+        finalWrite(`event:fold:${threadId}:${key}:${REVISIONS - 1}`).event.payload,
       );
     }
-    const messageRows = rowsFor((revision) => `event:fold:message:${revision}`);
+    const messageRows = rowsFor((revision) => `event:fold:${threadId}:message:${revision}`);
     assert.lengthOf(messageRows, 1);
     assert.deepEqual(
       messageRows[0]!.event.payload,
-      finalWrite(`event:fold:message:${REVISIONS - 1}`).event.payload,
+      finalWrite(`event:fold:${threadId}:message:${REVISIONS - 1}`).event.payload,
     );
     // Commanded and subagent entities are untouched; the newest-row entity keeps first + latest.
     assert.lengthOf(
-      rowsFor((revision) => `event:fold:commanded:${revision}`),
+      rowsFor((revision) => `event:fold:${threadId}:commanded:${revision}`),
       REVISIONS,
     );
     assert.lengthOf(
-      rowsFor((revision) => `event:fold:subagent-item:${revision}`),
+      rowsFor((revision) => `event:fold:${threadId}:subagent-item:${revision}`),
       2,
     );
     assert.lengthOf(
-      rowsFor((revision) => `event:fold:todo:${revision}`),
+      rowsFor((revision) => `event:fold:${threadId}:todo:${revision}`),
       2,
     );
-    assert.equal(folded.foldedEntityCount, 3);
+    assert.equal(folded.foldedEntityCount, 6);
 
     // Sequence bounds and the snapshot cursor do not move.
-    assert.equal(yield* eventStore.latestSequence(), highWater);
+    assert.equal(yield* eventStore.latestSequence(), laterWrites.at(-1)!.sequence);
     assert.equal(
       (yield* projections.getThreadSnapshot(threadId)).snapshotSequence,
       beforeSnapshot.snapshotSequence,
     );
 
-    // The watermark is the highest folded-away sequence.
-    const watermark = (yield* sql<{ readonly last_sequence: number }>`
-      SELECT last_sequence FROM orchestration_v2_projection_metadata
-      WHERE projection_name = ${OrchestrationEventStore.SNAPSHOT_FOLD_METADATA_NAME}
-    `)[0]!.last_sequence;
+    // Each thread's watermark is its highest folded-away sequence; the global one is the max.
+    const watermarkOf = (name: string) =>
+      sql<{ readonly last_sequence: number }>`
+        SELECT last_sequence FROM orchestration_v2_projection_metadata
+        WHERE projection_name = ${name}
+      `.pipe(Effect.map((rows) => rows[0]!.last_sequence));
+    const watermark = yield* watermarkOf(
+      OrchestrationEventStore.snapshotFoldThreadMetadataName(threadId),
+    );
     const deleted = writes
       .filter((stored) => !after.some((kept) => kept.sequence === stored.sequence))
       .map((stored) => stored.sequence);
     assert.equal(watermark, Math.max(...deleted));
+    const laterWatermark = yield* watermarkOf(
+      OrchestrationEventStore.snapshotFoldThreadMetadataName(laterThreadId),
+    );
+    assert.isAbove(laterWatermark, beforeSnapshot.snapshotSequence);
+    assert.equal(
+      yield* watermarkOf(OrchestrationEventStore.SNAPSHOT_FOLD_METADATA_NAME),
+      laterWatermark,
+    );
 
     // Rebuild from the folded log equals the projection built from the full log.
     assert.isTrue((yield* maintenance.verify).valid);
@@ -362,13 +377,17 @@ it.effect("folds settled snapshots into their oldest row and rebuilds the same p
     assert.isTrue((yield* stats(0)).crossesSnapshotFold);
     assert.isTrue((yield* stats(watermark - 1)).crossesSnapshotFold);
     assert.isFalse((yield* stats(watermark)).crossesSnapshotFold);
+    // Opening this thread resumes from its snapshot cursor, which is below the later thread's
+    // folds: thread resume must still replay.
+    assert.isFalse((yield* stats(beforeSnapshot.snapshotSequence)).crossesSnapshotFold);
+    // Shell resume is global.
     assert.isTrue(
       (yield* applicationEvents.getReplayStats({ afterSequence: 0, throughSequence: highWater }))
         .crossesSnapshotFold,
     );
     assert.isFalse(
       (yield* applicationEvents.getReplayStats({
-        afterSequence: watermark,
+        afterSequence: laterWatermark,
         throughSequence: highWater,
       })).crossesSnapshotFold,
     );

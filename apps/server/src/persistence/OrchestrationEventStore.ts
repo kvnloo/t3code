@@ -34,11 +34,14 @@ import {
 } from "./Errors.ts";
 
 /**
- * `orchestration_v2_projection_metadata` row whose `last_sequence` is the highest sequence removed
- * by the opt-in snapshot fold (`ProjectionMaintenance.foldSupersededSnapshots`). Replay from a
- * cursor below it could miss an entity's final state, so resume must take a snapshot instead.
+ * Metadata rows holding the highest sequence the opt-in snapshot fold removed: globally (shell
+ * resume) and per thread (thread resume; idle threads' cursors sit below other threads' folds).
+ * Replay from a cursor below the watermark could miss state, so resume takes a snapshot instead.
  */
 export const SNAPSHOT_FOLD_METADATA_NAME = "event-snapshot-fold";
+
+export const snapshotFoldThreadMetadataName = (threadId: string) =>
+  `${SNAPSHOT_FOLD_METADATA_NAME}:${threadId}`;
 
 export type UnsequencedProjectEvent = ApplicationProjectEvent extends infer Event
   ? Event extends ApplicationProjectEvent
@@ -309,10 +312,13 @@ const makeEventStore = Effect.gen(function* () {
   END`;
 
   // The row exists only once the opt-in fold has run; until then this is always false.
-  const crossesSnapshotFold = (afterSequence: number) => sql`COALESCE((
+  const crossesSnapshotFold = (
+    afterSequence: number,
+    name = SNAPSHOT_FOLD_METADATA_NAME,
+  ) => sql`COALESCE((
     SELECT last_sequence > ${afterSequence}
     FROM orchestration_v2_projection_metadata
-    WHERE projection_name = ${SNAPSHOT_FOLD_METADATA_NAME}
+    WHERE projection_name = ${name}
   ), 0)`;
 
   const appendProjectEventRow = SqlSchema.findOne({
@@ -612,7 +618,10 @@ const makeEventStore = Effect.gen(function* () {
         COUNT(*) AS "eventCount",
         COALESCE(SUM(octet_length(payload_json)), 0) AS "rawPayloadBytes",
         COALESCE(MAX(event_type = 'thread.created'), 0) AS "hasCreateEvent",
-        ${crossesSnapshotFold(input.afterSequence)} AS "crossesSnapshotFold"
+        ${crossesSnapshotFold(
+          input.afterSequence,
+          snapshotFoldThreadMetadataName(input.threadId),
+        )} AS "crossesSnapshotFold"
       FROM (
         SELECT ${restoredPayloadJson} AS payload_json, event_type
         FROM orchestration_events
