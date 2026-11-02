@@ -12,6 +12,7 @@ import { measureDurable, pickThreads } from "./durable.ts";
 import { prepareHome } from "./prepare-home.ts";
 import { ORCHESTRATION_PROTOCOL_HEADER, ORCHESTRATION_PROTOCOL_VERSION } from "./protocol.ts";
 import {
+  readWriteBytes,
   repoRoot,
   sampleTree,
   startServer,
@@ -578,6 +579,7 @@ try {
         await observer.rpc.close();
         const driver = await connect(session);
         const before = logicalDbBytes(dbPath, benchThreadId!);
+        const writesBefore = readWriteBytes(server.pid);
         const turnStarted = performance.now();
         const turnSample = await withProcSampling(server.pid, async () => {
           const projection = (
@@ -600,6 +602,7 @@ try {
           return waitForRunsSettled(driver.rpc, benchThreadId!, runCount + 1);
         });
         const turnMs = performance.now() - turnStarted;
+        const writesAfter = readWriteBytes(server.pid);
         await driver.rpc.close();
         const after = logicalDbBytes(dbPath, benchThreadId!);
         record({
@@ -611,6 +614,9 @@ try {
           dbUsedDelta: after.usedBytes - before.usedBytes,
           threadBytesDelta: after.threadBytes - before.threadBytes,
           threadByTable: after.byTable,
+          ...(writesBefore === undefined || writesAfter === undefined
+            ? {}
+            : { serverWriteBytes: writesAfter - writesBefore }),
           peakRss: turnSample.peakServerRss,
           cpuS: turnSample.cpuS,
         });
