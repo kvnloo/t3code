@@ -19,6 +19,9 @@ type TypeLayouts = Readonly<Record<string, TypeLayout>>;
 
 const textDecoder = new TextDecoder();
 
+// A stalled download never settles on its own, and every terminal open waits on the shared load.
+const LOAD_TIMEOUT_MS = 30_000;
+
 export class GhosttyRuntime {
   readonly memory: WebAssembly.Memory;
   readonly layouts: TypeLayouts;
@@ -46,7 +49,20 @@ export class GhosttyRuntime {
   }
 
   static async load(): Promise<GhosttyRuntime> {
-    const response = await fetch(ghosttyWasmUrl);
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(new Error("Timed out loading libghostty-vt")),
+      LOAD_TIMEOUT_MS,
+    );
+    try {
+      return await GhosttyRuntime.loadWithin(controller.signal);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private static async loadWithin(signal: AbortSignal): Promise<GhosttyRuntime> {
+    const response = await fetch(ghosttyWasmUrl, { signal });
     if (!response.ok) {
       throw new Error(`Unable to load libghostty-vt (${response.status})`);
     }
@@ -65,7 +81,7 @@ export class GhosttyRuntime {
     const result = await WebAssembly.instantiate(await response.arrayBuffer(), imports);
     instance = result.instance;
     const runtime = new GhosttyRuntime(result.instance);
-    await runtime.installWritePtyTrampoline();
+    await runtime.installWritePtyTrampoline(signal);
     return runtime;
   }
 
@@ -208,8 +224,8 @@ export class GhosttyRuntime {
     }
   }
 
-  private async installWritePtyTrampoline(): Promise<void> {
-    const response = await fetch(ghosttyWritePtyWasmUrl);
+  private async installWritePtyTrampoline(signal: AbortSignal): Promise<void> {
+    const response = await fetch(ghosttyWritePtyWasmUrl, { signal });
     if (!response.ok) {
       throw new Error(`Unable to load the libghostty-vt PTY trampoline (${response.status})`);
     }
