@@ -13,6 +13,7 @@ import * as EventStore from "../orchestration-v2/EventStore.ts";
 import * as ProjectionMaintenance from "../orchestration-v2/ProjectionMaintenance.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import { rebuildMessageSearch } from "../orchestration-v2/messageSearchIndex.ts";
+import { experimentalPageSize } from "./experimentalPageSize.ts";
 
 export class DatabaseMissingError extends Schema.TaggedError<DatabaseMissingError>()(
   "DatabaseMissingError",
@@ -76,6 +77,7 @@ export class DatabaseMaintenance extends Context.Service<
         readonly databaseBytes: number;
         readonly reclaimableBytes: number;
         readonly incrementalVacuumEnabled: boolean;
+        readonly pageSize: number;
         /** Size of the database from before 0.1.0 still kept beside it, or null. */
         readonly legacyDatabaseBytes: number | null;
       },
@@ -116,6 +118,7 @@ const readStorage = Effect.gen(function* () {
     databaseBytes: (pages[0]?.page_count ?? 0) * pageSize,
     reclaimableBytes: (free[0]?.freelist_count ?? 0) * pageSize,
     incrementalVacuumEnabled: mode[0]?.auto_vacuum === 2,
+    pageSize,
   };
 });
 
@@ -187,9 +190,18 @@ const make = Effect.gen(function* () {
         if (!(yield* maintenance.verify).valid) {
           return yield* new DatabaseProjectionsInvalidError({ path: databasePath });
         }
+        // A WAL database keeps its page size through VACUUM, so leave WAL while it is rewritten.
+        const pageSize = yield* experimentalPageSize;
+        const current = yield* sql<{ readonly page_size: number }>`PRAGMA page_size`;
+        const resize = pageSize !== undefined && current[0]?.page_size !== pageSize;
+        if (resize) {
+          yield* sql`PRAGMA journal_mode = DELETE`;
+          yield* sql.unsafe(`PRAGMA page_size = ${pageSize}`);
+        }
         // VACUUM is required to enable incremental auto_vacuum on existing databases.
         yield* sql`PRAGMA auto_vacuum = INCREMENTAL`;
         yield* sql`VACUUM`;
+        if (resize) yield* sql`PRAGMA journal_mode = WAL`;
         yield* rebuildMessageSearch(sql);
         yield* sql`PRAGMA wal_checkpoint(TRUNCATE)`;
         return summary;

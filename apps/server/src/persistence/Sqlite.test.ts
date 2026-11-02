@@ -6,6 +6,7 @@ import * as NodePath from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -92,6 +93,38 @@ it.effect("drops planner statistics a database already has", () => {
         "SEARCH parent USING INDEX sqlite_autoindex_walk_probe_1 (node_id=?)",
       );
     }).pipe(Effect.provide(persistence()));
+  }).pipe(
+    Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
+  );
+});
+
+it.effect("creates new databases at the experimental page size only when opted in", () => {
+  const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sqlite-page-size-"));
+  const open = (name: string, env: Record<string, string>) =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const size = yield* sql<{ readonly page_size: number }>`PRAGMA page_size`;
+      const mode = yield* sql<{ readonly journal_mode: string }>`PRAGMA journal_mode`;
+      return [size[0]?.page_size, mode[0]?.journal_mode];
+    }).pipe(
+      Effect.provide(
+        SqlitePersistence.layerFromPath(NodePath.join(tempDir, name)).pipe(
+          Layer.provide(NodeServices.layer),
+          Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))),
+        ),
+      ),
+    );
+  const optIn = { T3CODE_EXPERIMENTAL_PAGE_SIZE: "16384" };
+
+  return Effect.gen(function* () {
+    assert.deepEqual(yield* open("default.sqlite", {}), [4096, "wal"]);
+    assert.deepEqual(yield* open("opted-in.sqlite", optIn), [16384, "wal"]);
+    // Existing databases keep their page size; only doctor's VACUUM rewrites it.
+    assert.deepEqual(yield* open("default.sqlite", optIn), [4096, "wal"]);
+    assert.deepEqual(yield* open("invalid.sqlite", { T3CODE_EXPERIMENTAL_PAGE_SIZE: "10000" }), [
+      4096,
+      "wal",
+    ]);
   }).pipe(
     Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
   );

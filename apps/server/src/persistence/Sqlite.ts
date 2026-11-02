@@ -5,6 +5,7 @@ import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
+import { experimentalPageSize } from "./experimentalPageSize.ts";
 import { runMigrations } from "./Migrations.ts";
 import { initializeV2Database } from "./initializeV2Database.ts";
 import * as ServerConfig from "../config.ts";
@@ -21,7 +22,12 @@ const layerSetup = Layer.effectDiscard(
     const tables = yield* sql<{
       readonly count: number;
     }>`SELECT COUNT(*) AS count FROM sqlite_schema WHERE type = 'table'`;
-    if (tables[0]?.count === 0) yield* sql`PRAGMA auto_vacuum = INCREMENTAL;`;
+    if (tables[0]?.count === 0) {
+      // Page size is fixed once the first table exists, so it must precede everything below.
+      const pageSize = yield* experimentalPageSize;
+      if (pageSize !== undefined) yield* sql.unsafe(`PRAGMA page_size = ${pageSize};`);
+      yield* sql`PRAGMA auto_vacuum = INCREMENTAL;`;
+    }
     yield* sql`PRAGMA journal_mode = WAL;`;
     // FULL fsyncs every event commit on the main thread; NORMAL syncs only at WAL checkpoints.
     // App crashes lose nothing; OS crashes or power loss can roll back post-checkpoint commits without corruption.

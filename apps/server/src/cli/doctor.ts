@@ -6,6 +6,7 @@ import { Command, Flag, GlobalFlag, Prompt } from "effect/cli";
 
 import * as BootService from "../cloud/bootService.ts";
 import * as DatabaseMaintenance from "../persistence/DatabaseMaintenance.ts";
+import { experimentalPageSize } from "../persistence/experimentalPageSize.ts";
 import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
 import * as CliService from "./service.ts";
 
@@ -30,8 +31,10 @@ export const runDoctor = Effect.fn("runDoctor")(function* (
       `Database from before 0.1.0: ${formatBytes(status.legacyDatabaseBytes)}, kept for rolling back.`,
     );
   }
+  const pageSize = yield* experimentalPageSize;
+  const resizePages = pageSize !== undefined && status.pageSize !== pageSize;
   const repairs = [
-    ...(status.incrementalVacuumEnabled && status.reclaimableBytes === 0
+    ...(status.incrementalVacuumEnabled && status.reclaimableBytes === 0 && !resizePages
       ? []
       : [
           {
@@ -41,8 +44,13 @@ export const runDoctor = Effect.fn("runDoctor")(function* (
               status.incrementalVacuumEnabled
                 ? "Returns unused space to disk."
                 : "Returns unused space to disk and turns on automatic shrinking."
+            }${
+              resizePages
+                ? ` Rewrites ${status.pageSize}-byte pages as ${pageSize}-byte pages.`
+                : ""
             }\n  Pauses the background service, if installed, while it runs and may need temporary disk space.`,
             recommended:
+              resizePages ||
               !status.incrementalVacuumEnabled ||
               status.reclaimableBytes >= DATABASE_COMPACTION_RECOMMENDED_BYTES,
           },

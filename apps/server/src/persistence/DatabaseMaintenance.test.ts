@@ -3,6 +3,7 @@ import { assert, it } from "@effect/vitest";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as Clock from "effect/Clock";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -185,7 +186,77 @@ it.layer(DatabaseMaintenance.layer.pipe(Layer.provideMerge(NodeServices.layer)))
         yield* Effect.gen(function* () {
           const sql = yield* SqlClient.SqlClient;
           assert.deepEqual(yield* sql`PRAGMA auto_vacuum`, [{ auto_vacuum: 2 }]);
+          assert.deepEqual(yield* sql`PRAGMA page_size`, [{ page_size: 4096 }]);
           assert.deepEqual(yield* sql`SELECT value FROM retained_data`, [{ value: "keep" }]);
+          assert.deepEqual(
+            yield* sql`
+              SELECT messages.message_id AS "messageId"
+              FROM orchestration_v2_message_search AS search
+              INNER JOIN orchestration_v2_projection_messages AS messages
+                ON messages.rowid = search.rowid
+              WHERE orchestration_v2_message_search MATCH '"needle"'
+            `,
+            [{ messageId: "message-1" }],
+          );
+        }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: dbPath, readonly: true })));
+      }).pipe(Effect.scoped),
+    );
+
+    it.effect("rewrites a WAL database at the experimental page size and returns it to WAL", () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const maintenance = yield* DatabaseMaintenance.DatabaseMaintenance;
+        const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-page-size-" });
+        const dbPath = path.join(baseDir, "userdata", "statev2.sqlite");
+        yield* Effect.gen(function* () {
+          const projections = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+          yield* projections.rebuild;
+          const sql = yield* SqlClient.SqlClient;
+          yield* sql`
+            INSERT INTO orchestration_v2_projection_messages (
+              message_id, thread_id, run_id, node_id, role, streaming, created_at, updated_at, payload_json
+            )
+            VALUES (
+              'message-1', 'thread-1', NULL, NULL, 'user', 0,
+              '2026-09-01T00:00:00.000Z', '2026-09-01T00:00:00.000Z', '{"text":"needle"}'
+            )
+          `;
+          yield* sql`PRAGMA wal_checkpoint(TRUNCATE)`;
+        }).pipe(
+          Effect.provide(
+            ProjectionMaintenance.layer.pipe(
+              Layer.provide(Layer.merge(EventStore.layer, ProjectionStore.layer)),
+              Layer.provideMerge(Sqlite.layerFromPath(dbPath)),
+            ),
+          ),
+        );
+        const pragmas = Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          return {
+            pageSize: (yield* sql<{ readonly page_size: number }>`PRAGMA page_size`)[0]?.page_size,
+            journalMode: (yield* sql<{ readonly journal_mode: string }>`PRAGMA journal_mode`)[0]
+              ?.journal_mode,
+          };
+        }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: dbPath })));
+        assert.deepEqual(yield* pragmas, { pageSize: 4096, journalMode: "wal" });
+        assert.equal((yield* maintenance.inspect(dbPath)).pageSize, 4096);
+
+        yield* maintenance
+          .compact(dbPath)
+          .pipe(
+            Effect.provide(
+              ConfigProvider.layer(
+                ConfigProvider.fromUnknown({ T3CODE_EXPERIMENTAL_PAGE_SIZE: "16384" }),
+              ),
+            ),
+          );
+        assert.deepEqual(yield* pragmas, { pageSize: 16384, journalMode: "wal" });
+        assert.equal((yield* maintenance.inspect(dbPath)).pageSize, 16384);
+        yield* Effect.gen(function* () {
+          const sql = yield* SqlClient.SqlClient;
+          assert.deepEqual(yield* sql`PRAGMA auto_vacuum`, [{ auto_vacuum: 2 }]);
+          assert.deepEqual(yield* sql`PRAGMA integrity_check`, [{ integrity_check: "ok" }]);
           assert.deepEqual(
             yield* sql`
               SELECT messages.message_id AS "messageId"
