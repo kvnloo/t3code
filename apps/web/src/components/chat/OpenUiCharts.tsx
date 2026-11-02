@@ -14,6 +14,7 @@ import {
   findTreemapNode,
   fitLabel,
   formatCount,
+  heatmapDensity,
   heatmapReadout,
   inspectParsedChartBoard,
   layoutTreemap,
@@ -22,6 +23,7 @@ import {
   shade,
   stackSeries,
   stackedReadout,
+  tailPath,
   treemapReadout,
 } from "@t3tools/client-runtime/openui-charts";
 
@@ -130,7 +132,7 @@ const BarChartPanel = memo(function BarChartPanel({ props }: { props: z.infer<ty
       <ul className="space-y-2">
         {props.bars.map((bar, index) => (
           <li key={index} className="grid grid-cols-[7rem_1fr_3rem] items-center gap-2 text-xs">
-            <span className="truncate">{bar.label}</span>
+            <span className="truncate" title={bar.label}>{tailPath(bar.label, 18)}</span>
             <meter className="h-3 w-full" min={0} max={max || 1} value={bar.value} aria-label={`${bar.label}: ${formatCount(bar.value)} ${props.unit}`} />
             <span className="text-right font-semibold">{formatCount(bar.value)}</span>
           </li>
@@ -176,12 +178,17 @@ const StackedAreaPanel = memo(function StackedAreaPanel({ props }: { props: z.in
 const HeatmapPanel = memo(function HeatmapPanel({ props }: { props: z.infer<typeof heatmapProps> }) {
   const max = useMemo(() => Math.max(0, ...props.counts.flat()), [props.counts]);
   const [cell, setCell] = useState<readonly [number, number] | null>(null);
+  const { dense, labelEvery } = heatmapDensity(props.columns.length);
   return (
     <section aria-label={props.title} className="space-y-2">
       <h4 className="font-semibold">{props.title}</h4>
-      <div role="group" aria-label={`${props.title} heatmap`} className="grid gap-1 text-xs" style={{ gridTemplateColumns: `3rem repeat(${props.columns.length}, minmax(0, 1fr))` }}>
+      <div role="group" aria-label={`${props.title} heatmap`} className={dense ? "grid gap-0.5 text-xs" : "grid gap-1 text-xs"} style={{ gridTemplateColumns: `3rem repeat(${props.columns.length}, minmax(0, 1fr))` }}>
         <span />
-        {props.columns.map((column, index) => <span key={index} className="truncate text-center text-muted-foreground">{column}</span>)}
+        {props.columns.map((column, index) => (
+          <span key={index} className={dense ? "overflow-visible whitespace-nowrap text-muted-foreground" : "truncate text-center text-muted-foreground"}>
+            {index % labelEvery === 0 ? column : null}
+          </span>
+        ))}
         {props.rows.map((row, rowIndex) => [
           <span key={`label-${rowIndex}`} className="truncate self-center">{row}</span>,
           ...props.columns.map((column, columnIndex) => {
@@ -190,8 +197,8 @@ const HeatmapPanel = memo(function HeatmapPanel({ props }: { props: z.infer<type
             const active = cell?.[0] === rowIndex && cell[1] === columnIndex;
             return (
               <button key={`${rowIndex}-${columnIndex}`} type="button" aria-label={heatmapReadout(row, column, value, props.unit)} onClick={() => setCell([rowIndex, columnIndex])}
-                className="min-h-10 min-w-0 rounded font-semibold" style={{ backgroundColor: sequentialColor(intensity), color: sequentialLabelColor(intensity), outline: active ? "2px solid #f2c14e" : undefined }}>
-                {formatCount(value)}
+                className={dense ? "min-h-6 min-w-0 rounded-sm" : "min-h-10 min-w-0 rounded font-semibold"} style={{ backgroundColor: sequentialColor(intensity), color: sequentialLabelColor(intensity), outline: active ? "2px solid #f2c14e" : undefined }}>
+                {dense ? null : formatCount(value)}
               </button>
             );
           }),

@@ -161,14 +161,36 @@ export function buildTreemap(rows: ReadonlyArray<TreemapRow>): TreemapNode {
     }
   };
   total(root);
+  // A folder with one entry costs a tap and shows one full-size tile, so fold it into that entry:
+  // home/ > kvn/ > models/ becomes "home/kvn/models/". The root adopts a lone top folder's path.
+  const collapse = (node: MutableNode) => {
+    for (const [index, child] of node.children.entries()) {
+      let merged = child;
+      while (merged.children.length === 1) {
+        const only = merged.children[0]!;
+        merged = { ...only, name: `${merged.name}/${only.name}`, parent: node };
+      }
+      for (const grandchild of merged.children) grandchild.parent = merged;
+      node.children[index] = merged;
+      collapse(merged);
+    }
+  };
+  collapse(root);
+  if (root.children.length === 1 && root.children[0]!.children.length > 0) {
+    const only = root.children[0]!;
+    root.path = only.path;
+    root.children = only.children;
+    for (const child of root.children) child.parent = root;
+  }
   return root;
 }
 
-/** Find a folder by path, falling back to the root when it no longer exists. */
+/** Find a node by its full path, falling back to the root when it no longer exists. */
 export function findTreemapNode(root: TreemapNode, path: string): TreemapNode {
+  const target = pathParts(path).join("/");
   let node = root;
-  for (const part of pathParts(path)) {
-    const child = node.children.find((candidate) => candidate.name === part);
+  while (node.path !== target) {
+    const child = node.children.find((candidate) => target === candidate.path || target.startsWith(`${candidate.path}/`));
     if (!child) return root;
     node = child;
   }
@@ -261,6 +283,15 @@ export function bandPoints(lower: ReadonlyArray<number>, upper: ReadonlyArray<nu
   return [...top, ...bottom].join(" ");
 }
 
+/**
+ * Heatmaps wider than a dozen columns (hours of a day) drop in-cell numbers and label every
+ * `labelEvery`th column; exact values stay one tap away in the readout.
+ */
+export function heatmapDensity(columns: number) {
+  const dense = columns > 12;
+  return { dense, labelEvery: dense ? Math.ceil(columns / 8) : 1 };
+}
+
 /** 0..1 intensity for a heatmap or treemap value; a zero maximum keeps everything at 0. */
 export function shade(value: number, max: number) {
   return max > 0 ? Math.min(1, Math.max(0, value / max)) : 0;
@@ -291,10 +322,19 @@ export function fitLabel(text: string, widthPx: number, charPx: number) {
   return chars.length <= max ? text : max === 1 ? "…" : `${chars.slice(0, max - 1).join("")}…`;
 }
 
+/** Paths lose their start rather than their file name: "…/models/qwen3-32b.gguf". Other labels are returned as is. */
+export function tailPath(label: string, maxChars: number) {
+  const chars = Array.from(label);
+  if (!label.includes("/") || chars.length <= maxChars || maxChars < 2) return label;
+  return `…${chars.slice(chars.length - (maxChars - 1)).join("")}`;
+}
+
 const withUnit = (value: number, unit: string) => (unit ? `${formatCount(value)} ${unit}` : formatCount(value));
 
 export function treemapReadout(node: TreemapNode, sizeLabel: string, colorLabel: string) {
-  return `${node.path || "All files"} · ${formatCount(node.size)} ${sizeLabel} · ${formatCount(node.color)} ${colorLabel}`;
+  const size = `${node.path || "All files"} · ${formatCount(node.size)} ${sizeLabel}`;
+  // Disk-style maps color by the size metric; repeating the same figure adds nothing.
+  return colorLabel === sizeLabel && node.color === node.size ? size : `${size} · ${formatCount(node.color)} ${colorLabel}`;
 }
 
 export function stackedReadout(category: string, series: ReadonlyArray<StackedSeries>, index: number, unit: string) {

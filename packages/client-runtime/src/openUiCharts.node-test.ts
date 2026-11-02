@@ -8,11 +8,13 @@ import {
   chartPanelProblem,
   findTreemapNode,
   fitLabel,
+  heatmapDensity,
   heatmapReadout,
   layoutTreemap,
   shade,
   stackedReadout,
   stackSeries,
+  tailPath,
   treemapReadout,
 } from "./openUiCharts.ts";
 
@@ -82,4 +84,41 @@ test("category markers line up with band vertices", () => {
   const points = bandPoints([0, 0, 0], [1, 2, 3], 3, 300, 100).split(" ").slice(0, 3).map((point) => Number(point.split(",")[0]));
   assert.deepEqual([0, 1, 2].map((index) => categoryX(index, 3, 300)), points);
   assert.equal(categoryX(0, 1, 300), 0);
+});
+
+test("single-entry folders fold into their entry", () => {
+  const disk = buildTreemap([
+    { path: "home/kvn/models/qwen3-32b.gguf", size: 19800, color: 19800 },
+    { path: "home/kvn/.cache/pnpm/store", size: 6100, color: 6100 },
+    { path: "var/lib/docker/overlay2", size: 15600, color: 15600 },
+    { path: "var/log/journal", size: 1200, color: 1200 },
+    { path: "opt/cuda", size: 5400, color: 5400 },
+  ]);
+  assert.deepEqual(disk.children.map((child) => child.name).sort(), ["home/kvn", "opt/cuda", "var"]);
+  const home = findTreemapNode(disk, "home/kvn");
+  assert.deepEqual(home.children.map((child) => child.name).sort(), [".cache/pnpm/store", "models/qwen3-32b.gguf"]);
+  assert.equal(findTreemapNode(disk, "home/kvn/models/qwen3-32b.gguf").size, 19800);
+  assert.equal(findTreemapNode(disk, "home"), disk);
+  assert.equal(findTreemapNode(disk, "var/lib/docker/overlay2").parent, findTreemapNode(disk, "var"));
+  assert.equal(treemapReadout(disk, "MB", "MB"), "All files · 48,100 MB");
+  assert.equal(treemapReadout(findTreemapNode(disk, "var"), "MB", "MB"), "var · 16,800 MB");
+
+  const nested = buildTreemap([{ path: "apps/mobile/src/a.ts", size: 2, color: 1 }, { path: "apps/mobile/src/b.ts", size: 3, color: 1 }]);
+  assert.equal(nested.path, "apps/mobile/src");
+  assert.deepEqual(nested.children.map((child) => child.name), ["a.ts", "b.ts"]);
+  assert.equal(findTreemapNode(nested, ""), nested);
+  assert.equal(treemapReadout(nested, "LOC", "commits"), "apps/mobile/src · 5 LOC · 2 commits");
+});
+
+test("path labels keep their file name", () => {
+  assert.equal(tailPath("home/kvn/models/qwen3-32b.gguf", 16), "…/qwen3-32b.gguf");
+  assert.equal(tailPath("web unit", 4), "web unit");
+  assert.equal(tailPath("src/a.ts", 16), "src/a.ts");
+});
+
+test("wide heatmaps switch to dense cells with sparse column labels", () => {
+  assert.deepEqual(heatmapDensity(5), { dense: false, labelEvery: 1 });
+  assert.deepEqual(heatmapDensity(12), { dense: false, labelEvery: 1 });
+  assert.deepEqual(heatmapDensity(24), { dense: true, labelEvery: 3 });
+  assert.deepEqual(heatmapDensity(48), { dense: true, labelEvery: 6 });
 });

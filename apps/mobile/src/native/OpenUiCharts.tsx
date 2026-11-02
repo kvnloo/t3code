@@ -14,6 +14,7 @@ import {
   buildTreemap,
   findTreemapNode,
   formatCount,
+  heatmapDensity,
   heatmapReadout,
   inspectParsedChartBoard,
   layoutTreemap,
@@ -167,7 +168,7 @@ const BarChartPanel = memo(function BarChartPanel({ props }: { props: z.infer<ty
       <PanelTitle>{props.title}</PanelTitle>
       {props.bars.map((bar, index) => (
         <View key={index} accessible accessibilityLabel={`${bar.label}: ${formatCount(bar.value)} ${props.unit}`} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <AppText numberOfLines={1} className="text-xs" style={{ width: 104 }}>{bar.label}</AppText>
+          <AppText numberOfLines={1} ellipsizeMode={bar.label.includes("/") ? "head" : "tail"} className="text-xs" style={{ width: 104 }}>{bar.label}</AppText>
           <View className="bg-secondary" style={{ flex: 1, height: 12, borderRadius: 3, overflow: "hidden" }}>
             <View style={{ height: 12, width: `${shade(bar.value, max) * 100}%`, backgroundColor: OPENUI_SERIES_COLORS[0] }} />
           </View>
@@ -220,16 +221,23 @@ const StackedAreaPanel = memo(function StackedAreaPanel({ props }: { props: z.in
 const HeatmapPanel = memo(function HeatmapPanel({ props }: { props: z.infer<typeof heatmapProps> }) {
   const max = useMemo(() => Math.max(0, ...props.counts.flat()), [props.counts]);
   const [cell, setCell] = useState<readonly [number, number] | null>(null);
+  const { dense, labelEvery } = heatmapDensity(props.columns.length);
+  const gap = dense ? 2 : 4;
   return (
     <View style={{ gap: 8 }}>
       <PanelTitle>{props.title}</PanelTitle>
-      <View accessibilityLabel={`${props.title} heatmap`} style={{ gap: 4 }}>
-        <View style={{ flexDirection: "row", gap: 4 }}>
+      <View accessibilityLabel={`${props.title} heatmap`} style={{ gap }}>
+        <View style={{ flexDirection: "row", gap }}>
           <View style={{ width: 44 }} />
-          {props.columns.map((column, index) => <AppText key={index} numberOfLines={1} className="text-xs text-foreground-muted" style={{ flex: 1, textAlign: "center" }}>{column}</AppText>)}
+          {props.columns.map((column, index) => (
+            // Dense labels may overflow their 1/24 slot; they start at their column and skip the next few.
+            <View key={index} style={{ flex: 1, overflow: "visible" }}>
+              {index % labelEvery === 0 ? <AppText numberOfLines={1} className="text-xs text-foreground-muted" style={dense ? { width: 40 } : { textAlign: "center" }}>{column}</AppText> : null}
+            </View>
+          ))}
         </View>
         {props.rows.map((row, rowIndex) => (
-          <View key={rowIndex} style={{ flexDirection: "row", gap: 4, alignItems: "center" }}>
+          <View key={rowIndex} style={{ flexDirection: "row", gap, alignItems: "center" }}>
             <AppText numberOfLines={1} className="text-xs" style={{ width: 44 }}>{row}</AppText>
             {props.columns.map((column, columnIndex) => {
               const value = props.counts[rowIndex]?.[columnIndex] ?? 0;
@@ -241,9 +249,9 @@ const HeatmapPanel = memo(function HeatmapPanel({ props }: { props: z.infer<type
                   accessibilityRole="button"
                   accessibilityLabel={heatmapReadout(row, column, value, props.unit)}
                   onPress={() => setCell([rowIndex, columnIndex])}
-                  style={{ flex: 1, minHeight: 40, borderRadius: 4, alignItems: "center", justifyContent: "center", backgroundColor: sequentialColor(intensity), borderWidth: active ? 2 : 0, borderColor: "#f2c14e" }}
+                  style={{ flex: 1, minHeight: dense ? 22 : 40, borderRadius: dense ? 2 : 4, alignItems: "center", justifyContent: "center", backgroundColor: sequentialColor(intensity), borderWidth: active ? 2 : 0, borderColor: "#f2c14e" }}
                 >
-                  <AppText style={{ color: sequentialLabelColor(intensity), fontSize: 12, fontWeight: "600" }}>{formatCount(value)}</AppText>
+                  {dense ? null : <AppText style={{ color: sequentialLabelColor(intensity), fontSize: 12, fontWeight: "600" }}>{formatCount(value)}</AppText>}
                 </Pressable>
               );
             })}
