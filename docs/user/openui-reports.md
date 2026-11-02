@@ -9,18 +9,22 @@ when you choose to render a report. Other code blocks keep their usual behavior.
 
 Catalog version 1 supports a title, summary, metrics, a table, and percentage
 bars. Catalog version 2 (an `openui-v2` code block) is a chart board: a title, a
-summary, and up to eight panels.
+summary, and up to eight panels. A chart board renders on its own once its code
+block is complete; **Show source** still returns to the program.
 
 - **Treemap**: files sized by one number and shaded by another. Tap a folder to
-  open it, Back to return, and a file to see its values.
-- **BarChart**: horizontal bars of raw values.
+  open it, Back to return, and a file to see its values. A folder that holds a
+  single entry is merged with it, so `home/kvn/` opens in one tap.
+- **BarChart**: horizontal bars of raw values. Long path labels keep their file
+  name and drop the start of the path.
 - **StackedArea**: counts per category stacked by series. Tap a category to see
-  exact values.
+  exact values and mark it on the chart.
 - **Heatmap**: counts on labeled rows and columns, zeros included. Tap a cell to
-  see its exact count.
+  see its exact count. Grids wider than 12 columns, such as hours of the day,
+  show compact cells and label every few columns; the counts stay one tap away.
 
 Charts keep their selections locally; tapping never sends a message or fetches
-anything.
+anything. Scrolling a long conversation can reset a selection.
 
 Reports cannot call tools, run queries or mutations, maintain generated
 state, or dispatch actions. Invalid or incomplete reports display a notice; the
