@@ -12,6 +12,7 @@ import { measureDurable, pickThreads } from "./durable.ts";
 import { prepareHome } from "./prepare-home.ts";
 import { ORCHESTRATION_PROTOCOL_HEADER, ORCHESTRATION_PROTOCOL_VERSION } from "./protocol.ts";
 import {
+  readOwnWriteBytes,
   readWriteBytes,
   repoRoot,
   sampleTree,
@@ -19,6 +20,7 @@ import {
   withProcSampling,
   type RunningServer,
 } from "./server.ts";
+import { diffIoTap, readIoTap } from "./iotap.ts";
 import { WsRpc } from "./wsrpc.ts";
 
 const { values: args } = NodeUtil.parseArgs({
@@ -33,6 +35,9 @@ const { values: args } = NodeUtil.parseArgs({
     "server-env": { type: "string", multiple: true, default: [] },
     // Reuse another run's thread picks (run.json) so A/B arms open the same threads.
     "picks-from": { type: "string" },
+    // Bench-only LD_PRELOAD write tap (cc -O2 -shared -fPIC -o iotap.so bench/poh/iotap.c -ldl):
+    // splits turn writes into WAL frames/commits and checkpoint copy-back. Use in every arm.
+    iotap: { type: "string" },
   },
 });
 const serverEnv = Object.fromEntries(
@@ -43,6 +48,7 @@ const serverEnv = Object.fromEntries(
   }),
 );
 const RUNS = Number(args.runs);
+let ioTapDir: string | undefined;
 const WARM = Number(args.warm);
 const TURNS_PER_BOOT = Number(args.turns);
 const sha = NodeChildProcess.execFileSync("git", ["rev-parse", "HEAD"], {
@@ -60,6 +66,13 @@ const dirty = NodeChildProcess.execFileSync(
 const stamp = new Date().toISOString().replace(/[:.]/g, "-");
 const out = NodePath.resolve(args.out ?? NodePath.join(repoRoot, ".t3/bench/results", stamp));
 NodeFS.mkdirSync(out, { recursive: true });
+if (args.iotap !== undefined) {
+  ioTapDir = NodePath.join(out, "iotap");
+  NodeFS.mkdirSync(ioTapDir, { recursive: true });
+  serverEnv.LD_PRELOAD = NodePath.resolve(args.iotap);
+  serverEnv.POH_IOTAP_DIR = ioTapDir;
+  serverEnv.POH_IOTAP_PAGES = "1";
+}
 const benchHome = NodePath.join(repoRoot, ".t3/bench");
 const t3Home = NodePath.join(benchHome, `home-${stamp}`);
 const samplesPath = NodePath.join(out, "samples.ndjson");
@@ -580,6 +593,8 @@ try {
         const driver = await connect(session);
         const before = logicalDbBytes(dbPath, benchThreadId!);
         const writesBefore = readWriteBytes(server.pid);
+        const tapBefore = readIoTap(ioTapDir, server.pid);
+        const ownWritesBefore = readOwnWriteBytes(server.pid);
         const turnStarted = performance.now();
         const turnSample = await withProcSampling(server.pid, async () => {
           const projection = (
@@ -603,6 +618,8 @@ try {
         });
         const turnMs = performance.now() - turnStarted;
         const writesAfter = readWriteBytes(server.pid);
+        const io = diffIoTap(tapBefore, readIoTap(ioTapDir, server.pid));
+        const ownWritesAfter = readOwnWriteBytes(server.pid);
         await driver.rpc.close();
         const after = logicalDbBytes(dbPath, benchThreadId!);
         record({
@@ -617,6 +634,10 @@ try {
           ...(writesBefore === undefined || writesAfter === undefined
             ? {}
             : { serverWriteBytes: writesAfter - writesBefore }),
+          ...(ownWritesBefore === undefined || ownWritesAfter === undefined
+            ? {}
+            : { serverOwnWriteBytes: ownWritesAfter - ownWritesBefore }),
+          ...(io === undefined ? {} : { io, ioStart: tapBefore }),
           peakRss: turnSample.peakServerRss,
           cpuS: turnSample.cpuS,
         });
@@ -672,6 +693,7 @@ try {
         treeRss: end.treeRss,
         treeCpuS: end.treeCpuS,
         processes: end.processes,
+        io: readIoTap(ioTapDir, server.pid),
       });
       void sidebar;
     } finally {

@@ -229,6 +229,35 @@ export function metricsFor(samples: Sample[]): Metric[] {
     turns.filter((s) => s.serverWriteBytes !== undefined).map((s) => s.serverWriteBytes),
   );
   add(
+    "turn.sim.server_own_write.bytes",
+    "bytes",
+    turns.filter((s) => s.serverOwnWriteBytes !== undefined).map((s) => s.serverOwnWriteBytes),
+  );
+  // Write-syscall split from the bench-only iotap (WAL frames vs checkpoint copy-back).
+  const tapped = turns.filter((s) => s.io !== undefined);
+  const io = (name: string) => tapped.map((s) => s.io[name] as number);
+  add("turn.sim.tap.wal.bytes", "bytes", io("walBytes"));
+  add("turn.sim.tap.wal_frames.count", "count", io("walFrames"));
+  add("turn.sim.tap.wal_commits.count", "count", io("walCommits"));
+  add(
+    "turn.sim.tap.wal_bytes_per_commit.bytes",
+    "bytes",
+    tapped.filter((s) => s.io.walCommits > 0).map((s) => s.io.walBytes / s.io.walCommits),
+  );
+  add(
+    "turn.sim.tap.frames_per_commit.count",
+    "count",
+    tapped.filter((s) => s.io.walCommits > 0).map((s) => s.io.walFrames / s.io.walCommits),
+  );
+  add("turn.sim.tap.db_copyback.bytes", "bytes", io("dbBytes"));
+  add("turn.sim.tap.wal_resets.count", "count", io("walHeaders"));
+  add("turn.sim.tap.other_files.bytes", "bytes", io("otherBytes"));
+  add(
+    "turn.sim.tap.sqlite_total.bytes",
+    "bytes",
+    tapped.map((s) => s.io.walBytes + s.io.dbBytes + s.io.journalBytes),
+  );
+  add(
     "turn.sim.cpu.s",
     "s",
     turns.filter((s) => s.cpuS !== undefined).map((s) => s.cpuS),
