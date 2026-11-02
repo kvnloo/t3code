@@ -5,9 +5,11 @@ import { Button } from "../ui/button";
 const Report = lazy(() => import("./OpenUiReport").then((module) => ({ default: module.OpenUiReport })));
 const Charts = lazy(() => import("./OpenUiCharts").then((module) => ({ default: module.OpenUiCharts })));
 
-/** The versioned fence stays in the normal transcript; rendering is explicitly opt-in. */
+/** The versioned fence stays in the normal transcript; v1 reports render on request, v2 boards once complete. */
 export function MarkdownOpenUiCodeBlock({ code, version, isStreaming }: { code: string; version: 1 | 2; isStreaming: boolean }) {
-  const [showReport, setShowReport] = useState(false);
+  // Chart boards are the answer itself, so they render once the fence completes unless the reader chose source.
+  const [choice, setChoice] = useState<boolean | null>(null);
+  const showReport = choice ?? (version === 2 && !isStreaming);
   const Renderer = version === 2 ? Charts : Report;
   const noun = version === 2 ? "chart" : "report";
   const source = <pre className="max-h-96 overflow-auto p-4 text-xs"><code>{code}</code></pre>;
@@ -15,7 +17,7 @@ export function MarkdownOpenUiCodeBlock({ code, version, isStreaming }: { code: 
     <div className="my-3 min-w-0 overflow-hidden rounded-lg border border-border bg-secondary/30" data-openui-catalog={version}>
       <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
         <span className="text-xs text-muted-foreground">OpenUI Lab · read-only · {isStreaming ? "receiving" : `version ${version}`}</span>
-        <Button size="sm" variant="outline" onClick={() => setShowReport((value) => !value)} aria-pressed={showReport}>
+        <Button size="sm" variant="outline" onClick={() => setChoice(!showReport)} aria-pressed={showReport}>
           {showReport ? "Show source" : `Render ${noun}`}
         </Button>
       </div>

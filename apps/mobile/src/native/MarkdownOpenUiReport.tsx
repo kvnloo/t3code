@@ -7,9 +7,10 @@ import { AppText } from "../components/ui/AppText";
 const Report = lazy(() => import("./OpenUiReport").then((module) => ({ default: module.OpenUiReport })));
 const Charts = lazy(() => import("./OpenUiCharts").then((module) => ({ default: module.OpenUiCharts })));
 
-/** Read-only native host for the versioned report (v1) and chart board (v2) catalogs. */
+/** Read-only native host for the versioned report (v1, opt-in) and chart board (v2) catalogs. */
 export function MarkdownOpenUiReport({ code, version }: { code: string; version: 1 | 2 }) {
-  const [showReport, setShowReport] = useState(false);
+  // Chart boards are the answer itself, so they render as soon as the fence completes.
+  const [showReport, setShowReport] = useState(version === 2);
   const Renderer = version === 2 ? Charts : Report;
   const noun = version === 2 ? "chart" : "report";
   const source = <ScrollView horizontal style={{ maxHeight: 240 }}><AppText selectable className="p-3 font-mono text-xs">{code}</AppText></ScrollView>;
