@@ -34,9 +34,10 @@ import {
 } from "./Errors.ts";
 
 /**
- * Metadata rows holding the highest sequence the opt-in snapshot fold removed: globally (shell
- * resume) and per thread (thread resume; idle threads' cursors sit below other threads' folds).
- * Replay from a cursor below the watermark could miss state, so resume takes a snapshot instead.
+ * Prefix of the per-thread metadata rows holding the highest sequence the opt-in snapshot fold
+ * removed from that thread. Thread replay from a cursor below it could miss state, so resume takes
+ * a snapshot instead. Shell resume needs no watermark: it re-reads projections per thread, and the
+ * fold never deletes a thread's newest event.
  */
 export const SNAPSHOT_FOLD_METADATA_NAME = "event-snapshot-fold";
 
@@ -87,6 +88,15 @@ export class OrchestrationEventStore extends Context.Service<
       OrchestrationEventStoreError
     >;
 
+    /**
+     * True when a snapshot fold removed rows of this thread above `afterSequence`. Resume checks it
+     * again after reading the replay, because a fold can commit between the stats and the read.
+     */
+    readonly crossesSnapshotFold: (input: {
+      readonly threadId: ThreadId;
+      readonly afterSequence: number;
+    }) => Effect.Effect<boolean, OrchestrationEventStoreError>;
+
     readonly getReplayStats: (input: {
       readonly afterSequence: number;
       readonly throughSequence: number;
@@ -94,7 +104,6 @@ export class OrchestrationEventStore extends Context.Service<
       {
         readonly eventCount: number;
         readonly rawPayloadBytes: number;
-        readonly crossesSnapshotFold: boolean;
       },
       OrchestrationEventStoreError
     >;
@@ -312,13 +321,10 @@ const makeEventStore = Effect.gen(function* () {
   END`;
 
   // The row exists only once the opt-in fold has run; until then this is always false.
-  const crossesSnapshotFold = (
-    afterSequence: number,
-    name = SNAPSHOT_FOLD_METADATA_NAME,
-  ) => sql`COALESCE((
+  const crossesSnapshotFoldSql = (threadId: ThreadId, afterSequence: number) => sql`COALESCE((
     SELECT last_sequence > ${afterSequence}
     FROM orchestration_v2_projection_metadata
-    WHERE projection_name = ${name}
+    WHERE projection_name = ${snapshotFoldThreadMetadataName(threadId)}
   ), 0)`;
 
   const appendProjectEventRow = SqlSchema.findOne({
@@ -618,10 +624,7 @@ const makeEventStore = Effect.gen(function* () {
         COUNT(*) AS "eventCount",
         COALESCE(SUM(octet_length(payload_json)), 0) AS "rawPayloadBytes",
         COALESCE(MAX(event_type = 'thread.created'), 0) AS "hasCreateEvent",
-        ${crossesSnapshotFold(
-          input.afterSequence,
-          snapshotFoldThreadMetadataName(input.threadId),
-        )} AS "crossesSnapshotFold"
+        ${crossesSnapshotFoldSql(input.threadId, input.afterSequence)} AS "crossesSnapshotFold"
       FROM (
         SELECT ${restoredPayloadJson} AS payload_json, event_type
         FROM orchestration_events
@@ -644,16 +647,20 @@ const makeEventStore = Effect.gen(function* () {
       })),
     );
 
+  const crossesSnapshotFold: OrchestrationEventStore["Service"]["crossesSnapshotFold"] = (input) =>
+    sql<{ readonly crosses: number }>`
+      SELECT ${crossesSnapshotFoldSql(input.threadId, input.afterSequence)} AS "crosses"
+    `.pipe(
+      NodeSqliteClient.readOnly,
+      Effect.mapError(toPersistenceSqlError("OrchestrationEventStore.crossesSnapshotFold:query")),
+      Effect.map((rows) => (rows[0]?.crosses ?? 0) !== 0),
+    );
+
   const getReplayStats: OrchestrationEventStore["Service"]["getReplayStats"] = (input) =>
-    sql<{
-      readonly eventCount: number;
-      readonly rawPayloadBytes: number;
-      readonly crossesSnapshotFold: number;
-    }>`
+    sql<{ readonly eventCount: number; readonly rawPayloadBytes: number }>`
       SELECT
         COUNT(*) AS "eventCount",
-        COALESCE(SUM(octet_length(${restoredPayloadJson})), 0) AS "rawPayloadBytes",
-        ${crossesSnapshotFold(input.afterSequence)} AS "crossesSnapshotFold"
+        COALESCE(SUM(octet_length(${restoredPayloadJson})), 0) AS "rawPayloadBytes"
       FROM orchestration_events INDEXED BY idx_orchestration_events_application_high_water
       WHERE sequence > ${input.afterSequence}
         AND sequence <= ${input.throughSequence}
@@ -667,7 +674,6 @@ const makeEventStore = Effect.gen(function* () {
       Effect.map((rows) => ({
         eventCount: rows[0]?.eventCount ?? 0,
         rawPayloadBytes: rows[0]?.rawPayloadBytes ?? 0,
-        crossesSnapshotFold: (rows[0]?.crossesSnapshotFold ?? 0) !== 0,
       })),
     );
 
@@ -778,6 +784,7 @@ const makeEventStore = Effect.gen(function* () {
     appendAgentEvents,
     readAgentEvents,
     getAgentReplayStats,
+    crossesSnapshotFold,
     getReplayStats,
     latestAgentSequence,
     latestApplicationSequence,

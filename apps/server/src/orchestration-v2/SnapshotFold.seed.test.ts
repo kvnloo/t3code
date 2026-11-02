@@ -10,7 +10,7 @@ import * as NodeSqlite from "node:sqlite";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import * as DateTime from "effect/DateTime";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -64,6 +64,36 @@ function digestProjections(file: string) {
   }
 }
 
+/**
+ * Every row of every table, keyed by a digest of its JSON (set semantics) with a short prefix for
+ * reports, to diff a rebuild against the live tables without holding whole payloads in memory.
+ */
+function rowSets(file: string) {
+  const db = new NodeSqlite.DatabaseSync(file, { readOnly: true });
+  try {
+    const out: Record<string, Map<string, string>> = {};
+    for (const table of PROJECTION_TABLES) {
+      const rows = new Map<string, string>();
+      for (const row of db.prepare(`SELECT * FROM ${table}`).iterate()) {
+        const json = JSON.stringify(row);
+        rows.set(NodeCrypto.createHash("sha256").update(json).digest("hex"), json.slice(0, 400));
+      }
+      out[table] = rows;
+    }
+    return out;
+  } finally {
+    db.close();
+  }
+}
+
+/** Row digests only in `left` and only in `right`, sorted, so two diffs compare exactly. */
+function diffRows(left: Map<string, string>, right: Map<string, string>) {
+  return {
+    onlyLive: [...left.keys()].filter((row) => !right.has(row)).toSorted(),
+    onlyRebuild: [...right.keys()].filter((row) => !left.has(row)).toSorted(),
+  };
+}
+
 function eventStats(file: string) {
   const db = new NodeSqlite.DatabaseSync(file, { readOnly: true });
   try {
@@ -81,13 +111,13 @@ const maintain = (file: string, fold: boolean) =>
   Effect.gen(function* () {
     const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
     const compacted = yield* maintenance.compactEventStore();
+    const foldStarted = yield* Clock.currentTimeMillis;
     const folded = fold
-      ? yield* maintenance.foldSupersededSnapshots({
-          settledBefore: DateTime.formatIso(yield* DateTime.now),
-        })
+      ? yield* maintenance.foldSupersededSnapshots({ settledThrough: Number.MAX_SAFE_INTEGER })
       : null;
+    const foldMillis = fold ? (yield* Clock.currentTimeMillis) - foldStarted : null;
     const verification = yield* maintenance.rebuild;
-    return { compacted, folded, verification };
+    return { compacted, folded, foldMillis, verification };
   }).pipe(
     Effect.provide(
       ProjectionMaintenance.layer.pipe(
@@ -126,6 +156,17 @@ it.live.skipIf(seed === undefined)(
         off: digestProjections(off),
         on: digestProjections(on),
       };
+      // Rebuild vs the live tables, row by row: the fold must add no divergence of its own.
+      const rows = { original: rowSets(original), off: rowSets(off), on: rowSets(on) };
+      const liveDiffs = Object.fromEntries(
+        PROJECTION_TABLES.map((table) => [
+          table,
+          {
+            off: diffRows(rows.original[table]!, rows.off[table]!),
+            on: diffRows(rows.original[table]!, rows.on[table]!),
+          },
+        ]),
+      );
       const report = {
         seed,
         off: { ...resultOff, events: eventStats(off) },
@@ -137,6 +178,16 @@ it.live.skipIf(seed === undefined)(
               rows: digests.on[table]!.rows,
               onEqualsOff: digests.on[table]!.sha256 === digests.off[table]!.sha256,
               offEqualsLive: digests.off[table]!.sha256 === digests.original[table]!.sha256,
+              onEqualsLive: digests.on[table]!.sha256 === digests.original[table]!.sha256,
+              liveRows: rows.original[table]!.size,
+              onlyLive: liveDiffs[table]!.on.onlyLive.length,
+              onlyRebuild: liveDiffs[table]!.on.onlyRebuild.length,
+              foldAddsLiveDivergence:
+                JSON.stringify(liveDiffs[table]!.on) !== JSON.stringify(liveDiffs[table]!.off),
+              sampleOnlyLive:
+                rows.original[table]!.get(liveDiffs[table]!.on.onlyLive[0] ?? "") ?? null,
+              sampleOnlyRebuild:
+                rows.on[table]!.get(liveDiffs[table]!.on.onlyRebuild[0] ?? "") ?? null,
             },
           ]),
         ),
@@ -164,5 +215,8 @@ it.live.skipIf(seed === undefined)(
       assert.isTrue(resultOn.verification.valid);
       assert.isAbove(resultOn.folded!.deletedEventCount, 0);
       assert.deepEqual(digests.on, digests.off);
+      for (const table of PROJECTION_TABLES) {
+        assert.deepEqual(liveDiffs[table]!.on, liveDiffs[table]!.off, `${table} vs live`);
+      }
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );

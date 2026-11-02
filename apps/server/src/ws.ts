@@ -786,8 +786,6 @@ const canReplayPersistedRange = Effect.fnUntraced(function* (
     afterSequence,
     throughSequence: headSequence,
   });
-  // A snapshot fold moved later state behind this cursor.
-  if (stats.crossesSnapshotFold) return false;
   if (stats.rawPayloadBytes > ORCHESTRATION_REPLAY_PAYLOAD_BUDGET_BYTES) {
     yield* Effect.logDebug("orchestration replay replaced by snapshot", {
       afterSequence,
@@ -1018,6 +1016,23 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
       const replay = coalesceLiveUpdatedEvents(
         yield* loadReplayThrough(input.afterSequence, highWater),
       );
+      // A snapshot fold that committed after the stats check moved state behind this cursor.
+      if (
+        yield* applicationEvents
+          .crossesSnapshotFold({ threadId: input.threadId, afterSequence: input.afterSequence })
+          .pipe(
+            Effect.mapError(
+              (cause) =>
+                new OrchestrationV2GetThreadProjectionError({
+                  threadId: input.threadId,
+                  message: `Failed to measure orchestration V2 thread ${input.threadId} replay`,
+                  cause,
+                }),
+            ),
+          )
+      ) {
+        return yield* snapshotThenLive();
+      }
       const plan = decideThreadResume({
         afterSequence: input.afterSequence,
         highWater,

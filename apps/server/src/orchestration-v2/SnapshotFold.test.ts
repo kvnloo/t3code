@@ -14,6 +14,7 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
+  ProviderThreadId,
   ThreadId,
   TurnItemId,
 } from "@t3tools/contracts";
@@ -194,6 +195,78 @@ function subagentItemEvent(
   };
 }
 
+function nodeEvent(
+  threadId: ThreadId,
+  now: DateTime.Utc,
+  key: "root" | "tool",
+  revision: number,
+  final: boolean,
+): OrchestrationV2DomainEvent {
+  const rootNodeId = NodeId.make(`node:fold:${threadId}:root`);
+  return {
+    id: EventId.make(`event:fold:${threadId}:node-${key}:${revision}`),
+    type: "node.updated",
+    threadId,
+    occurredAt: now,
+    payload: {
+      id: key === "root" ? rootNodeId : NodeId.make(`node:fold:${threadId}:tool`),
+      threadId,
+      runId: null,
+      parentNodeId: key === "root" ? null : rootNodeId,
+      rootNodeId,
+      kind: key === "root" ? "root_turn" : "tool_call",
+      status: final ? "completed" : "running",
+      countsForRun: key === "root",
+      providerThreadId: null,
+      providerTurnId: null,
+      nativeItemRef: null,
+      runtimeRequestId: null,
+      checkpointScopeId: null,
+      startedAt: now,
+      completedAt: final ? DateTime.add(now, { seconds: revision }) : null,
+    },
+  };
+}
+
+/** Provider threads A, then B, then A again: the projection's active provider thread is A. */
+function providerThreadEvent(
+  threadId: ThreadId,
+  now: DateTime.Utc,
+  key: "a" | "b",
+  revision: number,
+): OrchestrationV2DomainEvent {
+  const at = DateTime.add(now, { seconds: revision });
+  return {
+    id: EventId.make(`event:fold:${threadId}:provider-thread-${key}:${revision}`),
+    type: "provider-thread.updated",
+    threadId,
+    occurredAt: now,
+    payload: {
+      id: ProviderThreadId.make(`provider-thread:fold:${threadId}:${key}`),
+      driver: providerDriver,
+      providerInstanceId,
+      providerSessionId: null,
+      appThreadId: threadId,
+      ownerNodeId: null,
+      nativeThreadRef: null,
+      nativeConversationHeadRef: null,
+      status: "idle",
+      firstRunOrdinal: 1,
+      lastRunOrdinal: revision + 1,
+      handoffIds: [],
+      forkedFrom: null,
+      pendingBackgroundTasks: [],
+      contextUsage: null,
+      nativeMetadata: null,
+      goal: null,
+      createdAt: now,
+      updatedAt: at,
+    },
+  };
+}
+
+const PROVIDER_THREAD_SWITCHES: ReadonlyArray<"a" | "b"> = ["a", "b", "a"];
+
 const REVISIONS = 6;
 
 /**
@@ -223,6 +296,14 @@ const seedThread = Effect.fn("seedThread")(function* (threadId: ThreadId, now: D
     const events = [
       ...order.map((key) => itemEvent(threadId, now, key, revision, final)),
       messageEvent(threadId, now, revision, final),
+      // The tool node first appears after the root, then streams before it.
+      ...(revision === 0
+        ? ["root" as const, "tool" as const]
+        : ["tool" as const, "root" as const]
+      ).map((key) => nodeEvent(threadId, now, key, revision, final)),
+      ...(revision < PROVIDER_THREAD_SWITCHES.length
+        ? [providerThreadEvent(threadId, now, PROVIDER_THREAD_SWITCHES[revision]!, revision)]
+        : []),
       ...(revision < 2 ? [subagentItemEvent(threadId, now, revision)] : []),
     ];
     writes.push(...(yield* sink.write({ events })));
@@ -261,10 +342,17 @@ function replayOnClient(
 }
 
 function emptyClient(projection: OrchestrationV2ThreadProjection): OrchestrationV2ThreadProjection {
-  return { ...projection, messages: [], turnItems: [], visibleTurnItems: [] };
+  return {
+    ...projection,
+    messages: [],
+    turnItems: [],
+    visibleTurnItems: [],
+    nodes: [],
+    providerThreads: [],
+  };
 }
 
-const farFuture = (now: DateTime.Utc) => DateTime.formatIso(DateTime.add(now, { hours: 1 }));
+const everything = Number.MAX_SAFE_INTEGER;
 
 it.effect("folds settled snapshots into their oldest row and rebuilds the same projection", () =>
   Effect.gen(function* () {
@@ -285,7 +373,7 @@ it.effect("folds settled snapshots into their oldest row and rebuilds the same p
 
     // Doctor/background compaction first, exactly as the scheduled pass runs it.
     yield* maintenance.compactEventStore();
-    const folded = yield* maintenance.foldSupersededSnapshots({ settledBefore: farFuture(now) });
+    const folded = yield* maintenance.foldSupersededSnapshots({ settledThrough: everything });
     const after = yield* eventStore.read({ threadId }).pipe(Stream.runCollect);
 
     const rowsFor = (eventId: (revision: number) => string) =>
@@ -296,7 +384,7 @@ it.effect("folds settled snapshots into their oldest row and rebuilds the same p
       );
     const finalWrite = (eventId: string) => writes.find((stored) => stored.event.id === eventId)!;
     // Folded entities keep exactly their oldest row, now carrying the newest body.
-    for (const key of ["command", "reasoning"] as const) {
+    for (const key of ["command", "reasoning", "node-root", "node-tool"] as const) {
       const rows = rowsFor((revision) => `event:fold:${threadId}:${key}:${revision}`);
       assert.lengthOf(rows, 1, key);
       assert.equal(rows[0]!.sequence, finalWrite(`event:fold:${threadId}:${key}:0`).sequence);
@@ -324,7 +412,17 @@ it.effect("folds settled snapshots into their oldest row and rebuilds the same p
       rowsFor((revision) => `event:fold:${threadId}:todo:${revision}`),
       2,
     );
-    assert.equal(folded.foldedEntityCount, 6);
+    // Provider threads are never folded: their order decides the active provider thread.
+    for (const key of ["a", "b"] as const) {
+      assert.lengthOf(
+        rowsFor((revision) => `event:fold:${threadId}:provider-thread-${key}:${revision}`),
+        PROVIDER_THREAD_SWITCHES.filter((switched) => switched === key).length,
+        key,
+      );
+    }
+    // Per thread: command, reasoning, message and both nodes.
+    assert.equal(folded.foldedEntityCount, 10);
+    assert.isAtLeast(folded.transactionCount, 2);
 
     // Sequence bounds and the snapshot cursor do not move.
     assert.equal(yield* eventStore.latestSequence(), laterWrites.at(-1)!.sequence);
@@ -333,38 +431,43 @@ it.effect("folds settled snapshots into their oldest row and rebuilds the same p
       beforeSnapshot.snapshotSequence,
     );
 
-    // Each thread's watermark is its highest folded-away sequence; the global one is the max.
+    // Each thread's watermark is its highest folded-away sequence. There is no global watermark.
     const watermarkOf = (name: string) =>
       sql<{ readonly last_sequence: number }>`
         SELECT last_sequence FROM orchestration_v2_projection_metadata
         WHERE projection_name = ${name}
-      `.pipe(Effect.map((rows) => rows[0]!.last_sequence));
-    const watermark = yield* watermarkOf(
+      `.pipe(Effect.map((rows) => rows[0]?.last_sequence));
+    const watermark = (yield* watermarkOf(
       OrchestrationEventStore.snapshotFoldThreadMetadataName(threadId),
-    );
+    ))!;
     const deleted = writes
       .filter((stored) => !after.some((kept) => kept.sequence === stored.sequence))
       .map((stored) => stored.sequence);
     assert.equal(watermark, Math.max(...deleted));
-    const laterWatermark = yield* watermarkOf(
+    const laterWatermark = (yield* watermarkOf(
       OrchestrationEventStore.snapshotFoldThreadMetadataName(laterThreadId),
-    );
+    ))!;
     assert.isAbove(laterWatermark, beforeSnapshot.snapshotSequence);
-    assert.equal(
-      yield* watermarkOf(OrchestrationEventStore.SNAPSHOT_FOLD_METADATA_NAME),
-      laterWatermark,
-    );
+    assert.isUndefined(yield* watermarkOf(OrchestrationEventStore.SNAPSHOT_FOLD_METADATA_NAME));
 
-    // Rebuild from the folded log equals the projection built from the full log.
+    // Rebuild from the folded log equals the live projection built while appending.
+    assert.equal(
+      before.thread.activeProviderThreadId,
+      ProviderThreadId.make(`provider-thread:fold:${threadId}:a`),
+    );
     assert.isTrue((yield* maintenance.verify).valid);
     assert.isTrue((yield* maintenance.rebuild).valid);
     assert.deepEqual(yield* projections.getThreadProjection(threadId), before);
 
-    // A client replaying from the start sees the same entities in the same insertion order.
+    // A client replaying from the start ends in the same state, in the same insertion order, as
+    // one replaying the unfolded log: every field, not only the transcript.
     const client = replayOnClient(emptyClient(before), after);
+    assert.deepEqual(client, replayOnClient(emptyClient(before), writes));
     assert.deepEqual(client.turnItems, before.turnItems);
     assert.deepEqual(client.visibleTurnItems, before.visibleTurnItems);
     assert.deepEqual(client.messages, before.messages);
+    assert.deepEqual(client.nodes, before.nodes);
+    assert.deepEqual(client.providerThreads, before.providerThreads);
 
     // Resume stats flag every cursor below the watermark, and only those.
     const stats = (afterSequence: number) =>
@@ -380,22 +483,19 @@ it.effect("folds settled snapshots into their oldest row and rebuilds the same p
     // Opening this thread resumes from its snapshot cursor, which is below the later thread's
     // folds: thread resume must still replay.
     assert.isFalse((yield* stats(beforeSnapshot.snapshotSequence)).crossesSnapshotFold);
-    // Shell resume is global.
-    assert.isTrue(
-      (yield* applicationEvents.getReplayStats({ afterSequence: 0, throughSequence: highWater }))
-        .crossesSnapshotFold,
-    );
+    // The post-read re-check agrees with the stats.
+    assert.isTrue(yield* applicationEvents.crossesSnapshotFold({ threadId, afterSequence: 0 }));
     assert.isFalse(
-      (yield* applicationEvents.getReplayStats({
-        afterSequence: laterWatermark,
-        throughSequence: highWater,
-      })).crossesSnapshotFold,
+      yield* applicationEvents.crossesSnapshotFold({ threadId, afterSequence: watermark }),
     );
 
     // A second pass finds nothing new and keeps the watermark.
-    assert.deepEqual(
-      yield* maintenance.foldSupersededSnapshots({ settledBefore: farFuture(now) }),
-      { foldedEntityCount: 0, deletedEventCount: 0 },
+    const second = yield* maintenance.foldSupersededSnapshots({ settledThrough: everything });
+    assert.equal(second.foldedEntityCount, 0);
+    assert.equal(second.deletedEventCount, 0);
+    assert.equal(
+      yield* watermarkOf(OrchestrationEventStore.snapshotFoldThreadMetadataName(threadId)),
+      watermark,
     );
   }).pipe(Effect.provide(layerTest)),
 );
@@ -412,7 +512,7 @@ it.effect("resumes every old cursor to the server's state: replay or snapshot fa
     const before = yield* projections.getThreadProjection(threadId);
     const highWater = yield* eventStore.latestSequence();
     yield* maintenance.compactEventStore();
-    yield* maintenance.foldSupersededSnapshots({ settledBefore: farFuture(now) });
+    yield* maintenance.foldSupersededSnapshots({ settledThrough: everything });
 
     // Every cursor a client could hold: before the thread, at each write, at the head.
     let replayed = 0;
@@ -442,6 +542,8 @@ it.effect("resumes every old cursor to the server's state: replay or snapshot fa
       assert.deepEqual(client.turnItems, before.turnItems, `cursor ${cursor}`);
       assert.deepEqual(client.visibleTurnItems, before.visibleTurnItems, `cursor ${cursor}`);
       assert.deepEqual(client.messages, before.messages, `cursor ${cursor}`);
+      assert.deepEqual(client.nodes, before.nodes, `cursor ${cursor}`);
+      assert.deepEqual(client.providerThreads, before.providerThreads, `cursor ${cursor}`);
     }
     assert.isAbove(replayed, 0);
     assert.isAbove(fellBack, 0);
@@ -460,12 +562,13 @@ it.effect("replays a missed turn, and never folds entities newer than the settle
     const writes = [...(yield* seedThread(threadId, now))];
     // An earlier pass folded the settled history.
     yield* maintenance.compactEventStore();
-    yield* maintenance.foldSupersededSnapshots({ settledBefore: farFuture(now) });
+    yield* maintenance.foldSupersededSnapshots({ settledThrough: everything });
 
     // A client is current, disconnects, and misses a whole new turn.
     const cursor = yield* eventStore.latestSequence();
     const held = yield* projections.getThreadProjection(threadId);
     const later = DateTime.add(now, { hours: 2 });
+    // The background pass samples the head before the client's missed turn starts.
     for (let revision = 0; revision < REVISIONS; revision += 1) {
       const final = revision === REVISIONS - 1;
       writes.push(
@@ -483,10 +586,10 @@ it.effect("replays a missed turn, and never folds entities newer than the settle
     const head = yield* eventStore.latestSequence();
     const expected = yield* projections.getThreadProjection(threadId);
 
-    // The background pass runs while the client is away; the new turn is not settled yet.
-    const settledBefore = DateTime.formatIso(DateTime.subtract(later, { minutes: 10 }));
-    const pass = yield* maintenance.foldSupersededSnapshots({ settledBefore });
-    assert.deepEqual(pass, { foldedEntityCount: 0, deletedEventCount: 0 });
+    // The background pass runs while the client is away; the new turn is above its sample.
+    const pass = yield* maintenance.foldSupersededSnapshots({ settledThrough: cursor });
+    assert.equal(pass.foldedEntityCount, 0);
+    assert.equal(pass.deletedEventCount, 0);
 
     // The cursor is above the old watermark, so the client replays the turn event by event.
     const stats = yield* applicationEvents.getAgentReplayStats({
@@ -509,9 +612,7 @@ it.effect("replays a missed turn, and never folds entities newer than the settle
     assert.deepEqual(client.messages, expected.messages);
 
     // Once that turn settles a later pass folds it, and the same cursor falls back to a snapshot.
-    const settled = yield* maintenance.foldSupersededSnapshots({
-      settledBefore: DateTime.formatIso(DateTime.add(later, { hours: 1 })),
-    });
+    const settled = yield* maintenance.foldSupersededSnapshots({ settledThrough: head });
     assert.isAbove(settled.deletedEventCount, 0);
     assert.isTrue(
       (yield* applicationEvents.getAgentReplayStats({
@@ -523,5 +624,94 @@ it.effect("replays a missed turn, and never folds entities newer than the settle
     );
     assert.isTrue((yield* maintenance.rebuild).valid);
     assert.deepEqual(yield* projections.getThreadProjection(threadId), expected);
+  }).pipe(Effect.provide(layerTest)),
+);
+
+it.effect("keeps the last activity event so a replaying client keeps the thread's updatedAt", () =>
+  Effect.gen(function* () {
+    const sink = yield* EventSink.EventSinkV2;
+    const eventStore = yield* EventStore.EventStoreV2;
+    const projections = yield* ProjectionStore.ProjectionStoreV2;
+    const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+    const now = yield* DateTime.now;
+    const threadId = ThreadId.make("thread:snapshot-fold-visited");
+    const message = (key: "m" | "n", revision: number, second: number) => {
+      const at = DateTime.add(now, { seconds: second });
+      return {
+        id: EventId.make(`event:fold:${threadId}:${key}:${revision}`),
+        type: "message.updated",
+        threadId,
+        occurredAt: at,
+        payload: {
+          id: MessageId.make(`message:fold:${threadId}:${key}`),
+          threadId,
+          runId: null,
+          nodeId: null,
+          role: "assistant",
+          text: `${key} ${revision}`,
+          attachments: [],
+          streaming: revision === 0,
+          createdBy: "agent",
+          creationSource: "provider",
+          createdAt: now,
+          updatedAt: at,
+        },
+      } satisfies OrchestrationV2DomainEvent;
+    };
+    const writes = [
+      ...(yield* sink.write({
+        events: [
+          {
+            id: EventId.make(`event:fold:thread:${threadId}`),
+            type: "thread.created",
+            threadId,
+            providerInstanceId,
+            occurredAt: now,
+            payload: makeThread(threadId, now),
+          },
+        ],
+      })),
+    ];
+    for (const [key, revision, second] of [
+      ["m", 0, 1],
+      ["m", 1, 2],
+      ["n", 0, 3],
+      ["n", 1, 4],
+    ] as const) {
+      writes.push(...(yield* sink.write({ events: [message(key, revision, second)] })));
+    }
+    // Visiting is not activity: replay keeps updatedAt from n's last row, so n must not fold.
+    writes.push(
+      ...(yield* sink.write({
+        events: [
+          {
+            id: EventId.make(`event:fold:${threadId}:visited`),
+            type: "thread.visited",
+            threadId,
+            occurredAt: DateTime.add(now, { seconds: 5 }),
+            payload: {
+              ...makeThread(threadId, now),
+              lastVisitedAt: DateTime.add(now, { seconds: 5 }),
+            },
+          },
+        ],
+      })),
+    );
+    const before = yield* projections.getThreadProjection(threadId);
+
+    const folded = yield* maintenance.foldSupersededSnapshots({ settledThrough: everything });
+    assert.equal(folded.foldedEntityCount, 1);
+    const after = yield* eventStore.read({ threadId }).pipe(Stream.runCollect);
+    assert.deepEqual(
+      after.map((stored) => stored.event.id),
+      writes
+        .filter((stored) => stored.event.id !== `event:fold:${threadId}:m:1`)
+        .map((stored) => stored.event.id),
+    );
+    const client = replayOnClient(emptyClient(before), after);
+    assert.deepEqual(client, replayOnClient(emptyClient(before), writes));
+    assert.deepEqual(client.updatedAt, DateTime.add(now, { seconds: 4 }));
+    assert.isTrue((yield* maintenance.rebuild).valid);
+    assert.deepEqual(yield* projections.getThreadProjection(threadId), before);
   }).pipe(Effect.provide(layerTest)),
 );

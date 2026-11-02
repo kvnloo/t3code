@@ -2,7 +2,6 @@ import type { DatabaseStorageStatus } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
-import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
@@ -24,7 +23,7 @@ const RECLAIM_PAGES_PER_PASS = 1024;
 const COMPACTION_INTERVAL = Duration.hours(6);
 // Experimental, default off: fold settled snapshot entities into one row (ProjectionMaintenance).
 const SNAPSHOT_FOLD_FLAG = "T3CODE_EXPERIMENTAL_SNAPSHOT_FOLD";
-// Only entities untouched this long are folded, so no fresh cursor can sit inside a fold.
+// Only entities untouched this long (monotonic) are folded, so no fresh cursor sits inside a fold.
 const SNAPSHOT_FOLD_SETTLED_AGE = Duration.minutes(10);
 
 export class DatabaseStorage extends Context.Service<
@@ -118,14 +117,34 @@ const make = Effect.gen(function* () {
       yield* Effect.sleep((Number(elapsed) / 1_000_000) * 9);
       sliceStarted = yield* Clock.monotonicTimeNanos;
     });
+    // Sample the head before compaction, then wait out the settle age on the monotonic clock:
+    // rows at or below the sample are then at least that old, whatever the wall clock did.
+    const foldSample = foldSnapshots
+      ? {
+          settledThrough:
+            (yield* sql<{ readonly head: number | null }>`
+            SELECT MAX(sequence) AS head FROM orchestration_events
+          `)[0]?.head ?? 0,
+          sampledAt: yield* Clock.monotonicTimeNanos,
+        }
+      : null;
     const result = yield* maintenance.compactEventStore(betweenPages);
-    if (foldSnapshots) {
-      const settledBefore = DateTime.formatIso(
-        DateTime.subtractDuration(yield* DateTime.now, SNAPSHOT_FOLD_SETTLED_AGE),
-      );
-      const folded = yield* maintenance.foldSupersededSnapshots({ settledBefore, betweenPages });
+    if (foldSample !== null) {
+      const waited = Number((yield* Clock.monotonicTimeNanos) - foldSample.sampledAt) / 1_000_000;
+      const remaining = Duration.toMillis(SNAPSHOT_FOLD_SETTLED_AGE) - waited;
+      if (remaining > 0) yield* Effect.sleep(Duration.millis(remaining));
+      const started = yield* Clock.monotonicTimeNanos;
+      // The wait is not work: restart the duty-cycle slice so it does not become a 9x sleep.
+      sliceStarted = started;
+      const folded = yield* maintenance.foldSupersededSnapshots({
+        settledThrough: foldSample.settledThrough,
+        betweenPages,
+      });
       if (folded.deletedEventCount > 0) {
-        yield* Effect.logInfo("Folded superseded orchestration snapshots", folded);
+        yield* Effect.logInfo("Folded superseded orchestration snapshots", {
+          ...folded,
+          passMillis: Number((yield* Clock.monotonicTimeNanos) - started) / 1_000_000,
+        });
       }
     }
     const completedAt = yield* Clock.currentTimeMillis;

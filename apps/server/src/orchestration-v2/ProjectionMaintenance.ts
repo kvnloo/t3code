@@ -1,5 +1,6 @@
 import { ThreadId } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -46,21 +47,36 @@ export interface ProjectionMaintenanceV2Shape {
   >;
   /** Opt-in (`T3CODE_EXPERIMENTAL_SNAPSHOT_FOLD`): keep one row per settled snapshot entity. */
   readonly foldSupersededSnapshots: (options: {
-    readonly settledBefore: string;
+    readonly settledThrough: number;
     readonly betweenPages?: Effect.Effect<void>;
   }) => Effect.Effect<
-    { readonly foldedEntityCount: number; readonly deletedEventCount: number },
+    {
+      readonly foldedEntityCount: number;
+      readonly deletedEventCount: number;
+      readonly transactionCount: number;
+      readonly longestTransactionMillis: number;
+    },
     ProjectionMaintenanceError
   >;
 }
 
-/** Whole-entity snapshot events keyed by `$.id`, folded by `foldSupersededSnapshots`. */
+/**
+ * Whole-entity snapshot events keyed by `$.id`, folded by `foldSupersededSnapshots`. Each must
+ * project only onto its own entity, so applying the final body at the first row is order-neutral.
+ * `provider-thread.updated` is excluded: it also sets `thread.activeProviderThreadId`, so the
+ * relative order of provider threads (and of thread.* events) decides the projection.
+ */
 const FOLDABLE_SNAPSHOT_EVENT_TYPES = [
   "message.updated",
   "node.updated",
-  "provider-thread.updated",
   "turn-item.updated",
 ] as const;
+
+/** Events whose replay keeps the previous `projection.updatedAt` (client and server apply). */
+const NON_ACTIVITY_EVENT_TYPES = ["thread.visited", "thread.tags-updated", "thread.marked-unread"];
+
+// Entities per fold transaction; bounds how long one chunk holds the SQLite writer.
+const FOLD_ENTITIES_PER_TRANSACTION = 64;
 
 export class ProjectionMaintenanceV2 extends Context.Service<
   ProjectionMaintenanceV2,
@@ -426,33 +442,42 @@ export const layer: Layer.Layer<
       return { deletedEventCount, deletedReceiptCount, reclaimableBytes };
     }, mapError("compact event store"));
 
-    // Folds each entity's snapshots into its oldest row: that row takes the newest body and the
-    // newer rows are deleted. Replay from before the oldest row, and rebuild, see the same entity
-    // at the same insertion point with its final state. Cursors inside a folded range would miss
-    // the update, so the fold raises a watermark and resume below it falls back to a snapshot.
+    // Moves each entity's newest body into its oldest row and deletes the rows between, raising
+    // the thread's watermark so resume from inside a folded range takes a snapshot. Only the
+    // payload moves: the row keeps its envelope (event_id, occurred_at, metadata_json), so
+    // occurred_at stays monotonic. See docs/internals/snapshot-fold.md.
     const foldSupersededSnapshots = Effect.fn("ProjectionMaintenance.foldSupersededSnapshots")(
       function* (options: {
-        // ISO timestamp; entities with a snapshot at or after it are left for a later pass, so
-        // fresh cursors (snapshot-then-live catch-up, task waits) never cross a fold.
-        readonly settledBefore: string;
+        // Entities with a row above this sequence are left for a later pass. The caller samples
+        // the head and waits out the settle age on a monotonic clock, so fresh cursors
+        // (snapshot-then-live catch-up, task waits) never fall inside a fold.
+        readonly settledThrough: number;
         readonly betweenPages?: Effect.Effect<void>;
       }) {
         const betweenPages = options.betweenPages ?? Effect.void;
-        const streams = yield* sql<{ readonly stream_id: string; readonly newest: number }>`
-          SELECT stream_id, MAX(sequence) AS newest
+        const streams = yield* sql<{
+          readonly stream_id: string;
+          readonly newest_activity: number | null;
+        }>`
+          SELECT
+            stream_id,
+            MAX(CASE WHEN event_type IN ${sql.in(NON_ACTIVITY_EVENT_TYPES)} THEN NULL
+              ELSE sequence END) AS newest_activity
           FROM orchestration_events
           WHERE aggregate_kind = 'thread' AND application_event_version = 2
           GROUP BY stream_id
         `.pipe(NodeSqliteClient.readOnly);
         let foldedEntityCount = 0;
         let deletedEventCount = 0;
+        let transactionCount = 0;
+        let longestTransactionNanos = 0n;
         for (const stream of streams) {
+          if (stream.newest_activity === null) continue;
           const rows = yield* sql<{
             readonly sequence: number;
             readonly event_type: string;
             readonly entity_id: string | null;
             readonly retained: number;
-            readonly occurred_at: string;
           }>`
             SELECT
               sequence,
@@ -460,13 +485,11 @@ export const layer: Layer.Layer<
               json_extract(payload_json, '$.id') AS entity_id,
               (command_id IS NOT NULL
                 OR (event_type = 'turn-item.updated'
-                  AND json_extract(payload_json, '$.type') = 'subagent')) AS retained,
-              occurred_at
+                  AND json_extract(payload_json, '$.type') = 'subagent')) AS retained
             FROM orchestration_events
             WHERE aggregate_kind = 'thread'
               AND application_event_version = 2
               AND stream_id = ${stream.stream_id}
-              AND sequence <= ${stream.newest}
               AND event_type IN ${sql.in(FOLDABLE_SNAPSHOT_EVENT_TYPES)}
             ORDER BY sequence ASC
           `.pipe(NodeSqliteClient.readOnly);
@@ -478,27 +501,37 @@ export const layer: Layer.Layer<
             if (group === undefined) byEntity.set(key, [row]);
             else group.push(row);
           }
-          const folds: Array<{ readonly into: number; readonly from: number }> = [];
-          const obsolete: number[] = [];
+          const folds: Array<{ readonly into: number; readonly from: number; obsolete: number[] }> =
+            [];
           for (const group of byEntity.values()) {
             const newest = group.at(-1)!;
             if (
               group.length < 2 ||
               // Commanded rows answer command-result replay; subagent rows anchor prompts.
               group.some((row) => row.retained !== 0) ||
-              // Deleting a stream's newest row would lower its snapshot sequence and version.
-              newest.sequence === stream.newest ||
-              newest.occurred_at >= options.settledBefore
+              newest.sequence > options.settledThrough ||
+              // Replay sets projection.updatedAt from the last activity event. Deleting it would
+              // move updatedAt back; it also covers the stream's newest row, whose removal would
+              // lower the snapshot sequence and reuse its stream_version.
+              newest.sequence >= stream.newest_activity
             ) {
               continue;
             }
-            folds.push({ into: group[0]!.sequence, from: newest.sequence });
-            for (const row of group.slice(1)) obsolete.push(row.sequence);
+            folds.push({
+              into: group[0]!.sequence,
+              from: newest.sequence,
+              obsolete: group.slice(1).map((row) => row.sequence),
+            });
           }
-          if (folds.length > 0) {
+          // Bounded transactions keep the writer free for live turns between chunks. Each chunk
+          // raises the watermark over its own deletions, so a pass can stop after any chunk.
+          for (let start = 0; start < folds.length; start += FOLD_ENTITIES_PER_TRANSACTION) {
+            const chunk = folds.slice(start, start + FOLD_ENTITIES_PER_TRANSACTION);
+            const obsolete = chunk.flatMap((fold) => fold.obsolete);
+            const began = yield* Clock.monotonicTimeNanos;
             yield* sql.withTransaction(
               Effect.gen(function* () {
-                for (const fold of folds) {
+                for (const fold of chunk) {
                   yield* sql`
                     UPDATE orchestration_events
                     SET payload_json = (
@@ -507,40 +540,61 @@ export const layer: Layer.Layer<
                     WHERE sequence = ${fold.into}
                   `;
                 }
-                for (let start = 0; start < obsolete.length; start += COMPACTION_PAGE_SIZE) {
+                for (let page = 0; page < obsolete.length; page += COMPACTION_PAGE_SIZE) {
                   yield* sql`DELETE FROM orchestration_events WHERE sequence IN ${sql.in(
-                    obsolete.slice(start, start + COMPACTION_PAGE_SIZE),
+                    obsolete.slice(page, page + COMPACTION_PAGE_SIZE),
                   )}`;
                 }
                 const watermark = obsolete.reduce((max, sequence) => Math.max(max, sequence), 0);
                 const now = DateTime.formatIso(yield* DateTime.now);
-                // One watermark per thread for thread resume, one global for shell resume.
-                for (const name of [
-                  SNAPSHOT_FOLD_METADATA_NAME,
-                  snapshotFoldThreadMetadataName(stream.stream_id),
-                ]) {
-                  yield* sql`
-                    INSERT INTO orchestration_v2_projection_metadata (
-                      projection_name,
-                      schema_version,
-                      last_sequence,
-                      updated_at
-                    )
-                    VALUES (${name}, 1, ${watermark}, ${now})
-                    ON CONFLICT(projection_name) DO UPDATE SET
-                      last_sequence = MAX(last_sequence, excluded.last_sequence),
-                      updated_at = excluded.updated_at
-                  `;
-                }
+                yield* sql`
+                  INSERT INTO orchestration_v2_projection_metadata (
+                    projection_name,
+                    schema_version,
+                    last_sequence,
+                    updated_at
+                  )
+                  VALUES (${snapshotFoldThreadMetadataName(stream.stream_id)}, 1, ${watermark}, ${now})
+                  ON CONFLICT(projection_name) DO UPDATE SET
+                    last_sequence = MAX(last_sequence, excluded.last_sequence),
+                    updated_at = excluded.updated_at
+                `;
               }),
             );
-            foldedEntityCount += folds.length;
+            const held = (yield* Clock.monotonicTimeNanos) - began;
+            if (held > longestTransactionNanos) longestTransactionNanos = held;
+            transactionCount += 1;
+            foldedEntityCount += chunk.length;
             deletedEventCount += obsolete.length;
+            yield* Effect.yieldNow;
+            yield* betweenPages;
           }
           yield* Effect.yieldNow;
           yield* betweenPages;
         }
-        return { foldedEntityCount, deletedEventCount };
+        // Watermarks of threads with no events left guard nothing. Round-1 builds of this
+        // experiment also wrote a global row that no reader uses any more.
+        yield* sql`
+          DELETE FROM orchestration_v2_projection_metadata
+          WHERE projection_name = ${SNAPSHOT_FOLD_METADATA_NAME}
+            OR (
+              projection_name LIKE ${`${SNAPSHOT_FOLD_METADATA_NAME}:%`}
+              AND NOT EXISTS (
+                SELECT 1 FROM orchestration_events
+                WHERE aggregate_kind = 'thread'
+                  AND stream_id = substr(
+                    projection_name,
+                    ${SNAPSHOT_FOLD_METADATA_NAME.length + 2}
+                  )
+              )
+            )
+        `;
+        return {
+          foldedEntityCount,
+          deletedEventCount,
+          transactionCount,
+          longestTransactionMillis: Number(longestTransactionNanos / 1000n) / 1000,
+        };
       },
       mapError("fold superseded snapshots"),
     );

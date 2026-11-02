@@ -465,7 +465,6 @@ layer("OrchestrationEventStore", (it) => {
           eventCount: 3,
           rawPayloadBytes:
             Buffer.byteLength(unicodePayload) + 2 * Buffer.byteLength(oversizedPayload),
-          crossesSnapshotFold: false,
         },
       );
     }),

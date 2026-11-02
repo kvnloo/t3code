@@ -1,5 +1,5 @@
-// Review r1 for exp/poh/02-snapshot-dedupe: failing repros for the snapshot fold.
-import { applyOrchestrationV2ProjectionEvent } from "../../../../packages/client-runtime/src/state/orchestrationV2Projection.ts";
+// Review r1 for exp/poh/02-snapshot-dedupe: the repros for findings M1 and M2, kept as
+// regression tests for their fixes.
 import { assert, it } from "@effect/vitest";
 import {
   EventId,
@@ -11,8 +11,6 @@ import {
   ThreadId,
   type OrchestrationV2AppThread,
   type OrchestrationV2DomainEvent,
-  type OrchestrationV2StoredEvent,
-  type OrchestrationV2ThreadProjection,
 } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -21,10 +19,12 @@ import * as Stream from "effect/Stream";
 
 import * as OrchestrationEventStore from "../persistence/OrchestrationEventStore.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import { subscribeOrchestrationV2Thread } from "../ws.ts";
 import * as EventSink from "./EventSink.ts";
 import * as EventStore from "./EventStore.ts";
 import * as ProjectionMaintenance from "./ProjectionMaintenance.ts";
 import * as ProjectionStore from "./ProjectionStore.ts";
+import * as ThreadManagement from "./ThreadManagementService.ts";
 
 const database = SqlitePersistence.layerMemory;
 const stores = Layer.mergeAll(
@@ -41,7 +41,7 @@ const layerTest = Layer.mergeAll(
 
 const providerInstanceId = ProviderInstanceId.make("codex");
 const driver = ProviderDriverKind.make("codex");
-const farFuture = (now: DateTime.Utc) => DateTime.formatIso(DateTime.add(now, { hours: 1 }));
+const everything = Number.MAX_SAFE_INTEGER;
 
 function threadCreated(threadId: ThreadId, now: DateTime.Utc): OrchestrationV2DomainEvent {
   const thread: OrchestrationV2AppThread = {
@@ -143,24 +143,9 @@ function messageEvent(
   };
 }
 
-function replayOnClient(
-  base: OrchestrationV2ThreadProjection,
-  events: ReadonlyArray<OrchestrationV2StoredEvent>,
-) {
-  let projection: OrchestrationV2ThreadProjection | null = base;
-  for (const stored of events) {
-    projection = applyOrchestrationV2ProjectionEvent(projection, stored.event, {
-      partialTimeline: true,
-      latestLocalTurnOrdinal: null,
-    });
-  }
-  return projection!;
-}
-
-// Finding 1: provider-thread.updated is not a pure per-entity upsert. On the server each one also
-// sets thread.activeProviderThreadId (ProjectionStore.ts:893 in-memory, :2326 SQL), so the
-// *relative order* of different provider threads matters.
-// Moving A's newest body back to A's first row reorders it before B.
+// M1: provider-thread.updated also sets thread.activeProviderThreadId, so folding A's newest body
+// back to A's first row would put it before B. The fold leaves provider threads alone; a message
+// streaming across the switch is still folded.
 it.effect("fold keeps the active provider thread across a switch back (rebuild)", () =>
   Effect.gen(function* () {
     const sink = yield* EventSink.EventSinkV2;
@@ -173,7 +158,9 @@ it.effect("fold keeps the active provider thread across a switch back (rebuild)"
     yield* sink.write({ events: [threadCreated(threadId, now)] });
     // Run 1 on provider thread A, run 2 switches to B, run 3 switches back to A.
     yield* sink.write({ events: [providerThreadEvent(threadId, now, "a", 0, 1)] });
+    yield* sink.write({ events: [messageEvent(threadId, now, "across", 0, false)] });
     yield* sink.write({ events: [providerThreadEvent(threadId, now, "b", 1, 2)] });
+    yield* sink.write({ events: [messageEvent(threadId, now, "across", 1, true)] });
     yield* sink.write({ events: [providerThreadEvent(threadId, now, "a", 2, 3)] });
     // Something unrelated is the stream's newest row, so A is eligible.
     yield* sink.write({ events: [messageEvent(threadId, now, "tail", 0, true)] });
@@ -185,8 +172,12 @@ it.effect("fold keeps the active provider thread across a switch back (rebuild)"
     );
 
     yield* maintenance.compactEventStore();
-    const folded = yield* maintenance.foldSupersededSnapshots({ settledBefore: farFuture(now) });
+    const folded = yield* maintenance.foldSupersededSnapshots({ settledThrough: everything });
     assert.equal(folded.foldedEntityCount, 1);
+    const providerThreadRows = (yield* eventStore
+      .read({ threadId })
+      .pipe(Stream.runCollect)).filter((stored) => stored.event.type === "provider-thread.updated");
+    assert.lengthOf(providerThreadRows, 3);
 
     assert.isTrue((yield* maintenance.rebuild).valid);
     const rebuilt = yield* projections.getThreadProjection(threadId);
@@ -198,11 +189,11 @@ it.effect("fold keeps the active provider thread across a switch back (rebuild)"
   }).pipe(Effect.provide(layerTest)),
 );
 
-// Finding 2: ws.ts checks the watermark (getAgentReplayStats) and then reads the replay
-// (readAgentEvents) in separate, non-transactional statements. A fold that commits in between
-// moves the entity's final body behind the cursor and the client never receives it.
+// M2: a fold committing between subscribeThread's stats check and its replay read moves the final
+// body behind the cursor. Resume re-checks the watermark after the read; this drives the real
+// path with the fold injected exactly there.
 it.effect(
-  "a fold committing between the resume stats check and the replay read loses the update",
+  "a fold committing between the resume stats check and the replay read falls back to a snapshot",
   () =>
     Effect.gen(function* () {
       const sink = yield* EventSink.EventSinkV2;
@@ -216,29 +207,69 @@ it.effect(
       const first = yield* sink.write({ events: [messageEvent(threadId, now, "m", 0, false)] });
       // The client saw the streaming row and disconnected; its cursor is that row.
       const cursor = first.at(-1)!.sequence;
-      const held = yield* projections.getThreadProjection(threadId);
       yield* sink.write({ events: [messageEvent(threadId, now, "m", 1, true)] });
-      const tail = yield* sink.write({ events: [messageEvent(threadId, now, "tail", 0, true)] });
-      const head = tail.at(-1)!.sequence;
+      yield* sink.write({ events: [messageEvent(threadId, now, "tail", 0, true)] });
       const expected = yield* projections.getThreadProjection(threadId);
 
-      // ws.ts:974 — stats say "replay".
-      const stats = yield* applicationEvents.getAgentReplayStats({
-        threadId,
-        afterSequence: cursor,
-        throughSequence: head,
-        maxEvents: 128,
-      });
-      assert.isFalse(stats.crossesSnapshotFold);
+      const resume = (foldBeforeRead: boolean) => {
+        let folds = foldBeforeRead ? 1 : 0;
+        return subscribeOrchestrationV2Thread({
+          threadId,
+          afterSequence: cursor,
+          requestCompletionMarker: true,
+        }).pipe(
+          Effect.flatMap(Stream.runCollect),
+          Effect.map((items) => Array.from(items)),
+          Effect.provideService(OrchestrationEventStore.OrchestrationEventStore, {
+            ...applicationEvents,
+            // The background pass commits after the stats check, right before the read.
+            readAgentEvents: (input) =>
+              Stream.unwrap(
+                Effect.gen(function* () {
+                  if (folds > 0) {
+                    folds -= 1;
+                    const folded = yield* maintenance.foldSupersededSnapshots({
+                      settledThrough: everything,
+                    });
+                    assert.equal(folded.foldedEntityCount, 1);
+                  }
+                  return applicationEvents.readAgentEvents(input);
+                }).pipe(Effect.orDie),
+              ),
+          }),
+          Effect.provideService(ThreadManagement.ThreadManagementService, {
+            ensureLegacyTranscript: () => Effect.void,
+            getThreadSnapshot: (id: ThreadId) => projections.getThreadSnapshot(id),
+            streamStoredEventsFrom: () => Stream.empty,
+          } as unknown as ThreadManagement.ThreadManagementService["Service"]),
+        );
+      };
 
-      // The background pass commits here (nothing in ws.ts prevents it).
-      yield* maintenance.foldSupersededSnapshots({ settledBefore: farFuture(now) });
+      // Control: without a racing fold the cursor replays event by event.
+      const replayed = yield* resume(false);
+      assert.deepEqual(
+        replayed.map((item) => item.kind),
+        ["event", "event", "synchronized"],
+      );
 
-      // ws.ts:1018 — loadReplayThrough reads after the check.
-      const replay = yield* applicationEvents
-        .readAgentEvents({ threadId, afterSequence: cursor, throughSequence: head })
-        .pipe(Stream.runCollect);
-      const client = replayOnClient(held, Array.from(replay));
-      assert.deepEqual(client.messages, expected.messages, "client misses the final message body");
+      const raced = yield* resume(true);
+      assert.deepEqual(
+        raced.map((item) => item.kind),
+        ["snapshot", "synchronized"],
+      );
+      const snapshot = raced[0]!;
+      assert.isTrue(snapshot.kind === "snapshot");
+      if (snapshot.kind !== "snapshot" || !("projection" in snapshot)) return;
+      assert.deepEqual(
+        snapshot.projection.messages.map((message) => [message.text, message.streaming]),
+        expected.messages.map((message) => [message.text, message.streaming]),
+      );
+      assert.deepEqual(
+        snapshot.projection.messages.map((message) => [message.text, message.streaming]),
+        [
+          ["answer m 1", false],
+          ["answer tail 0", false],
+        ],
+      );
     }).pipe(Effect.provide(layerTest)),
 );
