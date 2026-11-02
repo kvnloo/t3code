@@ -177,7 +177,7 @@ export function findTreemapNode(root: TreemapNode, path: string): TreemapNode {
 
 /** Squarified layout of a node's direct children inside width x height. */
 export function layoutTreemap(node: TreemapNode, width: number, height: number): TreemapTile[] {
-  const items = node.children.filter((child) => child.size > 0).toSorted((a, b) => b.size - a.size);
+  const items = node.children.filter((child) => child.size > 0).sort((a, b) => b.size - a.size);
   const total = items.reduce((sum, item) => sum + item.size, 0);
   if (total <= 0 || width <= 0 || height <= 0) return [];
   const scale = (width * height) / total;
@@ -252,7 +252,7 @@ export function bandPoints(lower: ReadonlyArray<number>, upper: ReadonlyArray<nu
   const step = upper.length > 1 ? width / (upper.length - 1) : 0;
   const y = (value: number) => (max > 0 ? height - (value / max) * height : height);
   const top = upper.map((value, index) => `${index * step},${y(value)}`);
-  const bottom = lower.map((value, index) => `${index * step},${y(value)}`).toReversed();
+  const bottom = lower.map((value, index) => `${index * step},${y(value)}`).reverse();
   return [...top, ...bottom].join(" ");
 }
 
