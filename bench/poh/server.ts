@@ -231,6 +231,17 @@ function readProc(pid: number): { rss: number; cpuTicks: number } | undefined {
   }
 }
 
+/** Bytes the process caused to be written to storage (`/proc/<pid>/io` write_bytes), or undefined. */
+export function readWriteBytes(pid: number): number | undefined {
+  try {
+    const io = NodeFS.readFileSync(`/proc/${pid}/io`, "utf8");
+    const match = /^write_bytes:\s*(\d+)/m.exec(io);
+    return match ? Number(match[1]) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export interface ProcSample {
   readonly at: number;
   readonly serverRss: number;
