@@ -786,6 +786,8 @@ const canReplayPersistedRange = Effect.fnUntraced(function* (
     afterSequence,
     throughSequence: headSequence,
   });
+  // A snapshot fold moved later state behind this cursor.
+  if (stats.crossesSnapshotFold) return false;
   if (stats.rawPayloadBytes > ORCHESTRATION_REPLAY_PAYLOAD_BUDGET_BYTES) {
     yield* Effect.logDebug("orchestration replay replaced by snapshot", {
       afterSequence,
@@ -993,7 +995,9 @@ export const subscribeOrchestrationV2Thread = Effect.fn("ws.orchestrationV2.subs
       // Bound stored and projected payload bytes separately; neither bounds process memory.
       if (
         stats.eventCount > THREAD_RESUME_MAX_REPLAY_EVENTS ||
-        !isThreadReplayRawPayloadSafe(stats.rawPayloadBytes)
+        !isThreadReplayRawPayloadSafe(stats.rawPayloadBytes) ||
+        // A snapshot fold moved later state behind this cursor.
+        stats.crossesSnapshotFold
       ) {
         return yield* snapshotThenLive();
       }

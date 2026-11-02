@@ -440,11 +440,13 @@ layer("OrchestrationEventStore", (it) => {
         eventCount: 2,
         rawPayloadBytes: Buffer.byteLength(unicodePayload) + Buffer.byteLength(oversizedPayload),
         hasCreateEvent: true,
+        crossesSnapshotFold: false,
       });
       assert.deepEqual(yield* store.getAgentReplayStats({ ...range, afterSequence: first }), {
         eventCount: 1,
         rawPayloadBytes: Buffer.byteLength(oversizedPayload),
         hasCreateEvent: false,
+        crossesSnapshotFold: false,
       });
       assert.equal(
         (yield* store.getAgentReplayStats({ ...range, throughSequence: later, maxEvents: 1 }))
@@ -455,6 +457,7 @@ layer("OrchestrationEventStore", (it) => {
         eventCount: 0,
         rawPayloadBytes: 0,
         hasCreateEvent: false,
+        crossesSnapshotFold: false,
       });
       assert.deepEqual(
         yield* store.getReplayStats({ afterSequence: baseline, throughSequence: head }),
@@ -462,6 +465,7 @@ layer("OrchestrationEventStore", (it) => {
           eventCount: 3,
           rawPayloadBytes:
             Buffer.byteLength(unicodePayload) + 2 * Buffer.byteLength(oversizedPayload),
+          crossesSnapshotFold: false,
         },
       );
     }),

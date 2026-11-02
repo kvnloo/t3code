@@ -33,6 +33,13 @@ import {
   type OrchestrationEventStoreError,
 } from "./Errors.ts";
 
+/**
+ * `orchestration_v2_projection_metadata` row whose `last_sequence` is the highest sequence removed
+ * by the opt-in snapshot fold (`ProjectionMaintenance.foldSupersededSnapshots`). Replay from a
+ * cursor below it could miss an entity's final state, so resume must take a snapshot instead.
+ */
+export const SNAPSHOT_FOLD_METADATA_NAME = "event-snapshot-fold";
+
 export type UnsequencedProjectEvent = ApplicationProjectEvent extends infer Event
   ? Event extends ApplicationProjectEvent
     ? Omit<Event, "sequence">
@@ -72,6 +79,7 @@ export class OrchestrationEventStore extends Context.Service<
         readonly eventCount: number;
         readonly rawPayloadBytes: number;
         readonly hasCreateEvent: boolean;
+        readonly crossesSnapshotFold: boolean;
       },
       OrchestrationEventStoreError
     >;
@@ -83,6 +91,7 @@ export class OrchestrationEventStore extends Context.Service<
       {
         readonly eventCount: number;
         readonly rawPayloadBytes: number;
+        readonly crossesSnapshotFold: boolean;
       },
       OrchestrationEventStoreError
     >;
@@ -298,6 +307,13 @@ const makeEventStore = Effect.gen(function* () {
     )
     ELSE orchestration_events.payload_json
   END`;
+
+  // The row exists only once the opt-in fold has run; until then this is always false.
+  const crossesSnapshotFold = (afterSequence: number) => sql`COALESCE((
+    SELECT last_sequence > ${afterSequence}
+    FROM orchestration_v2_projection_metadata
+    WHERE projection_name = ${SNAPSHOT_FOLD_METADATA_NAME}
+  ), 0)`;
 
   const appendProjectEventRow = SqlSchema.findOne({
     Request: AppendProjectEventRequestSchema,
@@ -590,11 +606,13 @@ const makeEventStore = Effect.gen(function* () {
       readonly eventCount: number;
       readonly rawPayloadBytes: number;
       readonly hasCreateEvent: number;
+      readonly crossesSnapshotFold: number;
     }>`
       SELECT
         COUNT(*) AS "eventCount",
         COALESCE(SUM(octet_length(payload_json)), 0) AS "rawPayloadBytes",
-        COALESCE(MAX(event_type = 'thread.created'), 0) AS "hasCreateEvent"
+        COALESCE(MAX(event_type = 'thread.created'), 0) AS "hasCreateEvent",
+        ${crossesSnapshotFold(input.afterSequence)} AS "crossesSnapshotFold"
       FROM (
         SELECT ${restoredPayloadJson} AS payload_json, event_type
         FROM orchestration_events
@@ -613,14 +631,20 @@ const makeEventStore = Effect.gen(function* () {
         eventCount: rows[0]?.eventCount ?? 0,
         rawPayloadBytes: rows[0]?.rawPayloadBytes ?? 0,
         hasCreateEvent: (rows[0]?.hasCreateEvent ?? 0) !== 0,
+        crossesSnapshotFold: (rows[0]?.crossesSnapshotFold ?? 0) !== 0,
       })),
     );
 
   const getReplayStats: OrchestrationEventStore["Service"]["getReplayStats"] = (input) =>
-    sql<{ readonly eventCount: number; readonly rawPayloadBytes: number }>`
+    sql<{
+      readonly eventCount: number;
+      readonly rawPayloadBytes: number;
+      readonly crossesSnapshotFold: number;
+    }>`
       SELECT
         COUNT(*) AS "eventCount",
-        COALESCE(SUM(octet_length(${restoredPayloadJson})), 0) AS "rawPayloadBytes"
+        COALESCE(SUM(octet_length(${restoredPayloadJson})), 0) AS "rawPayloadBytes",
+        ${crossesSnapshotFold(input.afterSequence)} AS "crossesSnapshotFold"
       FROM orchestration_events INDEXED BY idx_orchestration_events_application_high_water
       WHERE sequence > ${input.afterSequence}
         AND sequence <= ${input.throughSequence}
@@ -634,6 +658,7 @@ const makeEventStore = Effect.gen(function* () {
       Effect.map((rows) => ({
         eventCount: rows[0]?.eventCount ?? 0,
         rawPayloadBytes: rows[0]?.rawPayloadBytes ?? 0,
+        crossesSnapshotFold: (rows[0]?.crossesSnapshotFold ?? 0) !== 0,
       })),
     );
 

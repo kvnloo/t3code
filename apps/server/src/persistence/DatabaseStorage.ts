@@ -1,6 +1,8 @@
 import type { DatabaseStorageStatus } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
+import * as Config from "effect/Config";
 import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
@@ -20,6 +22,10 @@ import { forkParked } from "../serverActivation.ts";
 // Bound each reclaim pass to one minute of churn.
 const RECLAIM_PAGES_PER_PASS = 1024;
 const COMPACTION_INTERVAL = Duration.hours(6);
+// Experimental, default off: fold settled snapshot entities into one row (ProjectionMaintenance).
+const SNAPSHOT_FOLD_FLAG = "T3CODE_EXPERIMENTAL_SNAPSHOT_FOLD";
+// Only entities untouched this long are folded, so no fresh cursor can sit inside a fold.
+const SNAPSHOT_FOLD_SETTLED_AGE = Duration.minutes(10);
 
 export class DatabaseStorage extends Context.Service<
   DatabaseStorage,
@@ -39,6 +45,10 @@ const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const statusRef = yield* SubscriptionRef.make<DatabaseStorageStatus | null>(null);
+  const foldSnapshots = yield* Config.Boolean(SNAPSHOT_FOLD_FLAG).pipe(
+    Config.withDefault(false),
+    Effect.orElseSucceed(() => false),
+  );
 
   // The notice shows host-shell quoting verbatim; desktop needs its launcher because t3 is absent from PATH.
   const { command: compactCommand } = yield* resolveHostCliCommand("doctor", [
@@ -109,6 +119,15 @@ const make = Effect.gen(function* () {
       sliceStarted = yield* Clock.monotonicTimeNanos;
     });
     const result = yield* maintenance.compactEventStore(betweenPages);
+    if (foldSnapshots) {
+      const settledBefore = DateTime.formatIso(
+        DateTime.subtractDuration(yield* DateTime.now, SNAPSHOT_FOLD_SETTLED_AGE),
+      );
+      const folded = yield* maintenance.foldSupersededSnapshots({ settledBefore, betweenPages });
+      if (folded.deletedEventCount > 0) {
+        yield* Effect.logInfo("Folded superseded orchestration snapshots", folded);
+      }
+    }
     const completedAt = yield* Clock.currentTimeMillis;
     yield* fs.writeFileString(compactedAtPath, String(completedAt)).pipe(Effect.ignore);
     if (result.deletedEventCount > 0 || result.deletedReceiptCount > 0) {
