@@ -5,7 +5,11 @@ import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 
-import { experimentalPageSize } from "./experimentalPageSize.ts";
+import {
+  experimentalCheckpointFrames,
+  experimentalJournalSizeLimit,
+  experimentalPageSize,
+} from "./experimentalPageSize.ts";
 import { runMigrations } from "./Migrations.ts";
 import { initializeV2Database } from "./initializeV2Database.ts";
 import * as ServerConfig from "../config.ts";
@@ -38,7 +42,8 @@ const layerSetup = Layer.effectDiscard(
     // Large statements and open savepoints can increase peak memory use.
     yield* sql`PRAGMA temp_store = MEMORY;`;
     // PASSIVE checkpoints retain peak WAL size until the last connection closes.
-    yield* sql.unsafe(`PRAGMA journal_size_limit = ${WAL_SIZE_LIMIT_BYTES};`);
+    const journalSizeLimit = (yield* experimentalJournalSizeLimit) ?? WAL_SIZE_LIMIT_BYTES;
+    yield* sql.unsafe(`PRAGMA journal_size_limit = ${journalSizeLimit};`);
     yield* runMigrations();
     // Collecting stats scans every page, and stale small-table stats cause scans after growth; use indexes by default.
     // Connections cache stats; reload after deleting them.
@@ -55,10 +60,13 @@ export const layerFromPath = Effect.fn("makeSqlitePersistenceLive")(function* (d
   const path = yield* Path.Path;
   yield* fs.makeDirectory(path.dirname(dbPath), { recursive: true });
 
+  const checkpointFrames = yield* experimentalCheckpointFrames;
+
   return Layer.provideMerge(
     layerSetup,
     NodeSqliteClient.layer({
       filename: dbPath,
+      checkpointFrames,
       readerWorker: true,
       // Run checkpoint fsyncs off the event loop so slow disk flushes cannot stall clients.
       checkpointWorker: true,

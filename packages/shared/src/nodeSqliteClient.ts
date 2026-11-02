@@ -37,6 +37,8 @@ export interface SqliteClientConfig {
   readonly readerWorker?: boolean | undefined;
   /** Ignored for in-memory databases. */
   readonly checkpointWorker?: boolean | undefined;
+  /** WAL frames between checkpoint-worker checkpoints; defaults to 1000. Experimental. */
+  readonly checkpointFrames?: number | undefined;
 }
 
 // SqlClient masks transaction acquisition, so readOnly carries the caller's interruption policy.
@@ -487,9 +489,8 @@ const makeReader = Effect.fnUntraced(function* (
   });
 });
 
-const CHECKPOINT_FRAMES = 1000;
+const DEFAULT_CHECKPOINT_FRAMES = 1000;
 const CHECKPOINT_IDLE_MS = 100;
-const CHECKPOINT_BACKPRESSURE_FRAMES = 10 * CHECKPOINT_FRAMES;
 
 const readSafeSqliteInteger = (value: unknown) => {
   const number = typeof value === "bigint" ? Number(value) : value;
@@ -619,7 +620,9 @@ parentPort.on("message", (request) => {
 const startCheckpointWorker = Effect.fnUntraced(function* (
   filename: string,
   writer: NodeSqlite.DatabaseSync,
+  checkpointFrames: number,
 ) {
+  const backpressureFrames = 10 * checkpointFrames;
   const warn = (reason: string) =>
     Effect.logWarning(
       "SQLite checkpoint worker unavailable; checkpoints run on the main connection",
@@ -646,8 +649,8 @@ const startCheckpointWorker = Effect.fnUntraced(function* (
         eval: true,
         workerData: {
           filename,
-          frames: CHECKPOINT_FRAMES,
-          backpressureFrames: CHECKPOINT_BACKPRESSURE_FRAMES,
+          frames: checkpointFrames,
+          backpressureFrames,
           idleMs: CHECKPOINT_IDLE_MS,
         },
       }),
@@ -674,7 +677,7 @@ const startCheckpointWorker = Effect.fnUntraced(function* (
   const gated = () =>
     !stopped &&
     !writer.isTransaction &&
-    (unknown || blocked || truncate !== undefined || log >= CHECKPOINT_BACKPRESSURE_FRAMES);
+    (unknown || blocked || truncate !== undefined || log >= backpressureFrames);
   const wake = () => {
     if (!gated() && elected === undefined) {
       elected = waiters.shift();
@@ -694,7 +697,7 @@ const startCheckpointWorker = Effect.fnUntraced(function* (
     stopped = true;
     truncate = undefined;
     try {
-      writer.exec(`PRAGMA wal_autocheckpoint = ${CHECKPOINT_FRAMES};`);
+      writer.exec(`PRAGMA wal_autocheckpoint = ${checkpointFrames};`);
     } catch {}
     wake();
     runFork(warn(reason));
@@ -736,7 +739,7 @@ const startCheckpointWorker = Effect.fnUntraced(function* (
       checkAgain = true;
       return;
     }
-    if (!force && !gated() && log - checkpointed < CHECKPOINT_FRAMES) return;
+    if (!force && !gated() && log - checkpointed < checkpointFrames) return;
     inFlight = ++nextId;
     try {
       send({
@@ -886,7 +889,11 @@ const make = Effect.fn("makeWithDatabase")(function* (
     // Started after the close finalizer, so the worker stops before the writer closes.
     const checkpoint =
       options.checkpointWorker && isFileDatabase
-        ? yield* startCheckpointWorker(options.filename, db)
+        ? yield* startCheckpointWorker(
+            options.filename,
+            db,
+            options.checkpointFrames ?? DEFAULT_CHECKPOINT_FRAMES,
+          )
         : undefined;
 
     const statementReaderCache = new WeakMap<NodeSqlite.StatementSync, boolean>();

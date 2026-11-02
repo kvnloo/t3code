@@ -17,3 +17,20 @@ export const experimentalPageSize: Effect.Effect<number | undefined> = Config.In
   Config.map((size) => Option.getOrUndefined(Option.filter(size, isValidPageSize))),
   Effect.orElseSucceed(() => undefined),
 );
+
+const positiveInt = (name: string) =>
+  Config.Int(name).pipe(
+    Config.option,
+    Config.map((value) => Option.getOrUndefined(Option.filter(value, (n) => n > 0))),
+    Effect.orElseSucceed(() => undefined),
+  );
+
+/** Experimental, default off: WAL frames between background checkpoints (the client defaults to 1000). */
+export const experimentalCheckpointFrames: Effect.Effect<number | undefined> = positiveInt(
+  "T3CODE_EXPERIMENTAL_CHECKPOINT_FRAMES",
+);
+
+/** Experimental, default off: overrides the 32 MiB WAL journal_size_limit, in bytes. */
+export const experimentalJournalSizeLimit: Effect.Effect<number | undefined> = positiveInt(
+  "T3CODE_EXPERIMENTAL_JOURNAL_SIZE_LIMIT",
+);

@@ -129,3 +129,37 @@ it.effect("creates new databases at the experimental page size only when opted i
     Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
   );
 });
+
+it.effect("overrides the WAL journal size limit only when opted in", () => {
+  const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-sqlite-journal-limit-"));
+  const open = (name: string, env: Record<string, string>) =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const limit = yield* sql<{ readonly journal_size_limit: number }>`PRAGMA journal_size_limit`;
+      return limit[0]?.journal_size_limit;
+    }).pipe(
+      Effect.provide(
+        SqlitePersistence.layerFromPath(NodePath.join(tempDir, name)).pipe(
+          Layer.provide(NodeServices.layer),
+          Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))),
+        ),
+      ),
+    );
+
+  return Effect.gen(function* () {
+    assert.equal(yield* open("default.sqlite", {}), 32 * 1024 * 1024);
+    assert.equal(
+      yield* open("limited.sqlite", {
+        T3CODE_EXPERIMENTAL_JOURNAL_SIZE_LIMIT: "4194304",
+        T3CODE_EXPERIMENTAL_CHECKPOINT_FRAMES: "250",
+      }),
+      4 * 1024 * 1024,
+    );
+    assert.equal(
+      yield* open("invalid.sqlite", { T3CODE_EXPERIMENTAL_JOURNAL_SIZE_LIMIT: "0" }),
+      32 * 1024 * 1024,
+    );
+  }).pipe(
+    Effect.ensuring(Effect.sync(() => NodeFS.rmSync(tempDir, { recursive: true, force: true }))),
+  );
+});
