@@ -197,10 +197,11 @@ export function metricsFor(samples: Sample[]): Metric[] {
     "bytes",
     stale.map((s) => s.shellWsBytes),
   );
+  // Shell resume always opens with a project-only frame; a full fallback lists every thread.
   add(
-    "reconnect.stale.shell_snapshot.count",
+    "reconnect.stale.shell_thread_frames.count",
     "count",
-    stale.map((s) => s.shellKinds?.snapshot ?? 0),
+    stale.map((s) => s.shellKinds?.["thread.updated"] ?? 0),
   );
   add(
     "reconnect.stale.thread.ms",
