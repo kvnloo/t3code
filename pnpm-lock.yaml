@@ -551,6 +551,12 @@ importers:
       '@noble/curves':
         specifier: 'catalog:'
         version: 1.9.1
+      '@openuidev/lang-core':
+        specifier: 1.0.2
+        version: 1.0.2(@modelcontextprotocol/sdk@1.29.0(supports-color@8.1.1)(zod@4.6.5))(zod@4.6.5)
+      '@openuidev/react-lang':
+        specifier: 1.0.2
+        version: 1.0.2(@modelcontextprotocol/sdk@1.29.0(supports-color@8.1.1)(zod@4.6.5))(react-dom@19.3.0(react@19.3.0))(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)(zod@4.6.5)
       '@pierre/diffs':
         specifier: 1.6.1
         version: 1.6.1(patch_hash=4645364ddf113e48e8827f3b4966b3b1ff745317011e5a3d904e2d8672dee7dc)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -785,6 +791,9 @@ importers:
       uniwind:
         specifier: 1.13.0
         version: 1.13.0(@expo/metro-config@58.0.14(patch_hash=90fa980e8b6480631fb2fbb04559834e3c612db40c550cd828f11be297d8d760)(@tsc-rs/typescript@0.8.0)(bufferutil@4.1.0)(expo@58.0.14)(supports-color@8.1.1)(utf-8-validate@6.0.6))(metro-cache@0.87.1(supports-color@8.1.1))(metro-transform-worker@0.87.1(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(metro@0.87.1(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)(tailwindcss@4.3.3)
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
     devDependencies:
       '@babel/core':
         specifier: ^7.29.7
@@ -1045,6 +1054,12 @@ importers:
       '@noble/hashes':
         specifier: 'catalog:'
         version: 1.8.0
+      '@openuidev/lang-core':
+        specifier: 1.0.2
+        version: 1.0.2(@modelcontextprotocol/sdk@1.29.0(supports-color@8.1.1)(zod@4.1.12))(zod@4.1.12)
+      '@openuidev/react-lang':
+        specifier: 1.0.2
+        version: 1.0.2(@modelcontextprotocol/sdk@1.29.0(supports-color@8.1.1)(zod@4.1.12))(react-dom@19.3.0(react@19.3.0))(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)(zod@4.1.12)
       '@pierre/diffs':
         specifier: 1.6.1
         version: 1.6.1(patch_hash=4645364ddf113e48e8827f3b4966b3b1ff745317011e5a3d904e2d8672dee7dc)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -1201,6 +1216,9 @@ importers:
       use-sync-external-store:
         specifier: ^1.6.0
         version: 1.6.0(react@19.3.0)
+      zod:
+        specifier: 4.1.12
+        version: 4.1.12
       zustand:
         specifier: ^5.0.11
         version: 5.0.14(@types/react@19.3.0)(react@19.3.0)(use-sync-external-store@1.6.0(react@19.3.0))
@@ -5044,6 +5062,45 @@ packages:
   '@opencode/schema@2.0.28':
     resolution: {integrity: sha512-NHl42ngFN6uLCjtmtooYlEGEayng9ZFc+30DAqQuPcvKpMWsO23OqximHlukxtErp209C4f9LW+OJH/6k60+yw==}
 
+  '@openuidev/devtools@0.3.1':
+    resolution: {integrity: sha512-kOCCsRGwY0w6xL1rVL1zOa9CO97ZrG6YGasRZyCv7FXaDAzbFkEgFy+FhYx6EP7sPKhkgr/jBqunADzhevpBDw==}
+    peerDependencies:
+      '@openuidev/observability': '>=0.0.4 <0.1.0'
+      '@openuidev/react-lang': '>=1.0.0 <2.0.0'
+      react: ^18.3.1 || ^19.0.0
+      react-dom: ^18.0.0 || ^19.0.0
+    peerDependenciesMeta:
+      '@openuidev/react-lang':
+        optional: true
+
+  '@openuidev/lang-core@1.0.2':
+    resolution: {integrity: sha512-mxrWXgSmGx9N8ZHFiRgvqCmCH8j3x0PTHJVRvtRPlucxDAihthgMR4W6RXJN5KnCl/5fk1SzcT9JHrvGTKcBFw==}
+    peerDependencies:
+      '@modelcontextprotocol/sdk': '>=1.0.0'
+      zod: ^3.25.0 || ^4.0.0
+    peerDependenciesMeta:
+      '@modelcontextprotocol/sdk':
+        optional: true
+
+  '@openuidev/observability@0.0.4':
+    resolution: {integrity: sha512-4fjIrWu3TqTlfDE/m7cG10CH1vV7wQk5GPwMOmXeF9vJtkg92dg4Bdk3AjKgud7H7Xypwwjgt52VcLGZCE2CJQ==}
+
+  '@openuidev/react-lang@1.0.2':
+    resolution: {integrity: sha512-nCNALKj71GmKo5x0dR10hr3LKf88MHxlkVgnsbYQdJTxBd3TbD9wqlgJkBcAZNFD4kPHINJ0iTdUAbR871XWBw==}
+    peerDependencies:
+      '@modelcontextprotocol/sdk': '>=1.0.0'
+      react: '*'
+      react-dom: '*'
+      react-native: '*'
+      zod: ^3.25.0 || ^4.0.0
+    peerDependenciesMeta:
+      '@modelcontextprotocol/sdk':
+        optional: true
+      react-dom:
+        optional: true
+      react-native:
+        optional: true
+
   '@oslojs/asn1@1.0.0':
     resolution: {integrity: sha512-zw/wn0sj0j0QKbIXfIlnEcTviaCzYOY3V5rAyjR6YtOByFtJiT574+8p9Wlach0lZH9fddD4yb9laEAIl4vXQA==}
     deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
@@ -5866,10 +5923,6 @@ packages:
 
   '@pierre/highlights@0.2.0':
     resolution: {integrity: sha512-hTpcOU1EzDAP4bYtEhxmMu2jwMvtkUydRUBUpWMSHTs3dw0IaC3Ld5ansMy18L0GE3b6Vfl2OGkLK+pWWpnBmw==}
-
-  '@pierre/theme@1.1.0':
-    resolution: {integrity: sha512-GC2OWTAfTIIWWYhPCygwG8t2EtePQkRfON4MI2rwIkJylmiyqIttJID2dCL8sUD8cNdEvYkEyfEHHKMeCiDLoQ==}
-    engines: {vscode: ^1.0.0}
 
   '@pierre/theme@2.0.0':
     resolution: {integrity: sha512-yNDd9GYLQl1mEUJR8AneJ5e4ohLIHQd/wZLWr4fagt78vS2RwwZNW530vVgHqXFAyFVcFlRmGUD5ramXH46OXw==}
@@ -7404,6 +7457,11 @@ packages:
 
   ajv-formats@3.0.1:
     resolution: {integrity: sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ==}
+    peerDependencies:
+      ajv: ^8.0.0
+    peerDependenciesMeta:
+      ajv:
+        optional: true
 
   ajv-keywords@5.1.0:
     resolution: {integrity: sha512-YCS/JNFAUyr5vAuhk1DWm1CBxRHW9LbJ2ozWeemrIqpbsqKjHVxYPyi5GC0rjZIT5JxJ3virVTS8wk4i/Z+krw==}
@@ -9756,6 +9814,11 @@ packages:
 
   lucide-react@0.564.0:
     resolution: {integrity: sha512-JJ8GVTQqFwuliifD48U6+h7DXEHdkhJ/E87kksGByII3qHxtPciVb8T8woQONHBQgHVOl7rSMrrip3SeVNy7Fg==}
+    peerDependencies:
+      react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
+
+  lucide-react@0.575.0:
+    resolution: {integrity: sha512-VuXgKZrk0uiDlWjGGXmKV6MSk9Yy4l10qgVvzGn2AWBx1Ylt0iBexKOAoA6I7JO3m+M9oeovJd3yYENfkUbOeg==}
     peerDependencies:
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
@@ -12279,6 +12342,9 @@ packages:
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
+  zod@4.1.12:
+    resolution: {integrity: sha512-JInaHOamG8pt5+Ey8kGmdcAcg3OL9reK8ltczgHTAwNhMys/6ThXHityHxVV2p3fkw/c+MAvBHFVYHFZDmjMCQ==}
+
   zod@4.5.4:
     resolution: {integrity: sha512-sC95tT5iHHH9gtpj6A81kh+NEaRAUFN+qlUPDUbRfOMvNf5QCBqsb3WgvnpVtK5Y+4UfA6KqufotuTvMGiTlsA==}
 
@@ -14780,11 +14846,34 @@ snapshots:
 
   '@material/material-color-utilities@0.3.0': {}
 
+  '@modelcontextprotocol/sdk@1.29.0(supports-color@8.1.1)(zod@4.1.12)':
+    dependencies:
+      '@hono/node-server': 1.19.17(hono@4.13.7)
+      ajv: 8.20.0
+      ajv-formats: 3.0.1(ajv@8.20.0)
+      content-type: 1.0.5
+      cors: 2.8.6
+      cross-spawn: 7.0.6
+      eventsource: 3.0.7
+      eventsource-parser: 3.1.0
+      express: 5.2.1(supports-color@8.1.1)
+      express-rate-limit: 8.5.2(express@5.2.1(supports-color@8.1.1))
+      hono: 4.13.7
+      jose: 6.2.2
+      json-schema-typed: 8.0.2
+      pkce-challenge: 5.0.1
+      raw-body: 3.0.2
+      zod: 4.1.12
+      zod-to-json-schema: 3.25.2(zod@4.1.12)
+    transitivePeerDependencies:
+      - supports-color
+    optional: true
+
   '@modelcontextprotocol/sdk@1.29.0(supports-color@8.1.1)(zod@4.6.5)':
     dependencies:
       '@hono/node-server': 1.19.17(hono@4.13.7)
       ajv: 8.20.0
-      ajv-formats: 3.0.1
+      ajv-formats: 3.0.1(ajv@8.20.0)
       content-type: 1.0.5
       cors: 2.8.6
       cross-spawn: 7.0.6
@@ -14992,6 +15081,64 @@ snapshots:
     dependencies:
       '@standard-schema/spec': 1.1.0
       effect: 4.0.5
+
+  '@openuidev/devtools@0.3.1(@openuidev/observability@0.0.4)(@openuidev/react-lang@1.0.2(@modelcontextprotocol/sdk@1.29.0(supports-color@8.1.1)(zod@4.1.12))(react-dom@19.3.0(react@19.3.0))(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)(zod@4.1.12))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+    dependencies:
+      '@openuidev/observability': 0.0.4
+      lucide-react: 0.575.0(react@19.3.0)
+      react: 19.3.0
+      react-dom: 19.3.0(react@19.3.0)
+    optionalDependencies:
+      '@openuidev/react-lang': 1.0.2(@modelcontextprotocol/sdk@1.29.0(supports-color@8.1.1)(zod@4.1.12))(react-dom@19.3.0(react@19.3.0))(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)(zod@4.1.12)
+
+  '@openuidev/devtools@0.3.1(@openuidev/observability@0.0.4)(@openuidev/react-lang@1.0.2(@modelcontextprotocol/sdk@1.29.0(supports-color@8.1.1)(zod@4.6.5))(react-dom@19.3.0(react@19.3.0))(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)(zod@4.6.5))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+    dependencies:
+      '@openuidev/observability': 0.0.4
+      lucide-react: 0.575.0(react@19.3.0)
+      react: 19.3.0
+      react-dom: 19.3.0(react@19.3.0)
+    optionalDependencies:
+      '@openuidev/react-lang': 1.0.2(@modelcontextprotocol/sdk@1.29.0(supports-color@8.1.1)(zod@4.6.5))(react-dom@19.3.0(react@19.3.0))(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)(zod@4.6.5)
+
+  '@openuidev/lang-core@1.0.2(@modelcontextprotocol/sdk@1.29.0(supports-color@8.1.1)(zod@4.1.12))(zod@4.1.12)':
+    dependencies:
+      ci-info: 4.4.0
+      zod: 4.1.12
+    optionalDependencies:
+      '@modelcontextprotocol/sdk': 1.29.0(supports-color@8.1.1)(zod@4.1.12)
+
+  '@openuidev/lang-core@1.0.2(@modelcontextprotocol/sdk@1.29.0(supports-color@8.1.1)(zod@4.6.5))(zod@4.6.5)':
+    dependencies:
+      ci-info: 4.4.0
+      zod: 4.6.5
+    optionalDependencies:
+      '@modelcontextprotocol/sdk': 1.29.0(supports-color@8.1.1)(zod@4.6.5)
+
+  '@openuidev/observability@0.0.4': {}
+
+  '@openuidev/react-lang@1.0.2(@modelcontextprotocol/sdk@1.29.0(supports-color@8.1.1)(zod@4.1.12))(react-dom@19.3.0(react@19.3.0))(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)(zod@4.1.12)':
+    dependencies:
+      '@openuidev/devtools': 0.3.1(@openuidev/observability@0.0.4)(@openuidev/react-lang@1.0.2(@modelcontextprotocol/sdk@1.29.0(supports-color@8.1.1)(zod@4.1.12))(react-dom@19.3.0(react@19.3.0))(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)(zod@4.1.12))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@openuidev/lang-core': 1.0.2(@modelcontextprotocol/sdk@1.29.0(supports-color@8.1.1)(zod@4.1.12))(zod@4.1.12)
+      '@openuidev/observability': 0.0.4
+      react: 19.3.0
+      zod: 4.1.12
+    optionalDependencies:
+      '@modelcontextprotocol/sdk': 1.29.0(supports-color@8.1.1)(zod@4.1.12)
+      react-dom: 19.3.0(react@19.3.0)
+      react-native: 0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6)
+
+  '@openuidev/react-lang@1.0.2(@modelcontextprotocol/sdk@1.29.0(supports-color@8.1.1)(zod@4.6.5))(react-dom@19.3.0(react@19.3.0))(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)(zod@4.6.5)':
+    dependencies:
+      '@openuidev/devtools': 0.3.1(@openuidev/observability@0.0.4)(@openuidev/react-lang@1.0.2(@modelcontextprotocol/sdk@1.29.0(supports-color@8.1.1)(zod@4.6.5))(react-dom@19.3.0(react@19.3.0))(react-native@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)(zod@4.6.5))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@openuidev/lang-core': 1.0.2(@modelcontextprotocol/sdk@1.29.0(supports-color@8.1.1)(zod@4.6.5))(zod@4.6.5)
+      '@openuidev/observability': 0.0.4
+      react: 19.3.0
+      zod: 4.6.5
+    optionalDependencies:
+      '@modelcontextprotocol/sdk': 1.29.0(supports-color@8.1.1)(zod@4.6.5)
+      react-dom: 19.3.0(react@19.3.0)
+      react-native: 0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.0(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6)
 
   '@oslojs/asn1@1.0.0':
     dependencies:
@@ -15446,8 +15593,6 @@ snapshots:
       - '@shikijs/themes'
 
   '@pierre/highlights@0.2.0': {}
-
-  '@pierre/theme@1.1.0': {}
 
   '@pierre/theme@2.0.0': {}
 
@@ -16959,8 +17104,8 @@ snapshots:
     dependencies:
       ajv: 8.20.0
 
-  ajv-formats@3.0.1:
-    dependencies:
+  ajv-formats@3.0.1(ajv@8.20.0):
+    optionalDependencies:
       ajv: 8.20.0
 
   ajv-keywords@5.1.0(ajv@8.20.0):
@@ -19565,6 +19710,10 @@ snapshots:
   lru_map@0.4.1: {}
 
   lucide-react@0.564.0(react@19.3.0):
+    dependencies:
+      react: 19.3.0
+
+  lucide-react@0.575.0(react@19.3.0):
     dependencies:
       react: 19.3.0
 
@@ -22747,11 +22896,18 @@ snapshots:
       '@yuku-toolchain/types': 0.19.0
       yuku-core: 0.19.0
 
+  zod-to-json-schema@3.25.2(zod@4.1.12):
+    dependencies:
+      zod: 4.1.12
+    optional: true
+
   zod-to-json-schema@3.25.2(zod@4.6.5):
     dependencies:
       zod: 4.6.5
 
   zod@3.25.76: {}
+
+  zod@4.1.12: {}
 
   zod@4.5.4: {}
 
