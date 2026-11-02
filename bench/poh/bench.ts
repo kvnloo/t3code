@@ -32,6 +32,9 @@ const { values: args } = NodeUtil.parseArgs({
     "server-env": { type: "string", multiple: true, default: [] },
     // Reuse another run's thread picks (run.json) so A/B arms open the same threads.
     "picks-from": { type: "string" },
+    // A cursor the largest thread's client held long ago (e.g. inside a snapshot fold); the
+    // reconnect-stale phase resumes it. Pin the same value in both A/B arms.
+    "stale-thread-cursor": { type: "string" },
   },
 });
 const serverEnv = Object.fromEntries(
@@ -44,6 +47,8 @@ const serverEnv = Object.fromEntries(
 const RUNS = Number(args.runs);
 const WARM = Number(args.warm);
 const TURNS_PER_BOOT = Number(args.turns);
+// Below ws.ts SHELL_RESUME_MAX_GAP (1,000), so the flag-off arm replays the shell.
+const STALE_SHELL_GAP = 500;
 const sha = NodeChildProcess.execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: repoRoot,
   encoding: "utf8",
@@ -562,6 +567,59 @@ try {
         });
         record({
           kind: "reconnect-idle",
+          boot,
+          ...measured.result,
+          peakRss: measured.peakServerRss,
+          cpuS: measured.cpuS,
+        });
+      }
+
+      // Reconnect from old cursors, as a client back from a long sleep: the shell from
+      // STALE_SHELL_GAP sequences behind the head, and the largest thread from a pinned cursor.
+      // After a snapshot fold pass both cursors sit below folded rows.
+      for (let i = 0; i < WARM; i++) {
+        const head = (await httpGet(session, `/api/orchestration/shell${SHELL_QUERY}`)).json
+          .snapshotSequence as number;
+        const shellCursor = Math.max(0, head - STALE_SHELL_GAP);
+        const threadCursor =
+          args["stale-thread-cursor"] === undefined
+            ? shellCursor
+            : Number(args["stale-thread-cursor"]);
+        const measured = await withProcSampling(server.pid, async () => {
+          const started = performance.now();
+          const next = await connect(session);
+          const shell = await untilSynchronized(next.rpc, "orchestration.subscribeShell", {
+            afterSequence: shellCursor,
+            omitIdleSubagents: true,
+            omitOlderSettled: true,
+            requestCompletionMarker: true,
+          });
+          const thread = await untilSynchronized(next.rpc, "orchestration.subscribeThread", {
+            threadId: picks!.largest.threadId,
+            afterSequence: threadCursor,
+            requestCompletionMarker: true,
+            acceptBoundedSnapshot: true,
+            acceptDeferredWork: true,
+            acceptCompactTurnItems: true,
+            acceptCompactIds: true,
+            acceptDedupedBodies: true,
+          });
+          const ms = performance.now() - started;
+          await next.rpc.close();
+          return {
+            ms,
+            shellMs: shell.ms,
+            shellWsBytes: shell.bytes,
+            shellKinds: shell.kinds,
+            threadMs: thread.ms,
+            threadWsBytes: thread.bytes,
+            threadKinds: thread.kinds,
+            shellCursor,
+            threadCursor,
+          };
+        });
+        record({
+          kind: "reconnect-stale",
           boot,
           ...measured.result,
           peakRss: measured.peakServerRss,

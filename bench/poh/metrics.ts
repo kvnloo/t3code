@@ -181,6 +181,52 @@ export function metricsFor(samples: Sample[]): Metric[] {
     "s",
     idle.map((s) => s.cpuS),
   );
+  const stale = of("reconnect-stale");
+  add(
+    "reconnect.stale.ms",
+    "ms",
+    stale.map((s) => s.ms),
+  );
+  add(
+    "reconnect.stale.shell.ms",
+    "ms",
+    stale.map((s) => s.shellMs),
+  );
+  add(
+    "reconnect.stale.shell_ws.bytes",
+    "bytes",
+    stale.map((s) => s.shellWsBytes),
+  );
+  add(
+    "reconnect.stale.shell_snapshot.count",
+    "count",
+    stale.map((s) => s.shellKinds?.snapshot ?? 0),
+  );
+  add(
+    "reconnect.stale.thread.ms",
+    "ms",
+    stale.map((s) => s.threadMs),
+  );
+  add(
+    "reconnect.stale.thread_ws.bytes",
+    "bytes",
+    stale.map((s) => s.threadWsBytes),
+  );
+  add(
+    "reconnect.stale.thread_snapshot.count",
+    "count",
+    stale.map((s) => s.threadKinds?.snapshot ?? 0),
+  );
+  add(
+    "reconnect.stale.thread_events.count",
+    "count",
+    stale.map((s) => s.threadKinds?.event ?? 0),
+  );
+  add(
+    "reconnect.stale.cpu.s",
+    "s",
+    stale.map((s) => s.cpuS),
+  );
   const missed = of("reconnect-missed-turn");
   add(
     "reconnect.missed_turn.ms",
