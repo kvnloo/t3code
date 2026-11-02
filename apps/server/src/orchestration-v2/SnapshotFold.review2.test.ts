@@ -163,11 +163,10 @@ it.effect("rebuild after a fold keeps thread.updatedAt when a PR link sync follo
   }).pipe(Effect.provide(layerTest)),
 );
 
-// r2-2: the M2 re-check covers the replay read, not the live tail's catch-up. The tail starts
-// lazily, after the client acks the snapshot (or replay) chunk, and catches up from the DB from
-// snapshotSequence. If the entity got its final row after the snapshot and a fold committed before
-// the tail started, the final body sits at a row below the cursor and the tail never sends it.
-it.effect("live tail catch-up after a fold still delivers the final body", () =>
+// r2-2: the live tail starts after the client acks the snapshot and catches up from the DB. A fold
+// committed before that moved m's final body behind the cursor; the tail must fail so the client's
+// retry from its cursor takes a snapshot with the final body.
+it.effect("live tail catch-up after a fold fails into a snapshot with the final body", () =>
   Effect.gen(function* () {
     const sink = yield* EventSink.EventSinkV2;
     const projections = yield* ProjectionStore.ProjectionStoreV2;
@@ -181,58 +180,101 @@ it.effect("live tail catch-up after a fold still delivers the final body", () =>
         yield* sink.write({ events: [threadCreated(threadId, at(0))] });
         yield* sink.write({ events: [messageEvent(threadId, at(1), "m", 0, false)] });
         let tailStarts = 1;
-        const items = yield* subscribeOrchestrationV2Thread({
-          threadId,
-          requestCompletionMarker: true,
-        }).pipe(
-          Effect.flatMap((stream) => stream.pipe(Stream.take(3), Stream.runCollect)),
-          Effect.map((collected) => Array.from(collected)),
-          Effect.provideService(ThreadManagement.ThreadManagementService, {
-            ensureLegacyTranscript: () => Effect.void,
-            getThreadSnapshot: (id: ThreadId) => projections.getThreadSnapshot(id),
-            // Real tail (Orchestrator.streamStoredEventsFrom). Its start is the point where the
-            // client acked the snapshot; what happened while it had not is injected here.
-            streamStoredEventsFrom: (input: {
-              readonly threadId?: ThreadId;
-              readonly afterSequence?: number;
-            }) =>
-              Stream.unwrap(
-                Effect.gen(function* () {
-                  if (tailStarts > 0) {
-                    tailStarts -= 1;
-                    yield* sink.write({ events: [messageEvent(threadId, at(2), "m", 1, true)] });
-                    yield* sink.write({ events: [messageEvent(threadId, at(3), "tail", 0, true)] });
-                    if (foldBeforeTail) {
-                      const folded = yield* maintenance.foldSupersededSnapshots({
-                        settledThrough: everything,
-                      });
-                      // m here, plus the control thread's m.
-                      assert.isAtLeast(folded.foldedEntityCount, 1);
-                    }
+        const threadManagement = {
+          ensureLegacyTranscript: () => Effect.void,
+          getThreadSnapshot: (id: ThreadId) => projections.getThreadSnapshot(id),
+          // Real tail (Orchestrator.streamStoredEventsFrom). Its start is the point where the
+          // client acked the snapshot; what happened while it had not is injected here.
+          streamStoredEventsFrom: (input: {
+            readonly threadId?: ThreadId;
+            readonly afterSequence?: number;
+          }) =>
+            Stream.unwrap(
+              Effect.gen(function* () {
+                if (tailStarts > 0) {
+                  tailStarts -= 1;
+                  yield* sink.write({ events: [messageEvent(threadId, at(2), "m", 1, true)] });
+                  yield* sink.write({ events: [messageEvent(threadId, at(3), "tail", 0, true)] });
+                  if (foldBeforeTail) {
+                    const folded = yield* maintenance.foldSupersededSnapshots({
+                      settledThrough: everything,
+                    });
+                    // m here, plus the control thread's m.
+                    assert.isAtLeast(folded.foldedEntityCount, 1);
                   }
-                  return sink.stream({ ...input, bounded: true });
-                }).pipe(Effect.orDie),
+                }
+                return sink.stream({ ...input, bounded: true });
+              }).pipe(Effect.orDie),
+            ),
+        } as unknown as ThreadManagement.ThreadManagementService["Service"];
+        const subscribe = (afterSequence: number | undefined, take: number) =>
+          Effect.gen(function* () {
+            const items: Array<Record<string, unknown>> = [];
+            const exit = yield* subscribeOrchestrationV2Thread({
+              threadId,
+              requestCompletionMarker: true,
+              ...(afterSequence === undefined ? {} : { afterSequence }),
+            }).pipe(
+              Effect.flatMap((stream) =>
+                stream.pipe(
+                  Stream.take(take),
+                  Stream.runForEach((item) =>
+                    Effect.sync(() => items.push(item as unknown as Record<string, unknown>)),
+                  ),
+                ),
               ),
-          } as unknown as ThreadManagement.ThreadManagementService["Service"]),
-        );
+              Effect.provideService(ThreadManagement.ThreadManagementService, threadManagement),
+              Effect.exit,
+            );
+            return { items, exit };
+          });
+        const messageOf = (item: Record<string, unknown> | undefined) => {
+          if (item?.kind === "event") {
+            const event = item.event as OrchestrationV2DomainEvent;
+            if (event.type !== "message.updated") return [event.type];
+            return [event.payload.text, event.payload.streaming];
+          }
+          if (item?.kind === "snapshot") {
+            const projection = item.projection as {
+              readonly messages: ReadonlyArray<{ readonly text: string; streaming: boolean }>;
+            };
+            const m = projection.messages.find((message) => message.text.startsWith("answer m"));
+            return [m?.text, m?.streaming];
+          }
+          return [item?.kind];
+        };
+
+        const first = yield* subscribe(undefined, 3);
+        if (!foldBeforeTail) {
+          // Control: without a fold the tail replays m's final row.
+          assert.isTrue(first.exit._tag === "Success", name);
+          assert.deepEqual(
+            first.items.map((item) => item.kind),
+            ["snapshot", "synchronized", "event"],
+          );
+          assert.deepEqual(messageOf(first.items[2]), ["answer m 1", false], name);
+          return;
+        }
+        // The tail fails with the retryable projection error instead of skipping m's final body.
         assert.deepEqual(
-          items.map((item) => item.kind),
-          ["snapshot", "synchronized", "event"],
+          first.items.map((item) => item.kind),
+          ["snapshot", "synchronized"],
         );
-        const event = items[2]!;
-        assert.isTrue(event.kind === "event");
-        if (event.kind !== "event" || !("event" in event)) return;
-        // The first live event must be m's final body: the snapshot showed m streaming.
-        assert.equal(event.event.type, "message.updated");
-        if (event.event.type !== "message.updated") return;
+        assert.isTrue(first.exit._tag === "Failure", name);
+        if (first.exit._tag !== "Failure") return;
+        assert.include(String(first.exit.cause), "OrchestrationV2GetThreadProjectionError");
+        // The client retries from the cursor it holds: the watermark crosses it, so it gets a
+        // snapshot that carries m's final body.
+        const cursor = first.items[0]!.snapshotSequence as number;
+        const second = yield* subscribe(cursor, 2);
+        assert.isTrue(second.exit._tag === "Success", name);
         assert.deepEqual(
-          [event.event.payload.text, event.event.payload.streaming],
-          ["answer m 1", false],
-          name,
+          second.items.map((item) => item.kind),
+          ["snapshot", "synchronized"],
         );
+        assert.deepEqual(messageOf(second.items[0]), ["answer m 1", false], name);
       });
 
-    // Control: without a fold the tail replays m's final row.
     yield* run("control", false);
     yield* run("folded", true);
   }).pipe(Effect.provide(layerTest)),

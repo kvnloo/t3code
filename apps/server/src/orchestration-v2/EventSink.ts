@@ -24,7 +24,10 @@ import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { replayAndBufferProjectedLiveEvents } from "./LiveStreamBudget.ts";
-import type { UnsequencedProjectEvent } from "../persistence/OrchestrationEventStore.ts";
+import {
+  snapshotFoldThreadMetadataName,
+  type UnsequencedProjectEvent,
+} from "../persistence/OrchestrationEventStore.ts";
 import { projectDomainEventForWire } from "./WireProjection.ts";
 import { makeRunOutcomeRecorder, type RunOutcome } from "./RunMetrics.ts";
 
@@ -803,18 +806,45 @@ const layerBase: Layer.Layer<
       readonly eventType?: OrchestrationV2DomainEvent["type"];
     }): Stream.Stream<OrchestrationV2StoredEvent, unknown> => {
       const pageSize = 256;
+      const threadId = input.threadId;
+      // A snapshot fold that committed before this page's read moved an entity's newest body
+      // behind `afterSequence`. Checked after the read: a fold committing later did not change it.
+      // Failing makes a thread subscriber resubscribe from its cursor and take a snapshot.
+      const failIfSnapshotFoldCrossed = (afterSequence: number) =>
+        threadId === undefined
+          ? Effect.void
+          : sql<{ readonly crosses: number }>`
+              SELECT COALESCE((
+                SELECT last_sequence > ${afterSequence}
+                FROM orchestration_v2_projection_metadata
+                WHERE projection_name = ${snapshotFoldThreadMetadataName(threadId)}
+              ), 0) AS crosses
+            `.pipe(
+              Effect.flatMap((rows) =>
+                (rows[0]?.crosses ?? 0) === 0
+                  ? Effect.void
+                  : Effect.fail(
+                      new EventSinkStreamError({
+                        threadId,
+                        afterSequence,
+                        cause: new Error("A snapshot fold moved events behind this cursor."),
+                      }),
+                    ),
+              ),
+            );
       const loop = (afterSequence: number): Stream.Stream<OrchestrationV2StoredEvent, unknown> =>
         Stream.unwrap(
           eventStore
             .read({
               afterSequence,
               throughSequence: input.throughSequence,
-              ...(input.threadId === undefined ? {} : { threadId: input.threadId }),
+              ...(threadId === undefined ? {} : { threadId }),
               ...(input.eventType === undefined ? {} : { eventType: input.eventType }),
               limit: pageSize,
             })
             .pipe(
               Stream.runCollect,
+              Effect.tap(() => failIfSnapshotFoldCrossed(afterSequence)),
               Effect.map((chunk) => Array.from(chunk)),
               Effect.map((events) => {
                 if (events.length === 0) {

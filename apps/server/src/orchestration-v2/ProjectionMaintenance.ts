@@ -72,8 +72,17 @@ const FOLDABLE_SNAPSHOT_EVENT_TYPES = [
   "turn-item.updated",
 ] as const;
 
-/** Events whose replay keeps the previous `projection.updatedAt` (client and server apply). */
-const NON_ACTIVITY_EVENT_TYPES = ["thread.visited", "thread.tags-updated", "thread.marked-unread"];
+/**
+ * Events after which some replay keeps the previous `updatedAt`: client and in-memory apply skip
+ * the bump for visited/tags/marked-unread, and the server SQL and in-memory apply re-apply the
+ * current thread row for a PR link sync. Every other `thread.*` event carries its own `updatedAt`.
+ */
+const NON_ACTIVITY_EVENT_TYPES = [
+  "thread.visited",
+  "thread.tags-updated",
+  "thread.marked-unread",
+  "thread.pull-request-link-updated",
+];
 
 // Entities per fold transaction; bounds how long one chunk holds the SQLite writer.
 const FOLD_ENTITIES_PER_TRANSACTION = 64;

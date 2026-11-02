@@ -13,6 +13,7 @@ import { assert, it } from "@effect/vitest";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as SqlClient from "effect/sql/SqlClient";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as EventStore from "./EventStore.ts";
@@ -107,6 +108,37 @@ function eventStats(file: string) {
   }
 }
 
+const sizeOf = (file: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    yield* sql`PRAGMA wal_checkpoint(TRUNCATE)`;
+    const pragma = (name: string) =>
+      sql<Record<string, number>>`SELECT * FROM ${sql.literal(`pragma_${name}`)}`.pipe(
+        Effect.map((rows) => Number(Object.values(rows[0] ?? {})[0] ?? 0)),
+      );
+    const pageSize = yield* pragma("page_size");
+    const pageCount = yield* pragma("page_count");
+    const freelistCount = yield* pragma("freelist_count");
+    const autoVacuum = yield* pragma("auto_vacuum");
+    const vacuumed = `${file}.vacuumed`;
+    yield* Effect.sync(() => NodeFS.rmSync(vacuumed, { force: true }));
+    yield* sql`VACUUM INTO ${vacuumed}`;
+    const vacuumedBytes = yield* Effect.sync(() => {
+      const bytes = NodeFS.statSync(vacuumed).size;
+      NodeFS.rmSync(vacuumed, { force: true });
+      return bytes;
+    });
+    return {
+      autoVacuum,
+      pageSize,
+      inPlaceFileBytes: NodeFS.statSync(file).size,
+      inPlacePageCount: pageCount,
+      inPlaceFreelistCount: freelistCount,
+      inPlaceUsedBytes: (pageCount - freelistCount) * pageSize,
+      vacuumedBytes,
+    };
+  });
+
 const maintain = (file: string, fold: boolean) =>
   Effect.gen(function* () {
     const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
@@ -116,8 +148,11 @@ const maintain = (file: string, fold: boolean) =>
       ? yield* maintenance.foldSupersededSnapshots({ settledThrough: Number.MAX_SAFE_INTEGER })
       : null;
     const foldMillis = fold ? (yield* Clock.currentTimeMillis) - foldStarted : null;
+    // In place, as the background pass leaves the file: deleted rows become free pages, which
+    // only VACUUM (t3 doctor) or incremental auto_vacuum returns to the filesystem.
+    const size = yield* sizeOf(file);
     const verification = yield* maintenance.rebuild;
-    return { compacted, folded, foldMillis, verification };
+    return { compacted, folded, foldMillis, size, verification };
   }).pipe(
     Effect.provide(
       ProjectionMaintenance.layer.pipe(

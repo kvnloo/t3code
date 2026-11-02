@@ -25,6 +25,8 @@ const COMPACTION_INTERVAL = Duration.hours(6);
 const SNAPSHOT_FOLD_FLAG = "T3CODE_EXPERIMENTAL_SNAPSHOT_FOLD";
 // Only entities untouched this long (monotonic) are folded, so no fresh cursor sits inside a fold.
 const SNAPSHOT_FOLD_SETTLED_AGE = Duration.minutes(10);
+// Bench-only override of the settle age, to run a pass inside a measured server boot.
+const SNAPSHOT_FOLD_SETTLE_MS_FLAG = "T3CODE_EXPERIMENTAL_SNAPSHOT_FOLD_SETTLE_MS";
 
 export class DatabaseStorage extends Context.Service<
   DatabaseStorage,
@@ -47,6 +49,10 @@ const make = Effect.gen(function* () {
   const foldSnapshots = yield* Config.Boolean(SNAPSHOT_FOLD_FLAG).pipe(
     Config.withDefault(false),
     Effect.orElseSucceed(() => false),
+  );
+  const foldSettleMillis = yield* Config.Int(SNAPSHOT_FOLD_SETTLE_MS_FLAG).pipe(
+    Config.withDefault(Duration.toMillis(SNAPSHOT_FOLD_SETTLED_AGE)),
+    Effect.orElseSucceed(() => Duration.toMillis(SNAPSHOT_FOLD_SETTLED_AGE)),
   );
 
   // The notice shows host-shell quoting verbatim; desktop needs its launcher because t3 is absent from PATH.
@@ -131,8 +137,11 @@ const make = Effect.gen(function* () {
     const result = yield* maintenance.compactEventStore(betweenPages);
     if (foldSample !== null) {
       const waited = Number((yield* Clock.monotonicTimeNanos) - foldSample.sampledAt) / 1_000_000;
-      const remaining = Duration.toMillis(SNAPSHOT_FOLD_SETTLED_AGE) - waited;
+      const remaining = foldSettleMillis - waited;
       if (remaining > 0) yield* Effect.sleep(Duration.millis(remaining));
+      yield* Effect.logInfo("Folding superseded orchestration snapshots", {
+        settledThrough: foldSample.settledThrough,
+      });
       const started = yield* Clock.monotonicTimeNanos;
       // The wait is not work: restart the duty-cycle slice so it does not become a 9x sleep.
       sliceStarted = started;

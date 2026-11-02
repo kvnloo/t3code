@@ -22,8 +22,8 @@ The fold skips an entity when:
 
 - any of its rows has a `command_id`, because command-result replay (`readByCommandId`) returns those rows verbatim;
 - it is a `subagent` turn item, because those rows anchor `promptSequence` prompts;
-- its newest row is at or after the thread's last _activity_ event (any event except `thread.visited`, `thread.tags-updated`, `thread.marked-unread`). Replay sets `projection.updatedAt` from the last activity event, so deleting it would move `updatedAt` back. This also covers the stream's newest row, whose removal would lower the thread's snapshot sequence and reuse its `stream_version`;
-- it has a row above the pass's settle sequence. The pass samples the head sequence before compaction and folds only after 10 minutes on the monotonic clock, so a wall-clock jump cannot make a fresh row look settled. The cursors of live readers (snapshot-then-live catch-up, task waits, guest share, remote delegation) therefore never fall inside a fold.
+- its newest row is at or after the thread's last _activity_ event (any event except `thread.visited`, `thread.tags-updated`, `thread.marked-unread` and `thread.pull-request-link-updated`). Some replay keeps the previous `updatedAt` after each of those: the client and in-memory apply skip the bump for the first three, and the server (SQL and in-memory apply, so `rebuild`) re-applies the current thread row for a PR link sync. Deleting the row that set `updatedAt` would move it back. Every other `thread.*` event carries its own `updatedAt`. This rule also covers the stream's newest row, whose removal would lower the thread's snapshot sequence and reuse its `stream_version`;
+- it has a row above the pass's settle sequence. The pass samples the head sequence before compaction and folds only after 10 minutes on the monotonic clock, so a wall-clock jump cannot make a fresh row look settled. A reader that drains at once from a fresh cursor (task waits, guest share, remote delegation, command output) is therefore never inside a fold. A reader can still start reading long after it took its cursor: the RPC server starts a subscription's live tail only after the client acks the snapshot or replay chunk, and a suspended client may not ack for longer than the settle age. The tail's own check (below) covers that.
 
 Each thread is folded in transactions of at most 64 entities, with the background pass's 10 % duty pacing between them, so a large thread never holds the SQLite writer for its whole length.
 
@@ -33,6 +33,7 @@ A client whose cursor lies between an entity's first and last row would miss the
 
 - `OrchestrationEventStore.getAgentReplayStats` reports `crossesSnapshotFold` for a cursor below the thread's watermark, and `subscribeThread` (`ws.ts`) sends a snapshot instead of a replay.
 - The stats check and the replay read are separate statements, and a fold can commit between them. `subscribeThread` therefore checks `crossesSnapshotFold` again after reading the replay. A fold that committed before that check is caught, and one that commits after it did not change what was read.
+- The live tail catches up from the database in pages (`EventSink` `catchUp`) from the snapshot or replay cursor. Every thread-scoped page read is followed by the same watermark check against that page's start cursor, and a crossed watermark fails the stream with `EventSinkStreamError` (surfaced as the retryable `OrchestrationV2GetThreadProjectionError`). The client retries from the cursor it holds, which now crosses the watermark, so it gets a snapshot. Live events from the PubSub are never read from the database and need no check. Unscoped streams (no thread id) are not checked; their readers drain from fresh cursors.
 
 That snapshot path already serves gaps of more than 128 events, so clients need no change. This covers web and desktop IndexedDB caches and mobile SQLite caches.
 
@@ -56,9 +57,16 @@ Folded rows are deleted. They cannot be restored.
 - **Fork and handoff paths.** They read projections, not events.
 - **`t3 doctor`.** It does not fold.
 
+## Where the bytes go
+
+The fold deletes rows in place. New databases are created with `auto_vacuum` INCREMENTAL (`persistence/Sqlite.ts`), and `t3 doctor` converts older ones; on those, `reclaim` returns the freed pages to the filesystem at up to 1,024 pages a minute. A database created before that and never run through doctor has `auto_vacuum` NONE. There the freed pages stay in the file as freelist: later writes reuse them and the Storage page shows them as reclaimable, but the file does not shrink until `t3 doctor` runs VACUUM. The fold cannot switch `auto_vacuum` itself, because that needs a full VACUUM, which doctor refuses to run while a server has the database open. On such a database the file-size saving lands after doctor; until then it is growth headroom.
+
+`T3CODE_EXPERIMENTAL_SNAPSHOT_FOLD_SETTLE_MS` overrides the 10-minute settle age. It exists so a benchmark can run a pass inside a measured server boot; do not set it otherwise.
+
 ## Proof
 
 - `apps/server/src/orchestration-v2/SnapshotFold.test.ts` covers fold shape, rebuild equivalence with the live projection, whole-projection client replay (including nodes, provider threads and `updatedAt`), every resume cursor (replay or fallback), the activity-tail rule, and missed-turn replay plus the settle cutoff.
 - `SnapshotFold.review.test.ts` holds the review repros: the provider-thread switch-back under rebuild, and a fold injected between the resume stats check and the replay read of the real `subscribeThread`.
+- `SnapshotFold.review2.test.ts` holds the round-2 repros: rebuild keeps `thread.updatedAt` when a PR link sync follows a folded message, and a fold that commits before the live tail starts makes the tail fail, after which the client's retry from its cursor gets a snapshot with the final body.
 - `SnapshotFold.seed.test.ts` (opt-in, `POH_FOLD_SEED=<copy>`) checks the same on a real seed copy.
 - The provider-owned-history experiment P2/02 holds the A/B numbers.
