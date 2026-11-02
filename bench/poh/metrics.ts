@@ -224,6 +224,11 @@ export function metricsFor(samples: Sample[]): Metric[] {
     turns.map((s) => s.threadBytesDelta),
   );
   add(
+    "turn.sim.server_write.bytes",
+    "bytes",
+    turns.filter((s) => s.serverWriteBytes !== undefined).map((s) => s.serverWriteBytes),
+  );
+  add(
     "turn.sim.cpu.s",
     "s",
     turns.filter((s) => s.cpuS !== undefined).map((s) => s.cpuS),
