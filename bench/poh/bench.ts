@@ -701,6 +701,20 @@ try {
     }
   }
   const durableAfter = measureDurable(dbPath);
+  if (ioTapDir !== undefined) {
+    // Page owners after the run, run-length encoded as [firstPage, btree], to name the tap's WAL pages.
+    const db = new NodeSqlite.DatabaseSync(dbPath, { readOnly: true });
+    try {
+      const ranges: Array<[number, string]> = [];
+      const rows = db.prepare("SELECT pageno, name FROM dbstat ORDER BY pageno").iterate();
+      for (const row of rows as Iterable<{ pageno: number; name: string }>) {
+        if (ranges.at(-1)?.[1] !== row.name) ranges.push([row.pageno, row.name]);
+      }
+      NodeFS.writeFileSync(NodePath.join(out, "pagemap.json"), JSON.stringify(ranges));
+    } finally {
+      db.close();
+    }
+  }
   NodeFS.writeFileSync(
     NodePath.join(out, "durable-after.json"),
     JSON.stringify(durableAfter, null, 1),
