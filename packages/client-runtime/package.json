@@ -510,6 +510,10 @@
     "./provider-clients": {
       "types": "./src/providerClients.ts",
       "default": "./src/providerClients.ts"
+    },
+    "./openui-charts": {
+      "types": "./src/openUiCharts.ts",
+      "default": "./src/openUiCharts.ts"
     }
   },
   "scripts": {

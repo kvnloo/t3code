@@ -1591,8 +1591,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
         </Suspense>
       </RenderErrorBoundary>
     );
-    if (language === "openui-v1") {
-      return <MarkdownOpenUiCodeBlock code={codeBlock.code} isStreaming={isStreaming && !isClosedCodeFence(node, text, codeBlock.code)} />;
+    if (language === "openui-v1" || language === "openui-v2") {
+      return <MarkdownOpenUiCodeBlock code={codeBlock.code} version={language === "openui-v2" ? 2 : 1} isStreaming={isStreaming && !isClosedCodeFence(node, text, codeBlock.code)} />;
     }
     if (language === "mermaid") {
       return (

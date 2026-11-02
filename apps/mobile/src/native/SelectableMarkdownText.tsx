@@ -33,7 +33,7 @@ export function SelectableMarkdownText(props: SelectableMarkdownTextProps) {
   }
   return <View>
     {parts.map((part, index) => part.kind === "report"
-      ? <MarkdownOpenUiReport key={index} code={part.code} />
+      ? <MarkdownOpenUiReport key={index} code={part.code} version={part.version} />
       : <MobileEnrichedMarkdownText key={index} {...props} markdown={part.text} textStyle={textStyle} />)}
   </View>;
 }

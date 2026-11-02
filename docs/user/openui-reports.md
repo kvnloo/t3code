@@ -8,10 +8,25 @@ it, or **Show source** to return to the original program. The renderer loads onl
 when you choose to render a report. Other code blocks keep their usual behavior.
 
 Catalog version 1 supports a title, summary, metrics, a table, and percentage
-bars. Reports cannot call tools, run queries or mutations, maintain generated
+bars. Catalog version 2 (an `openui-v2` code block) is a chart board: a title, a
+summary, and up to eight panels.
+
+- **Treemap**: files sized by one number and shaded by another. Tap a folder to
+  open it, Back to return, and a file to see its values.
+- **BarChart**: horizontal bars of raw values.
+- **StackedArea**: counts per category stacked by series. Tap a category to see
+  exact values.
+- **Heatmap**: counts on labeled rows and columns, zeros included. Tap a cell to
+  see its exact count.
+
+Charts keep their selections locally; tapping never sends a message or fetches
+anything.
+
+Reports cannot call tools, run queries or mutations, maintain generated
 state, or dispatch actions. Invalid or incomplete reports display a notice; the
-source remains available. Reports are limited to 64 KiB, and table rows must
-match their columns.
+source remains available. Reports are limited to 64 KiB, table rows must
+match their columns, and chart data must line up: one value per category, one
+count per heatmap cell, and no file path that is also a folder.
 
 Reports remain ordinary message text for storage and remote connections. Agents
 should include a normal Markdown summary after a report so clients without this
