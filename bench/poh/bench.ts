@@ -30,6 +30,8 @@ const { values: args } = NodeUtil.parseArgs({
     "keep-home": { type: "boolean", default: false },
     // Extra server environment, e.g. --server-env T3CODE_EXPERIMENTAL_SNAPSHOT_FOLD=1 (A/B arms).
     "server-env": { type: "string", multiple: true, default: [] },
+    // Reuse another run's thread picks (run.json) so A/B arms open the same threads.
+    "picks-from": { type: "string" },
   },
 });
 const serverEnv = Object.fromEntries(
@@ -364,6 +366,18 @@ try {
           JSON.stringify(durableBefore, null, 1),
         );
         picks = pickThreads(durableBefore);
+        if (args["picks-from"] !== undefined) {
+          const pinned = JSON.parse(NodeFS.readFileSync(args["picks-from"], "utf8"))
+            .picks as Record<string, { threadId: string }>;
+          const find = (size: string) => {
+            const thread = durableBefore!.threads.find(
+              (t) => t.threadId === pinned[size]?.threadId,
+            );
+            if (thread === undefined) throw new Error(`pinned ${size} thread missing from seed`);
+            return thread;
+          };
+          picks = { small: find("small"), median: find("median"), largest: find("largest") };
+        }
         const pickInfo = Object.fromEntries(
           Object.entries(picks).map(([size, t]) => [
             size,
