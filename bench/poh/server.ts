@@ -242,6 +242,23 @@ export function readWriteBytes(pid: number): number | undefined {
   }
 }
 
+/**
+ * write_bytes summed over the server's live threads. Unlike the process total, this excludes
+ * reaped children (git, providers), whose I/O the kernel folds into the parent's total on wait().
+ */
+export function readOwnWriteBytes(pid: number): number | undefined {
+  try {
+    let total = 0;
+    for (const tid of NodeFS.readdirSync(`/proc/${pid}/task`)) {
+      const io = NodeFS.readFileSync(`/proc/${pid}/task/${tid}/io`, "utf8");
+      total += Number(/^write_bytes:\s*(\d+)/m.exec(io)?.[1] ?? 0);
+    }
+    return total;
+  } catch {
+    return undefined;
+  }
+}
+
 export interface ProcSample {
   readonly at: number;
   readonly serverRss: number;
