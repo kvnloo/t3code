@@ -119,6 +119,7 @@ import * as CommandOutputHub from "./orchestration-v2/CommandOutputHub.ts";
 import * as McpAppRequests from "./mcpApps/McpAppRequests.ts";
 import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManager.ts";
 import * as ThreadLaunchService from "./orchestration-v2/ThreadLaunchService.ts";
+import * as ThreadForkWorktree from "./orchestration-v2/ThreadForkWorktree.ts";
 import * as ThreadMessageIntake from "./orchestration-v2/ThreadMessageIntake.ts";
 import * as DocumentText from "./provider/DocumentText.ts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
@@ -1279,7 +1280,19 @@ export const layerWsRpc = (
         | ServerConfig.ServerConfig
         | ServerSettings.ServerSettingsService
         | DocumentText.DocumentText
-      >();
+      >().pipe(
+        Effect.flatMap((context) =>
+          Effect.serviceOption(ThreadForkWorktree.ThreadForkWorktree).pipe(
+            Effect.map(
+              Option.match({
+                onNone: () => context,
+                onSome: (forks) =>
+                  Context.add(context, ThreadForkWorktree.ThreadForkWorktree, forks),
+              }),
+            ),
+          ),
+        ),
+      );
       const applicationEvents = yield* OrchestrationEventStore.OrchestrationEventStore;
       const projectStore = yield* ProjectStore.ProjectStoreV2;
       const projectService = yield* ProjectService.ProjectService;

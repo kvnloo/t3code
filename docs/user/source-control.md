@@ -20,6 +20,15 @@ commit links follow your **Open links in** setting; on web, when that opens a ne
 shows an **Open link** button. Command/Ctrl+Click always opens the link in your browser. Commit links follow the **Open pull requests in T3 Code**
 setting in **Settings → Diffs**.
 
+## Fork into a new worktree
+
+A fork normally keeps working in its source thread's checkout, so both threads edit the same
+files. On web and desktop, Shift-click **Fork from this response** to give the fork its own new
+worktree instead. Its files match the workspace saved at that response, including uncommitted and
+untracked changes, not the source's later edits. When no saved workspace exists for that response,
+the worktree starts from the source's current commit. The project's setup script runs as it does
+for any new worktree, and you remove the worktree the same way as other thread worktrees.
+
 ## Connect an account
 
 Install Git and configure authentication on the machine running your T3 Code server. For a remote

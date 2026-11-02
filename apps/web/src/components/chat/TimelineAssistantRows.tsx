@@ -119,11 +119,13 @@ function AssistantForkButton({
             size="xs"
             variant="ghost"
             disabled={busy}
-            onClick={() => {
+            onClick={(event) => {
               setBusy(true);
-              void onForkFromRun({ sourceThreadId: projectedItem.sourceThreadId, runId }).finally(
-                () => setBusy(false),
-              );
+              void onForkFromRun({
+                sourceThreadId: projectedItem.sourceThreadId,
+                runId,
+                ...(event.shiftKey ? { workspace: "new_worktree" as const } : {}),
+              }).finally(() => setBusy(false));
             }}
             aria-label="Fork from this response"
           />
@@ -131,7 +133,11 @@ function AssistantForkButton({
       >
         <GitForkIcon className={cn("size-3", busy && "animate-pulse")} />
       </TooltipTrigger>
-      <TooltipPopup side="top">Fork from this response</TooltipPopup>
+      <TooltipPopup side="top">
+        Fork from this response
+        <br />
+        Shift-click: fork into a new worktree
+      </TooltipPopup>
     </Tooltip>
   );
 }

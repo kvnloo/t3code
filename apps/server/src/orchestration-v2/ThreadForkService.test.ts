@@ -112,7 +112,10 @@ function makeSourceProjection(sourceRun: OrchestrationV2Run): OrchestrationV2Thr
 const planFork = (
   sourceRun: OrchestrationV2Run,
   sourceProjection = makeSourceProjection(sourceRun),
-  options: { readonly sideChat?: boolean } = {},
+  options: {
+    readonly sideChat?: boolean;
+    readonly worktree?: { readonly worktreePath: string; readonly branch: string };
+  } = {},
 ) =>
   Effect.gen(function* () {
     const service = yield* ThreadForkService.ThreadForkServiceV2;
@@ -350,5 +353,39 @@ it.effect("marks only requested forks as supervised side chats", () =>
       { sideChat: true },
     ).pipe(Effect.flip);
     assert.equal(fromDelegated.cause, "A subagent cannot start a side chat.");
+  }),
+);
+
+it.effect("a default fork keeps the source's checkout", () =>
+  Effect.gen(function* () {
+    const { targetThread } = yield* planFork(makeSourceRun("completed"));
+    assert.strictEqual(targetThread.worktreePath, "/tmp/source-worktree");
+    assert.strictEqual(targetThread.branch, "feature/source");
+  }),
+);
+
+it.effect("a fork given its own worktree binds there and drops the source branch's PR", () =>
+  Effect.gen(function* () {
+    const sourceRun = makeSourceRun("completed");
+    const sourceProjection = makeSourceProjection(sourceRun);
+    const { targetThread } = yield* planFork(
+      sourceRun,
+      {
+        ...sourceProjection,
+        thread: {
+          ...sourceProjection.thread,
+          branchPullRequest: {
+            projectId: sourceProjection.thread.projectId,
+            repository: "example/repo",
+            number: 7,
+            url: "https://github.com/example/repo/pull/7",
+          },
+        },
+      },
+      { worktree: { worktreePath: "/tmp/fork-worktree", branch: "t3code/fork" } },
+    );
+    assert.strictEqual(targetThread.worktreePath, "/tmp/fork-worktree");
+    assert.strictEqual(targetThread.branch, "t3code/fork");
+    assert.strictEqual(targetThread.branchPullRequest, null);
   }),
 );

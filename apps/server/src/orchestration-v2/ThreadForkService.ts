@@ -60,6 +60,8 @@ export interface ThreadForkServiceV2Shape {
     readonly targetThreadId: ThreadId;
     readonly title?: string;
     readonly sideChat?: boolean;
+    /** Binds the fork here instead of the source's checkout. */
+    readonly worktree?: { readonly worktreePath: string; readonly branch: string };
     readonly createdBy: OrchestrationV2Actor;
     readonly creationSource: OrchestrationV2CreationSource;
     readonly createdAt: DateTime.Utc;
@@ -115,6 +117,14 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
         titleRegeneration: null,
         // Side chats share the parent's worktree, so they start supervised.
         ...(input.sideChat ? { runtimeMode: "approval-required" as const } : {}),
+        ...(input.worktree === undefined
+          ? {}
+          : {
+              worktreePath: input.worktree.worktreePath,
+              branch: input.worktree.branch,
+              // The source branch's PR does not describe the fork's new branch.
+              branchPullRequest: null,
+            }),
         activeProviderThreadId: null,
         lineage: {
           parentThreadId: input.sourceProjection.thread.id,

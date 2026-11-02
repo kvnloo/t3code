@@ -852,7 +852,7 @@ function latestStableRun(
   );
 }
 
-function runForSourcePoint(
+export function runForSourcePoint(
   projection: Pick<OrchestrationV2ThreadProjection, "runs" | "checkpoints">,
   sourcePoint: Extract<
     OrchestrationV2Command,
@@ -4397,6 +4397,20 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         threadId: command.targetThreadId,
       });
     }
+    // Git work stays out of the decider; ThreadForkWorktree creates the worktree and resends.
+    if (
+      command.workspace !== undefined &&
+      (command.workspace.type === "new_worktree" || command.sideChat === true)
+    ) {
+      return yield* new OrchestratorDispatchError({
+        commandId: command.commandId,
+        commandType: command.type,
+        cause:
+          command.sideChat === true
+            ? "A side chat shares its parent's checkout."
+            : "A fork into a new worktree must be prepared by the server.",
+      });
+    }
 
     const sourceRun = runForSourcePoint(sourceProjection, command.sourcePoint);
 
@@ -4446,6 +4460,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         targetThreadId: command.targetThreadId,
         ...(command.title === undefined ? {} : { title: command.title }),
         ...(command.sideChat ? { sideChat: true } : {}),
+        ...(command.workspace?.type === "existing_worktree"
+          ? {
+              worktree: {
+                worktreePath: command.workspace.worktreePath,
+                branch: command.workspace.branch,
+              },
+            }
+          : {}),
         createdBy: command.createdBy,
         creationSource: command.creationSource,
         createdAt: now,

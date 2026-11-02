@@ -8,6 +8,7 @@ import {
   type OrchestrationV2Command,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import { modelSelectionCommandType } from "@t3tools/shared/model";
 
 import * as McpInvocationContext from "../../McpInvocationContext.ts";
@@ -19,6 +20,7 @@ import {
   readThread,
   unavailable,
 } from "../../threadAccess.ts";
+import * as ThreadForkWorktree from "../../../orchestration-v2/ThreadForkWorktree.ts";
 import * as ThreadSearch from "../../../orchestration-v2/ThreadSearch.ts";
 import * as ScheduledTasks from "../../../scheduledTasks/ScheduledTaskService.ts";
 import { queuedRunsInDeliveryOrder } from "../../../orchestration-v2/QueuedRunOrder.ts";
@@ -180,18 +182,34 @@ export const layer = McpToolAccess.toLayer(ThreadToolkit, {
             return { sequence: result.sequence, targetThreadId };
           }
           const targetThreadId = ThreadId.make(`${commandId}:fork`);
-          const result = yield* threads
-            .dispatch({
-              type: "thread.fork",
-              commandId,
-              sourceThreadId: projection.thread.id,
-              targetThreadId,
-              sourcePoint,
-              ...(input.title === undefined ? {} : { title: input.title }),
-              createdBy: "agent",
-              creationSource: "mcp",
-            })
-            .pipe(Effect.mapError(dispatchFailure));
+          const fork = {
+            type: "thread.fork",
+            commandId,
+            sourceThreadId: projection.thread.id,
+            targetThreadId,
+            sourcePoint,
+            ...(input.title === undefined ? {} : { title: input.title }),
+            createdBy: "agent",
+            creationSource: "mcp",
+          } as const;
+          if (input.workspace === "new_worktree") {
+            const forks = yield* Effect.serviceOption(ThreadForkWorktree.ThreadForkWorktree);
+            if (Option.isNone(forks)) return yield* unavailable();
+            const { dispatch, ...worktree } = yield* forks.value
+              .fork({ ...fork, workspace: { type: "new_worktree" } })
+              .pipe(
+                Effect.mapError((error) =>
+                  error._tag === "ThreadForkWorktreeError"
+                    ? new OrchestratorMcpFailure({
+                        code: "orchestration_error",
+                        message: error.message,
+                      })
+                    : dispatchFailure(error),
+                ),
+              );
+            return { sequence: dispatch.sequence, targetThreadId, worktree };
+          }
+          const result = yield* threads.dispatch(fork).pipe(Effect.mapError(dispatchFailure));
           return { sequence: result.sequence, targetThreadId };
         }),
     ),
