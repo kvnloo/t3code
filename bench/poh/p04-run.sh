@@ -8,10 +8,13 @@ PICKS=/mnt/zer0models/workspace/zer0/data/operations/t3code-factory/poh/raw/00-b
 out=$1 seed=$2; shift 2
 cd "$WT"
 avail() { free -g | awk '/^Mem:/ {print $7}'; }
+# Memory stall share (PSI "full" avg60, percent). Above 2 the host is thrashing and the kernel
+# OOM killer and pressure guard take bench processes, whatever `free` says.
+stall() { awk '/^full/ {split($3, a, "="); print int(a[2])}' /proc/pressure/memory; }
 wait_mem() {
   for _ in $(seq 1 60); do
-    [ "$(avail)" -ge 3 ] && return 0
-    echo "[$(date -Is)] waiting for memory: $(avail) GB available"; sleep 60
+    [ "$(avail)" -ge 3 ] && [ "$(stall)" -lt 2 ] && return 0
+    echo "[$(date -Is)] waiting for memory: $(avail) GB available, stall $(stall)%"; sleep 60
   done
 }
 # The host's pressure-relief guard TERMs bench servers (disposable class) under memory pressure;
