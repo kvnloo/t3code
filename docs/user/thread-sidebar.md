@@ -55,6 +55,24 @@ in a new thread's model picker to add or remove them. A regular click returns to
 single model. Choose a base branch and send. Each selection starts a separate thread
 and worktree while you stay in the new thread composer. This requires a Git project.
 
+## Clear the Needs you queue
+
+On web and desktop, open **Needs you** from the sidebar or the command palette to
+work through questions, approvals, failed runs, plans and results across projects.
+Pinned threads come first, then requests and failures before review-ready results.
+Filter by project when you want to focus on one area.
+
+The reader starts with the latest answer. Use **Show context and history** to
+inspect the conversation, or **Open thread** to return to the normal workspace.
+Approvals and questions use the same controls and permissions as the thread.
+When a reply resumes work or a request is resolved, the queue advances without
+changing the behavior of replies made in the normal thread view.
+
+**Reviewed** settles a thread; it does not merge or approve its code. **Later · 1h**
+snoozes it. Both offer Undo, and settled or snoozed threads remain accessible in
+the sidebar. Pending requests must be answered before those actions are available.
+This view does not change scheduling priorities or notification settings.
+
 ## Pin and reorder threads
 
 Pin a thread from its menu to keep it above your active work.

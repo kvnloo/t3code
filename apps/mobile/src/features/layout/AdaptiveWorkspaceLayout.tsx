@@ -54,6 +54,7 @@ import {
 } from "../keyboard/hardwareKeyboardCommands";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
 import { useEnabledNavigationTabs } from "../workspace/navigation-tabs";
+import { isWorkspacePageTab } from "../workspace/navigation-tab-order";
 import { FLOATING_TABS, floatingTabsMetrics } from "../workspace/floating-workspace-tabs";
 import { AndroidHomeFabLayout } from "../home/AndroidHomeFab";
 import {
@@ -186,11 +187,12 @@ function AdaptiveWorkspaceLayoutContent(
   const { width: viewportWidth, height } = nativeMetrics ?? windowDimensions;
   const pathname = props.pathname;
   const workspace = useWorkspaceTabs();
-  // Settings and Usage occupy the workspace rather than a list/detail pair.
+  // Settings and the workspace pages occupy the workspace rather than a list/detail pair.
   const androidSettingsOpen = useAndroidWorkspaceRoot()?.settingsOpen ?? false;
   const safeAreaInsets = useSafeAreaInsets();
   const workspacePage =
-    Platform.OS === "android" && (androidSettingsOpen || workspace?.state.selectedTab === "usage");
+    Platform.OS === "android" &&
+    (androidSettingsOpen || isWorkspacePageTab(workspace?.state.selectedTab));
   const navigation = useNavigation();
   const activeRoleOwner = useRef<symbol | null>(null);
   const [primarySidebarPreferredVisible, setPrimarySidebarPreferredVisible] = useState(true);

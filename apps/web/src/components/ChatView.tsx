@@ -390,6 +390,7 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
+      decisionFirst?: boolean;
       routeKind: "server";
       draftId?: never;
     }
@@ -399,6 +400,7 @@ type ChatViewProps =
       onDiffPanelOpen?: () => void;
       reserveTitleBarControlInset?: boolean;
       forceExpandedMobileComposer?: boolean;
+      decisionFirst?: boolean;
       routeKind: "draft";
       draftId: DraftId;
     };
@@ -3300,6 +3302,7 @@ export default function ChatView(props: ChatViewProps) {
                 canOperateThread={canOperateThread}
                 threadDetailRef={routeThreadDetailRef}
                 entriesInput={timelineEntriesInput}
+                decisionFirst={props.decisionFirst}
                 draftEntries={isServerThread ? null : draftTimelineEntries}
                 activeThreadKey={activeThreadKey}
                 syncing={threadSyncPhase !== null}

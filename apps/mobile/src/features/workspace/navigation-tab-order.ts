@@ -1,5 +1,10 @@
-export const NAVIGATION_TAB_ORDER = ["threads", "pullRequests", "usage"] as const;
+export const NAVIGATION_TAB_ORDER = ["threads", "needsYou", "pullRequests", "usage"] as const;
 export type NavigationTab = (typeof NAVIGATION_TAB_ORDER)[number];
+
+/** Pages that fill the workspace instead of a list and detail pair. */
+export function isWorkspacePageTab(tab: string | undefined) {
+  return tab === "usage" || tab === "needsYou";
+}
 
 export function navigationCustomizationAvailable(
   registeredSections: number = NAVIGATION_TAB_ORDER.length,
@@ -9,6 +14,7 @@ export function navigationCustomizationAvailable(
 
 export const NAVIGATION_TAB_LABELS: Readonly<Record<NavigationTab, string>> = {
   threads: "Threads",
+  needsYou: "Needs you",
   pullRequests: "Pulls",
   usage: "Usage",
 };
