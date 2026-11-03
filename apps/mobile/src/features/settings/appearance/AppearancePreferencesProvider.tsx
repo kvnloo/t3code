@@ -1,5 +1,5 @@
 import { createContext, startTransition, use, useMemo, type ReactNode } from "react";
-import { AppState, Appearance, Platform, useColorScheme } from "react-native";
+import { AppState, Appearance, Platform, View, useColorScheme } from "react-native";
 
 import { manufacturer } from "expo-device";
 import {
@@ -31,6 +31,7 @@ import {
   applyWindowGlass,
   normalizeWindowGlassMode,
   resolveWindowGlassPlan,
+  windowGlassRootColor,
   type WindowGlassMode,
   type WindowGlassPlan,
 } from "../../../lib/windowGlass";
@@ -295,6 +296,14 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
     windowGlassPlan,
   );
   const themeVariables = themeVariablesByAppearance[themeAppearance];
+  const glassRootColor = windowGlassRootColor(
+    resolveThemeVariablesByAppearance(
+      themeIds,
+      { "material-you": systemColorPalettes, desktop: desktopColorPalettes },
+      null,
+    )[themeAppearance],
+    windowGlassPlan,
+  );
   const activeThemeName = getMobileUniwindThemeName(themeId, themeAppearance);
   const { baseFontSize, codeFontSize, codeWordBreak, terminalFontSize } = preferences;
   const appearance = useMemo(
@@ -438,7 +447,10 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
   return (
     <AppearancePreferencesContext.Provider value={value}>
       <ScopedTheme theme={activeThemeName}>
-        <ScopedVariables variables={themeVariables}>{props.children}</ScopedVariables>
+        <ScopedVariables variables={themeVariables}>
+          {/* The one tint layer over the wallpaper in glass mode; transparent otherwise. */}
+          <View style={{ flex: 1, backgroundColor: glassRootColor }}>{props.children}</View>
+        </ScopedVariables>
       </ScopedTheme>
     </AppearancePreferencesContext.Provider>
   );

@@ -7,6 +7,7 @@ import {
   colorWithAlphaHex,
   normalizeWindowGlassMode,
   resolveWindowGlassPlan,
+  windowGlassRootColor,
 } from "./windowGlass";
 
 const dark = (defaultThemeVariables as Record<string, MobileThemeVariables>).dark!;
@@ -32,12 +33,17 @@ describe("applyWindowGlass", () => {
     expect(applyWindowGlass(dark, null)).toBe(dark);
   });
 
-  it("makes full-screen backgrounds translucent and panels denser than the scene", () => {
-    const glass = applyWindowGlass(dark, { tint: 0.5, blurDp: 0 });
+  it("clears stacked full-screen backgrounds and paints the tint once at the root", () => {
+    const plan = { tint: 0.5, pane: 0.25, blurDp: 0 };
+    const glass = applyWindowGlass(dark, plan);
     const alpha = (color: string) => Number.parseInt(color.slice(7, 9), 16) / 255;
-    expect(glass["--color-screen"]).toBe("#0a0a0a80");
-    expect(alpha(glass["--color-thread-canvas"])).toBeCloseTo(0.5, 2);
-    expect(alpha(glass["--color-card"])).toBeCloseTo(0.7, 2);
+    expect(alpha(glass["--color-screen"])).toBe(0);
+    expect(alpha(glass["--color-header"])).toBe(0);
+    expect(alpha(glass["--color-sheet"])).toBe(0);
+    expect(alpha(glass["--color-thread-canvas"])).toBeCloseTo(0.25, 2);
+    expect(alpha(glass["--color-card"])).toBeCloseTo(0.25, 2);
+    expect(windowGlassRootColor(dark, plan)).toBe("#0a0a0a80");
+    expect(windowGlassRootColor(dark, null)).toBeUndefined();
     // Text keeps its theme color.
     expect(glass["--color-foreground"]).toBe(dark["--color-foreground"]);
   });

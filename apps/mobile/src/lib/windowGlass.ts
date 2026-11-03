@@ -1,8 +1,4 @@
-import {
-  themeColorToNativeColor,
-  themeColorWithAlpha,
-  type MobileThemeVariables,
-} from "./mobileTheme";
+import { themeColorToNativeColor, type MobileThemeVariables } from "./mobileTheme";
 
 /**
  * See-through app background (Android): the wallpaper, live wallpapers included, shows behind
@@ -13,8 +9,10 @@ export type WindowGlassMode = "off" | "clear" | "frosted";
 export const WINDOW_GLASS_MODES: ReadonlyArray<WindowGlassMode> = ["off", "clear", "frosted"];
 
 export interface WindowGlassPlan {
-  /** Opacity of full-screen backgrounds over the wallpaper. */
+  /** Opacity of the one tint layer painted over the wallpaper at the app root. */
   readonly tint: number;
+  /** Opacity of panes (cards, the thread canvas) on top of that tint. */
+  readonly pane: number;
   /** Requested window background blur; 0 when the device cannot blur other windows. */
   readonly blurDp: number;
 }
@@ -33,25 +31,26 @@ export function resolveWindowGlassPlan(
   blurSupported: boolean,
 ): WindowGlassPlan | null {
   if (mode === "off") return null;
-  if (mode === "clear") return { tint: 0.5, blurDp: 0 };
+  if (mode === "clear") return { tint: 0.45, pane: 0.25, blurDp: 0 };
   return blurSupported
-    ? { tint: 0.62, blurDp: FROSTED_BLUR_DP }
-    : { tint: 0.62 + UNBLURRED_TINT_BOOST, blurDp: 0 };
+    ? { tint: 0.6, pane: 0.3, blurDp: FROSTED_BLUR_DP }
+    : { tint: 0.6 + UNBLURRED_TINT_BOOST, pane: 0.3, blurDp: 0 };
 }
 
-// Full-screen backgrounds: these must let the wallpaper through.
+// Full-screen backgrounds. Several of them stack on every screen (workspace frame, navigator
+// content, page), so any alpha here would compound into an opaque wall. They go fully clear and
+// the tint is painted once at the root instead (`windowGlassRootColor`).
 const SCENE_VARIABLES = [
   "--color-screen",
-  "--color-thread-canvas",
+  "--color-header",
   "--color-drawer",
   "--color-status-bar",
+  "--color-sheet",
 ] as const satisfies ReadonlyArray<keyof MobileThemeVariables>;
 
-// Panels on top of the scene stay a little denser so grouped content still reads as a pane.
-// Android pushes most secondary pages as full-screen `bg-sheet` pages, so sheets join the panels.
-const PANEL_VARIABLES = [
-  "--color-sheet",
-  "--color-header",
+// Panes on top of the tint: the glass panels the content sits on.
+const PANE_VARIABLES = [
+  "--color-thread-canvas",
   "--color-card",
   "--color-grouped-card",
   "--color-card-alt",
@@ -84,12 +83,15 @@ export function applyWindowGlass(
 ): MobileThemeVariables {
   if (!plan) return variables;
   const next: Record<string, string> = { ...variables };
-  const panelAlpha = Math.min(0.92, plan.tint + 0.2);
-  for (const name of SCENE_VARIABLES) {
-    next[name] = colorWithAlphaHex(variables[name], plan.tint);
-  }
-  for (const name of PANEL_VARIABLES) {
-    next[name] = colorWithAlphaHex(variables[name], panelAlpha);
-  }
+  for (const name of SCENE_VARIABLES) next[name] = colorWithAlphaHex(variables[name], 0);
+  for (const name of PANE_VARIABLES) next[name] = colorWithAlphaHex(variables[name], plan.pane);
   return next as MobileThemeVariables;
+}
+
+/** The single tint layer over the wallpaper, from the theme's own screen color. */
+export function windowGlassRootColor(
+  variables: MobileThemeVariables,
+  plan: WindowGlassPlan | null,
+): string | undefined {
+  return plan ? colorWithAlphaHex(variables["--color-screen"], plan.tint) : undefined;
 }
