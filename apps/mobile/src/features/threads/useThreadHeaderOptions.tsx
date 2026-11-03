@@ -12,8 +12,41 @@ import {
   useThreadGitCenterHeaderItems,
   useThreadGitRightHeaderItems,
 } from "./ThreadGitControls";
+import type { ThreadShareAction, ThreadShareActionId } from "./threadShareMenu";
 
 type NativeHeaderItems = ReadonlyArray<Record<string, unknown>>;
+
+const NO_SHARE_ACTIONS: ReadonlyArray<ThreadShareAction> = [];
+
+/** The iOS header menu for handoff and guest links; Android lists them in its overflow menu. */
+function threadShareHeaderItems(
+  actions: ReadonlyArray<ThreadShareAction>,
+  onAction: (id: ThreadShareActionId) => void,
+): NativeHeaderItems {
+  if (actions.length === 0) return [];
+  return [
+    {
+      accessibilityLabel: "Share and hand off",
+      icon: { name: "square.and.arrow.up", type: "sfSymbol" as const },
+      identifier: "thread-right-share",
+      label: "Share",
+      menu: {
+        items: actions.map((action) => ({
+          ...(action.subtitle === undefined ? {} : { description: action.subtitle }),
+          disabled: action.disabled === true,
+          icon: { name: action.icon, type: "sfSymbol" as const },
+          label: action.title,
+          onPress: () => onAction(action.id),
+          type: "action" as const,
+        })),
+        title: "Share",
+      },
+      sharesBackground: true,
+      type: "menu" as const,
+      variant: "plain" as const,
+    },
+  ];
+}
 
 export function useThreadHeaderOptions(props: {
   readonly title: string;
@@ -23,6 +56,8 @@ export function useThreadHeaderOptions(props: {
   readonly gitControls: Parameters<typeof ThreadGitControls>[0];
   readonly onReturnToThread?: () => void;
   readonly draft?: boolean;
+  readonly shareActions?: ReadonlyArray<ThreadShareAction>;
+  readonly onShareAction?: (id: ThreadShareActionId) => void;
 }) {
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const deviceType = useDeviceType();
@@ -32,6 +67,10 @@ export function useThreadHeaderOptions(props: {
   const sidebarHeaderItem = useWorkspaceSidebarHeaderItem();
   const threadCenterHeaderItems = useThreadGitCenterHeaderItems(props.gitControls);
   const compactRightHeaderItems = useThreadGitRightHeaderItems(props.gitControls);
+  const shareHeaderItems = threadShareHeaderItems(
+    props.shareActions ?? NO_SHARE_ACTIONS,
+    props.onShareAction ?? (() => {}),
+  );
   const splitLeftHeaderItems: NativeHeaderItems = [
     ...(!usesDuoHeader
       ? [
@@ -88,8 +127,12 @@ export function useThreadHeaderOptions(props: {
         ? undefined
         : () => compactHomeHeaderItems,
     // The workspace navigator adds compose to the Duo detail column's bar.
-    unstable_headerRightItems: () =>
-      usesDuoHeader || layout.usesSplitView ? threadCenterHeaderItems : compactRightHeaderItems,
+    unstable_headerRightItems: () => [
+      ...(usesDuoHeader || layout.usesSplitView
+        ? threadCenterHeaderItems
+        : compactRightHeaderItems),
+      ...shareHeaderItems,
+    ],
     unstable_headerToolbarItems: () => [],
     unstable_headerSubtitle: props.usesNativeHeaderGlass ? props.subtitle : undefined,
     contentStyle: undefined,
@@ -102,6 +145,7 @@ export function useThreadHeaderOptions(props: {
       splitLeftHeaderItems,
       threadCenterHeaderItems,
       compactRightHeaderItems,
+      props.shareActions,
       usesDuoHeader,
       environmentId,
       threadId,
