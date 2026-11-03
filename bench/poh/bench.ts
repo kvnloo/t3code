@@ -772,7 +772,6 @@ try {
         processes: end.processes,
         io: readIoTap(ioTapDir, server.pid),
       });
-      void sidebar;
     } finally {
       await server.stop();
     }
