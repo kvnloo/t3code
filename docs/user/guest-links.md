@@ -13,7 +13,9 @@ While the setting is off, every guest link on that machine stops working; links 
 expired work again when you turn it back on.
 
 1. Right-click the thread in the sidebar and choose **Share with guest**. It is also in the thread
-   menu and the command palette.
+   menu and the command palette. In the mobile app, open the thread's **More actions** menu (⋮) on
+   Android or its **Share** menu on iPhone and iPad, or search the command palette, and choose
+   **Share with guest**. The app copies the link and opens the share sheet.
 2. Copy the link and send it to one person. It works in one browser and expires after 24 hours.
    Opening it again in that browser takes them back to the thread.
 3. When they send a message, it appears at the end of the thread and the sidebar shows **Request**.
@@ -22,6 +24,11 @@ expired work again when you turn it back on.
 
 Choose **Stop sharing** to end the link at once. Archiving the thread, creating a new link, or
 unlinking the machine from T3 Connect also ends it. You can send or dismiss guest messages from the mobile app.
+While a link is active, the mobile menu offers **New guest link** and **Stop sharing**. A link is
+shown only when it is created, so to send it again, make a new one.
+
+If the app says guest links are off, turn on **Settings → Labs → Guest links** in T3 Code on the
+machine that runs the thread; the mobile app has no switch for it.
 
 ## What the guest sees
 
