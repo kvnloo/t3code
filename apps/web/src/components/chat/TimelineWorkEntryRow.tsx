@@ -18,6 +18,7 @@ import {
   resolveViewedImageAsset,
   resolveWorkEntryAppActivity,
   toolGroupAction,
+  workEntryAppActivityLabel,
   workEntryViewedImagePath,
 } from "@t3tools/client-runtime/work-log/presentation";
 import {
@@ -291,7 +292,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         ? "Thinking"
         : "Thought"
       : appActivity
-        ? [appActivity.label, appActivity.detail].filter(Boolean).join(" · ")
+        ? workEntryAppActivityLabel(workEntry)!
         : questionHeading || (displayLabel ?? workEntryDisplayLabel(workEntry, workspaceRoot));
   const answerPreview =
     workEntry.questionAnswer && hasQuestionAnswer(workEntry.questionAnswer)

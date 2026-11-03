@@ -257,6 +257,17 @@ export function resolveWorkEntryAppActivity(
   );
 }
 
+/** "Searching Gmail · invoices" for known apps, or null; `status` overrides the entry's own. */
+export function workEntryAppActivityLabel(
+  entry: Parameters<typeof resolveWorkEntryAppActivity>[0],
+  status?: string,
+): string | null {
+  const activity = resolveWorkEntryAppActivity(
+    status === undefined ? entry : { ...entry, toolLifecycleStatus: status as never },
+  );
+  return activity ? [activity.label, activity.detail].filter(Boolean).join(" · ") : null;
+}
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)

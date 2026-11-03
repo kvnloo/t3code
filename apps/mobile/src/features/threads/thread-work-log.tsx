@@ -85,6 +85,7 @@ import {
   resolveWorkEntryToolPresentation,
   toolGroupAction,
   type ToolGroupSummaryKind,
+  workEntryAppActivityLabel,
   workEntryViewedImagePath,
 } from "@t3tools/client-runtime/work-log/presentation";
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
@@ -1028,9 +1029,7 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
     );
   const toolPresentation = resolveWorkEntryToolPresentation(row.workEntry);
   const appActivity = row.groupStandIn ? null : resolveWorkEntryAppActivity(row.workEntry);
-  const appLabel = appActivity
-    ? [appActivity.label, appActivity.detail].filter(Boolean).join(" · ")
-    : null;
+  const appLabel = appActivity ? workEntryAppActivityLabel(row.workEntry) : null;
   const previewText = row.groupStandIn?.label ?? appLabel ?? workEntryRowLabel(row.workEntry);
   const answerPreview = row.workEntry.questionAnswer
     ? getQuestionAnswerPreview(row.workEntry.questionAnswer)

@@ -24,6 +24,7 @@ import {
   liveActivityToolStatus,
   toolGroupAction,
   resolveWorkEntryToolPresentation,
+  workEntryAppActivityLabel,
   summarizeToolGroup,
   toolGroupSummaryKind,
   type ToolGroupSummaryKind,
@@ -256,6 +257,8 @@ export function workEntryRowLabel(entry: WorkLogPresentationEntry, expanded = fa
   if (entry.itemType === "fork") return entry.label;
   if (expanded && entry.itemType === "reasoning")
     return entry.toolLifecycleStatus === "inProgress" ? "Thinking" : "Thought";
+  const appLabel = workEntryAppActivityLabel(entry);
+  if (appLabel) return appLabel;
   const presentation = resolveWorkEntryToolPresentation(entry);
   if (presentation) return presentation.displayName;
   if (entry.command?.trim()) return compactWorkEntryText(commandDisplayText(entry.command));
@@ -856,6 +859,11 @@ function singleToolCallLabel(activity: ThreadFeedActivity, expanded: boolean): s
     return expanded
       ? "Thought"
       : compactWorkEntryText(activity.workEntry.detail ?? "") || "Thought";
+  const appLabel = workEntryAppActivityLabel(
+    activity.workEntry,
+    activity.workEntry.toolLifecycleStatus ?? "completed",
+  );
+  if (appLabel) return appLabel;
   const presentation = resolveWorkEntryToolPresentation(activity.workEntry, "completed");
   if (presentation) return presentation.displayName;
   const command = activity.workEntry.command?.trim();
@@ -1877,6 +1885,8 @@ function liveToolActivitySummary(activity: ThreadFeedActivity, presentTense: boo
       (status === "inProgress" ? "Thinking" : "Thought")
     );
   }
+  const appLabel = workEntryAppActivityLabel(activity.workEntry, status);
+  if (appLabel) return appLabel;
   const presentation = resolveWorkEntryToolPresentation({
     ...activity.workEntry,
     toolLifecycleStatus: status,

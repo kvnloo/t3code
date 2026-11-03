@@ -7,6 +7,7 @@ import {
   resolveWorkEntryAppActivity,
   resolveWorkEntryToolPresentation,
   summarizeToolGroup,
+  workEntryAppActivityLabel,
   toolItemForDisplay,
   type WorkLogPresentationEntry,
   workEntryIndicatesToolFailure,
@@ -236,6 +237,23 @@ describe("resolveWorkEntryAppActivity", () => {
       "Searched Gmail",
       "invoices from Acme",
     ]);
+  });
+});
+
+describe("workEntryAppActivityLabel", () => {
+  it("joins the sentence and detail, with the live status taking precedence", () => {
+    const entry = {
+      label: "get pull request",
+      structuredPayload: {
+        type: "dynamic_tool",
+        toolName: "editor_github_2f7f86e1.get_pull_request",
+        input: { number: 128 },
+      } as never,
+      toolLifecycleStatus: "completed" as const,
+    };
+    expect(workEntryAppActivityLabel(entry)).toBe("Read from GitHub · #128");
+    expect(workEntryAppActivityLabel(entry, "inProgress")).toBe("Reading from GitHub · #128");
+    expect(workEntryAppActivityLabel({ label: "Ran command" })).toBeNull();
   });
 });
 
