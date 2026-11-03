@@ -235,11 +235,20 @@ async function openThreadSocketOnly(rpc: WsRpc, threadId: string) {
 
 const TERMINAL_RUN = new Set(["completed", "interrupted", "failed", "cancelled", "rolled_back"]);
 
+/** One live event as the client saw it: wall-clock arrival vs the event's server-side creation. */
+interface LiveArrival {
+  readonly at: number;
+  readonly lagMs: number;
+  readonly sequence: number;
+  readonly assistant: boolean;
+}
+
 async function waitForRunsSettled(
   rpc: WsRpc,
   threadId: string,
   minRuns: number,
   timeoutMs = 120_000,
+  arrivals?: Array<LiveArrival>,
 ) {
   const runs = new Map<string, string>();
   let timer: NodeJS.Timeout | undefined;
@@ -247,7 +256,22 @@ async function waitForRunsSettled(
     "orchestration.subscribeThread",
     { threadId, requestCompletionMarker: true },
     (values) => {
+      const at = Date.now();
       for (const value of values as Array<Record<string, any>>) {
+        if (arrivals !== undefined && value.kind === "event" && value.event !== undefined) {
+          const event = value.event;
+          const occurredAt = Date.parse(String(event.occurredAt));
+          arrivals.push({
+            at,
+            lagMs: Number.isFinite(occurredAt) ? at - occurredAt : NaN,
+            sequence: Number(value.sequence ?? event.sequence),
+            assistant:
+              (event.type === "message.updated" && event.payload?.role === "assistant") ||
+              (event.type === "turn-item.updated" &&
+                (event.payload?.type === "assistant_message" ||
+                  event.payload?.type === "reasoning")),
+          });
+        }
         if (value.kind === "snapshot") {
           for (const run of value.projection.runs ?? []) runs.set(run.id, run.status);
         } else if (value.kind === "event" && value.event?.type === "run.updated") {
@@ -266,6 +290,40 @@ async function waitForRunsSettled(
     clearTimeout(timer);
   }
   return runs;
+}
+
+const quantile = (values: ReadonlyArray<number>, q: number) => {
+  const sorted = values.filter(Number.isFinite).toSorted((a, b) => a - b);
+  if (sorted.length === 0) return null;
+  return sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))]!;
+};
+
+/**
+ * Client-side streaming latency for one turn: time from dispatch to the first assistant event,
+ * per-event lag (arrival minus the event's occurredAt; same host clock), and the gaps between
+ * successive frames that carried events.
+ */
+function summarizeArrivals(arrivals: ReadonlyArray<LiveArrival>, dispatchedAt: number) {
+  const firstAssistant = arrivals.find((arrival) => arrival.assistant);
+  const frameTimes = [...new Set(arrivals.map((arrival) => arrival.at))];
+  const gaps = frameTimes.slice(1).map((at, index) => at - frameTimes[index]!);
+  const assistantTimes = [
+    ...new Set(arrivals.filter((arrival) => arrival.assistant).map((arrival) => arrival.at)),
+  ];
+  const assistantGaps = assistantTimes.slice(1).map((at, index) => at - assistantTimes[index]!);
+  const lags = arrivals.map((arrival) => arrival.lagMs);
+  return {
+    events: arrivals.length,
+    frames: frameTimes.length,
+    firstEventMs: arrivals[0] === undefined ? null : arrivals[0].at - dispatchedAt,
+    firstAssistantMs: firstAssistant === undefined ? null : firstAssistant.at - dispatchedAt,
+    lagP50Ms: quantile(lags, 0.5),
+    lagP95Ms: quantile(lags, 0.95),
+    lagMaxMs: quantile(lags, 1),
+    frameGapP50Ms: quantile(gaps, 0.5),
+    assistantGapP50Ms: quantile(assistantGaps, 0.5),
+    assistantGapP95Ms: quantile(assistantGaps, 0.95),
+  };
 }
 
 function logicalDbBytes(dbPath: string, threadId: string) {
@@ -595,6 +653,8 @@ try {
         const writesBefore = readWriteBytes(server.pid);
         const tapBefore = readIoTap(ioTapDir, server.pid);
         const ownWritesBefore = readOwnWriteBytes(server.pid);
+        const arrivals: Array<LiveArrival> = [];
+        let dispatchedAt = 0;
         const turnStarted = performance.now();
         const turnSample = await withProcSampling(server.pid, async () => {
           const projection = (
@@ -603,6 +663,15 @@ try {
             })
           ).value;
           const runCount = (projection.runs ?? projection.projection?.runs ?? []).length;
+          // Subscribe before dispatch so every live event of the turn is timed on arrival.
+          const settled = waitForRunsSettled(
+            driver.rpc,
+            benchThreadId!,
+            runCount + 1,
+            undefined,
+            arrivals,
+          );
+          dispatchedAt = Date.now();
           await driver.rpc.call("orchestration.dispatchCommand", {
             type: "message.dispatch",
             commandId: NodeCrypto.randomUUID(),
@@ -614,7 +683,7 @@ try {
             creationSource: "web",
             dispatchMode: { type: "start_immediately" },
           });
-          return waitForRunsSettled(driver.rpc, benchThreadId!, runCount + 1);
+          return settled;
         });
         const turnMs = performance.now() - turnStarted;
         const writesAfter = readWriteBytes(server.pid);
@@ -638,6 +707,7 @@ try {
             ? {}
             : { serverOwnWriteBytes: ownWritesAfter - ownWritesBefore }),
           ...(io === undefined ? {} : { io, ioStart: tapBefore }),
+          live: summarizeArrivals(arrivals, dispatchedAt),
           peakRss: turnSample.peakServerRss,
           cpuS: turnSample.cpuS,
         });
