@@ -12,6 +12,7 @@ import {
   type ProjectId,
   ThreadId,
 } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -22,7 +23,9 @@ import * as Semaphore from "effect/Semaphore";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as SqlError from "effect/sql/SqlError";
 
+import { experimentalCommitWindowMs } from "./commitWindow.ts";
 import { replayAndBufferProjectedLiveEvents } from "./LiveStreamBudget.ts";
 import type { UnsequencedProjectEvent } from "../persistence/OrchestrationEventStore.ts";
 import { projectDomainEventForWire } from "./WireProjection.ts";
@@ -77,6 +80,24 @@ export interface EventSinkV2Shape {
     readonly commandId?: CommandId;
     readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
   }) => Effect.Effect<ReadonlyArray<OrchestrationV2StoredEvent>, EventSinkV2Error>;
+  /**
+   * Experimental (`T3CODE_EXPERIMENTAL_COMMIT_WINDOW_MS`, absent when off): queue a guarded plain
+   * write for one group commit within the window. Other writes commit the queue first; publish
+   * follows commit. Fails with an earlier queued failure for the same thread.
+   */
+  readonly writeDeferred?: (input: {
+    readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
+    /** Entities these events change, for `flushDeferred` before a dependent normalization. */
+    readonly entityKeys: ReadonlyArray<string>;
+  }) => Effect.Effect<void, EventSinkV2Error>;
+  /**
+   * Commits the queue now when it holds any of `entityKeys` (`"all"`: whenever it is not empty),
+   * then fails with a queued write's error for `threadId`, if one failed.
+   */
+  readonly flushDeferred?: (input: {
+    readonly threadId: ThreadId;
+    readonly entityKeys: ReadonlyArray<string> | "all";
+  }) => Effect.Effect<void, EventSinkV2Error>;
   readonly writeWithEffects: (input: {
     /**
      * Rebuilds each run.updated from the stored row with only its delegatedCompletion replaced.
@@ -256,7 +277,7 @@ const layerBase: Layer.Layer<
 
     // Serialize commit and publish; reordered publication makes clients drop earlier sequences.
     const publishLane = yield* Semaphore.make(1);
-    const commitThenPublish = <A, E, R>(
+    const commitThenPublishNow = <A, E, R>(
       transaction: Effect.Effect<A, E, R>,
       publish: (committed: A) => Effect.Effect<void>,
     ) =>
@@ -282,6 +303,97 @@ const layerBase: Layer.Layer<
             ),
           );
       });
+
+    // Experimental group-commit window (PoH 04). Off: commitThenPublish is commitThenPublishNow.
+    const commitWindowMs = experimentalCommitWindowMs();
+    const scope = yield* Effect.scope;
+    let deferred: Array<{
+      readonly events: ReadonlyArray<OrchestrationV2DomainEvent>;
+      readonly entityKeys: ReadonlyArray<string>;
+    }> = [];
+    const deferredFailures = new Map<ThreadId, EventSinkV2Error>();
+    const deferredLane = yield* Semaphore.make(1);
+    // A graceful shutdown commits the queue; only a crash loses it (at most one window).
+    if (commitWindowMs > 0) yield* Effect.addFinalizer(() => flushAllDeferred);
+    // Takes the whole queue and commits it as one write. A failed batch is recorded for each of
+    // its threads; their next deferred call fails with it, as the per-event write would have.
+    const drainDeferred = deferredLane.withPermits(1)(
+      Effect.suspend(() => {
+        const batch = deferred;
+        if (batch.length === 0) return Effect.void;
+        deferred = [];
+        const events = batch.flatMap((entry) => entry.events);
+        return writeEffect({ guardPendingUserInputCancellations: true, events, effects: [] }).pipe(
+          Effect.retry({
+            while: (cause) =>
+              SqlError.isSqlError(cause) && cause.reason._tag === "LockTimeoutError",
+            times: 2,
+          }),
+          Effect.asVoid,
+          Effect.catchCause((cause) =>
+            Effect.gen(function* () {
+              const error = new EventSinkWriteError({
+                eventCount: events.length,
+                cause: Cause.squash(cause),
+              });
+              for (const event of events) deferredFailures.set(event.threadId, error);
+              yield* Effect.logError("Deferred orchestration write failed", {
+                eventCount: events.length,
+                cause,
+              });
+            }),
+          ),
+          Effect.withSpan("orchestrationV2.EventSink.flushDeferred", {
+            attributes: { "orchestration_v2.event_count": events.length },
+          }),
+        );
+      }),
+    );
+    // Lock-free when empty, so the drain's own write does not wait on itself.
+    const flushAllDeferred = Effect.suspend(() =>
+      deferred.length === 0 ? Effect.void : drainDeferred,
+    );
+    const takeDeferredFailure = (threadId: ThreadId) =>
+      Effect.suspend(() => {
+        const failure = deferredFailures.get(threadId);
+        if (failure === undefined) return Effect.void;
+        deferredFailures.delete(threadId);
+        return Effect.fail(failure);
+      });
+    const commitThenPublish: typeof commitThenPublishNow =
+      commitWindowMs === 0
+        ? commitThenPublishNow
+        : (transaction, publish) =>
+            flushAllDeferred.pipe(Effect.andThen(commitThenPublishNow(transaction, publish)));
+    const writeDeferredEffect = Effect.fn("orchestrationV2.EventSink.writeDeferred")(function* (
+      input: Parameters<NonNullable<EventSinkV2Shape["writeDeferred"]>>[0],
+    ) {
+      const threadId = input.events[0]?.threadId;
+      if (threadId !== undefined) yield* takeDeferredFailure(threadId);
+      if (input.events.length === 0) return;
+      const opensWindow = yield* deferredLane.withPermits(1)(
+        Effect.sync(() => {
+          deferred.push(input);
+          return deferred.length === 1;
+        }),
+      );
+      if (opensWindow) {
+        yield* Effect.sleep(commitWindowMs).pipe(
+          Effect.andThen(flushAllDeferred),
+          Effect.forkIn(scope, { startImmediately: true }),
+        );
+      }
+    });
+    const flushDeferredEffect = (
+      input: Parameters<NonNullable<EventSinkV2Shape["flushDeferred"]>>[0],
+    ) =>
+      Effect.suspend(() => {
+        const { entityKeys } = input;
+        return entityKeys === "all" ||
+          deferred.some((entry) => entry.entityKeys.some((key) => entityKeys.includes(key)))
+          ? flushAllDeferred
+          : Effect.void;
+      }).pipe(Effect.andThen(takeDeferredFailure(input.threadId)));
 
     // A user can answer after terminal normalization reads the pending request.
     // Recheck inside the write transaction so stale cleanup cannot erase answers.
@@ -878,6 +990,9 @@ const layerBase: Layer.Layer<
     };
 
     return EventSinkV2.of({
+      ...(commitWindowMs === 0
+        ? {}
+        : { writeDeferred: writeDeferredEffect, flushDeferred: flushDeferredEffect }),
       write: (input) =>
         writeEffect({ ...input, effects: [] }).pipe(
           Effect.mapError(
