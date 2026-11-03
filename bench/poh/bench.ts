@@ -38,6 +38,7 @@ const { values: args } = NodeUtil.parseArgs({
     // Bench-only LD_PRELOAD write tap (cc -O2 -shared -fPIC -o iotap.so bench/poh/iotap.c -ldl):
     // splits turn writes into WAL frames/commits and checkpoint copy-back. Use in every arm.
     iotap: { type: "string" },
+    "skip-opens": { type: "boolean", default: false },
   },
 });
 const serverEnv = Object.fromEntries(
@@ -525,120 +526,123 @@ try {
         continue;
       }
 
-      const sizes = ["small", "median", "largest"] as const;
-      const { rpc, connectMs } = await connect(session);
-      record({ kind: "ws-connect", boot, ms: connectMs });
+      // --skip-opens keeps only turns and missed-turn reconnects (less server memory per boot).
+      if (!args["skip-opens"]) {
+        const sizes = ["small", "median", "largest"] as const;
+        const { rpc, connectMs } = await connect(session);
+        record({ kind: "ws-connect", boot, ms: connectMs });
 
-      // Sidebar, cold (first after boot) and warm.
-      for (let i = 0; i <= WARM; i++) {
-        const measured = await withProcSampling(server.pid, () => loadSidebar(session, rpc));
-        record({
-          kind: "sidebar",
-          boot,
-          temp: i === 0 ? "cold" : "warm",
-          ...measured.result,
-          peakRss: measured.peakServerRss,
-          cpuS: measured.cpuS,
-        });
-      }
-
-      // Thread open: cold = first open of that thread after boot; warm = repeats, interleaved.
-      for (let i = 0; i <= WARM; i++) {
-        for (const size of sizes) {
-          const thread = picks![size];
-          const measured = await withProcSampling(server.pid, () =>
-            openThread(session, rpc, thread.threadId),
-          );
+        // Sidebar, cold (first after boot) and warm.
+        for (let i = 0; i <= WARM; i++) {
+          const measured = await withProcSampling(server.pid, () => loadSidebar(session, rpc));
           record({
-            kind: "thread-open",
+            kind: "sidebar",
             boot,
-            size,
             temp: i === 0 ? "cold" : "warm",
-            threadId: thread.threadId,
             ...measured.result,
             peakRss: measured.peakServerRss,
             cpuS: measured.cpuS,
           });
         }
-      }
-      for (const size of sizes) {
-        const thread = picks![size];
-        const measured = await withProcSampling(server.pid, () =>
-          openThreadSocketOnly(rpc, thread.threadId),
-        );
-        record({
-          kind: "thread-open-socket",
-          boot,
-          size,
-          temp: "warm",
-          threadId: thread.threadId,
-          ms: measured.result.ms,
-          wsBytes: measured.result.bytes,
-          peakRss: measured.peakServerRss,
-          cpuS: measured.cpuS,
-        });
-        const full = await httpGet(
-          session,
-          `/api/orchestration/threads/${encodeURIComponent(thread.threadId)}`,
-        );
-        record({
-          kind: "thread-full-http",
-          boot,
-          size,
-          temp: "warm",
-          threadId: thread.threadId,
-          ms: full.ms,
-          httpBytes: full.bytes,
-          parseMs: full.parseMs,
-        });
-      }
 
-      // Reconnect with nothing missed: a client that held the shell and the largest thread.
-      const sidebar = await loadSidebar(session, rpc);
-      const held = await openThread(session, rpc, picks!.largest.threadId);
-      await rpc.close();
-      for (let i = 0; i < WARM; i++) {
-        const measured = await withProcSampling(server.pid, async () => {
-          const started = performance.now();
-          const next = await connect(session);
-          const shellHttp = await httpGet(session, `/api/orchestration/shell${SHELL_QUERY}`);
-          const shell = await untilSynchronized(next.rpc, "orchestration.subscribeShell", {
-            afterSequence: shellHttp.json.snapshotSequence,
-            omitIdleSubagents: true,
-            omitOlderSettled: true,
-            requestCompletionMarker: true,
+        // Thread open: cold = first open of that thread after boot; warm = repeats, interleaved.
+        for (let i = 0; i <= WARM; i++) {
+          for (const size of sizes) {
+            const thread = picks![size];
+            const measured = await withProcSampling(server.pid, () =>
+              openThread(session, rpc, thread.threadId),
+            );
+            record({
+              kind: "thread-open",
+              boot,
+              size,
+              temp: i === 0 ? "cold" : "warm",
+              threadId: thread.threadId,
+              ...measured.result,
+              peakRss: measured.peakServerRss,
+              cpuS: measured.cpuS,
+            });
+          }
+        }
+        for (const size of sizes) {
+          const thread = picks![size];
+          const measured = await withProcSampling(server.pid, () =>
+            openThreadSocketOnly(rpc, thread.threadId),
+          );
+          record({
+            kind: "thread-open-socket",
+            boot,
+            size,
+            temp: "warm",
+            threadId: thread.threadId,
+            ms: measured.result.ms,
+            wsBytes: measured.result.bytes,
+            peakRss: measured.peakServerRss,
+            cpuS: measured.cpuS,
           });
-          const thread = await untilSynchronized(next.rpc, "orchestration.subscribeThread", {
-            threadId: picks!.largest.threadId,
-            afterSequence: held.sequence,
-            requestCompletionMarker: true,
-            acceptBoundedSnapshot: true,
-            acceptDeferredWork: true,
-            acceptCompactTurnItems: true,
-            acceptCompactIds: true,
-            acceptDedupedBodies: true,
+          const full = await httpGet(
+            session,
+            `/api/orchestration/threads/${encodeURIComponent(thread.threadId)}`,
+          );
+          record({
+            kind: "thread-full-http",
+            boot,
+            size,
+            temp: "warm",
+            threadId: thread.threadId,
+            ms: full.ms,
+            httpBytes: full.bytes,
+            parseMs: full.parseMs,
           });
-          const ms = performance.now() - started;
-          const wsBytes = next.rpc.inbound.bytes;
-          await next.rpc.close();
-          return {
-            ms,
-            connectMs: next.connectMs,
-            httpBytes: shellHttp.bytes,
-            wsBytes,
-            shellWsBytes: shell.bytes,
-            threadWsBytes: thread.bytes,
-            threadItems: thread.items,
-            threadKinds: thread.kinds,
-          };
-        });
-        record({
-          kind: "reconnect-idle",
-          boot,
-          ...measured.result,
-          peakRss: measured.peakServerRss,
-          cpuS: measured.cpuS,
-        });
+        }
+
+        // Reconnect with nothing missed: a client that held the shell and the largest thread.
+        const sidebar = await loadSidebar(session, rpc);
+        const held = await openThread(session, rpc, picks!.largest.threadId);
+        await rpc.close();
+        for (let i = 0; i < WARM; i++) {
+          const measured = await withProcSampling(server.pid, async () => {
+            const started = performance.now();
+            const next = await connect(session);
+            const shellHttp = await httpGet(session, `/api/orchestration/shell${SHELL_QUERY}`);
+            const shell = await untilSynchronized(next.rpc, "orchestration.subscribeShell", {
+              afterSequence: shellHttp.json.snapshotSequence,
+              omitIdleSubagents: true,
+              omitOlderSettled: true,
+              requestCompletionMarker: true,
+            });
+            const thread = await untilSynchronized(next.rpc, "orchestration.subscribeThread", {
+              threadId: picks!.largest.threadId,
+              afterSequence: held.sequence,
+              requestCompletionMarker: true,
+              acceptBoundedSnapshot: true,
+              acceptDeferredWork: true,
+              acceptCompactTurnItems: true,
+              acceptCompactIds: true,
+              acceptDedupedBodies: true,
+            });
+            const ms = performance.now() - started;
+            const wsBytes = next.rpc.inbound.bytes;
+            await next.rpc.close();
+            return {
+              ms,
+              connectMs: next.connectMs,
+              httpBytes: shellHttp.bytes,
+              wsBytes,
+              shellWsBytes: shell.bytes,
+              threadWsBytes: thread.bytes,
+              threadItems: thread.items,
+              threadKinds: thread.kinds,
+            };
+          });
+          record({
+            kind: "reconnect-idle",
+            boot,
+            ...measured.result,
+            peakRss: measured.peakServerRss,
+            cpuS: measured.cpuS,
+          });
+        }
       }
 
       // Reconnect after missing a turn: the observer holds the bench thread, disconnects, a
