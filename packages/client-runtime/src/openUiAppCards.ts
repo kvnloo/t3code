@@ -17,6 +17,8 @@ export const APP_CARD_LIMITS = {
   steps: 20,
   checks: 12,
   commits: 12,
+  pathPoints: 600,
+  url: 2_000,
   minutes: 100_000,
 } as const;
 
@@ -26,9 +28,9 @@ export const APP_CARD_DESCRIPTIONS: Readonly<Record<AppCardType, string>> = {
   MailList:
     "Messages a mail search returned: the query, then each message's sender, subject, snippet, time text, unread flag and optionally one attachment file name.",
   Route:
-    "Directions a maps app returned: origin, destination, mode (drive, walk, transit or bike), minutes, a distance string, then the steps in order.",
+    "Directions a maps app returned: origin, destination, mode (drive, walk, transit or bike), minutes, a distance string, then the steps in order. Optionally the road it takes (via), the route geometry the tool returned as [lat, lon] points (path) and the static basemap it returned as {image, bounds: [south, west, north, east]} (map); never invent a path or a map.",
   PullRequest:
-    "One pull request: number, title, state (open, conflict, ready, merged or closed), head and base branches, its checks (pass, fail, running or skip), the conflict count, and optionally its recent commits newest first (title, short sha, author, age text, lane base, head or side, an optional branch label on a lane's tip, and conflict true on base commits that conflict).",
+    "One pull request: number, title, state (open, conflict, ready, merged or closed), head and base branches, its checks (pass, fail, running or skip, optionally with the second each started and how many seconds it ran), the conflict count, and optionally its recent commits newest first (title, short sha, author, age text, lane base, head or side, an optional branch label on a lane's tip, and conflict true on base commits that conflict).",
 };
 
 export const APP_CARD_PROMPT_RULES = [
@@ -143,28 +145,6 @@ export function checkCounts(checks: ReadonlyArray<PullRequestCheck>) {
   return counts;
 }
 
-/** Progress steps the card draws, in order; `reached` marks how far this pull request got. */
-export function pullRequestSteps(state: PullRequestState) {
-  const order = ["Opened", "Checks", "Ready", "Merged"] as const;
-  const reached = state === "merged" ? 4 : state === "ready" ? 3 : state === "closed" ? 1 : 2;
-  return order.map((name, index) => ({ name, reached: index < reached }));
-}
-
-export const PULL_REQUEST_STATE_COLORS: Readonly<Record<PullRequestState, string>> = {
-  open: "#1A7F37",
-  conflict: "#BC4C00",
-  ready: "#1A7F37",
-  merged: "#8250DF",
-  closed: "#CF222E",
-};
-
-export const CHECK_STATUS_SYMBOL: Readonly<Record<CheckStatus, string>> = {
-  pass: "✓",
-  fail: "✕",
-  running: "●",
-  skip: "–",
-};
-
 /** x of a commit-graph lane, in px from the card's left edge. */
 export function commitLaneX(lane: "base" | "head" | "side") {
   return lane === "head" ? 34 : lane === "side" ? 46 : 22;
@@ -188,14 +168,49 @@ export function avatarColor(name: string) {
   return AVATAR_COLORS[hash % AVATAR_COLORS.length]!;
 }
 
-/** Fixed colors the cards draw: the attachment chip, the route, the cheapest tag and the car glyph. */
-export const APP_CARD_PAINT = {
-  googleRed: "#ea4335",
-  routeBlue: "#1a73e8",
-  routeCasing: "#cfe0fb",
-  cheapest: "#1a7f37",
-  shadow: "rgba(0,0,0,.10)",
-  glass: "#cfd8e3",
-  tyre: "#1d1d1d",
-  white: "#ffffff",
-} as const;
+export type CarClass = "x" | "comfort" | "xl" | "black";
+
+/** Which vehicle glyph a ride option gets, from its product name. */
+export function carClass(name: string): CarClass {
+  const n = name.toLowerCase();
+  if (/\b(xl|xxl|suv|van|6|7)\b|xl$/.test(n)) return "xl";
+  if (/black|lux|premier|select/.test(n)) return "black";
+  if (/comfort|priority|extra/.test(n)) return "comfort";
+  return "x";
+}
+
+export interface CheckSpan {
+  readonly start: number;
+  readonly length: number;
+}
+
+/**
+ * Gantt bars for checks that report timing: each bar's start and length as fractions of the run.
+ * Returns null when any check lacks timing, so the card falls back to chips.
+ */
+export function checkTimeline(
+  checks: ReadonlyArray<{
+    readonly started?: number | undefined;
+    readonly seconds?: number | undefined;
+  }>,
+): { readonly total: number; readonly spans: ReadonlyArray<CheckSpan> } | null {
+  if (
+    checks.length === 0 ||
+    checks.some((check) => check.started === undefined || check.seconds === undefined)
+  )
+    return null;
+  const total = Math.max(1, ...checks.map((check) => check.started! + check.seconds!));
+  return {
+    total,
+    spans: checks.map((check) => ({
+      start: check.started! / total,
+      length: check.seconds! / total,
+    })),
+  };
+}
+
+/** "1m 4s", "38s". */
+export function formatSeconds(seconds: number) {
+  const s = Math.round(seconds);
+  return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+}

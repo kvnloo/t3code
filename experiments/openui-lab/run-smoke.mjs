@@ -17,6 +17,8 @@ const sources = {
   "OpenUiAppCards.tsx": "apps/web/src/components/chat/OpenUiAppCards.tsx",
   "openUiAppCards.ts": "packages/client-runtime/src/openUiAppCards.ts",
   "appConnectors.ts": "packages/client-runtime/src/appConnectors.ts",
+  "appCardThemes.ts": "packages/client-runtime/src/appCardThemes.ts",
+  "octicons.ts": "packages/client-runtime/src/octicons.ts",
   "app-cards.test.ts": "experiments/openui-lab/app-cards.test.ts",
   "report.test.ts": "experiments/openui-lab/report.test.ts",
   "charts.test.ts": "experiments/openui-lab/charts.test.ts",
@@ -28,7 +30,16 @@ const rewrites = [
   ["@t3tools/client-runtime/openui-charts", "./openUiCharts"],
   ["@t3tools/client-runtime/openui-app-cards", "./openUiAppCards"],
   ["@t3tools/client-runtime/app-connectors", "./appConnectors"],
+  ["@t3tools/client-runtime/app-card-themes", "./appCardThemes"],
+  ["@t3tools/client-runtime/octicons", "./octicons"],
+  ["~/hooks/useTheme", "./useTheme"],
 ];
+// SSR in plain Node has no bundler: fonts are dropped, images become their file names, the theme is light.
+const stubs = {
+  "useTheme.ts": 'export const useRenderedAppearance = () => "light";\n',
+};
+const bundlerOnly = /^import "@fontsource[^"]*";\n/gm;
+const assetImport = /^import (\w+) from "~\/assets\/[^"]*\/([^"/]+)";$/gm;
 for (const [name, path] of Object.entries(sources)) {
   if (name.endsWith(".md")) {
     copyFileSync(join(root, path), join(scratch, name));
@@ -36,22 +47,76 @@ for (const [name, path] of Object.entries(sources)) {
   }
   let text = readFileSync(join(root, path), "utf8");
   for (const [from, to] of rewrites) text = text.replaceAll(`"${from}"`, `"${to}"`);
+  text = text.replace(bundlerOnly, "").replace(assetImport, 'const $1 = "$2";');
   writeFileSync(join(scratch, name), text);
 }
-writeFileSync(join(scratch, "tsconfig.json"), JSON.stringify({ compilerOptions: { jsx: "react-jsx" } }));
-const dependencies = { "@openuidev/react-lang": "1.0.2", "@openuidev/lang-core": "1.0.2", zod: "4.1.12", react: "19.2.0", "react-dom": "19.2.0", tsx: "4.20.6" };
-writeFileSync(join(scratch, "package.json"), JSON.stringify({ private: true, type: "module", dependencies }));
+for (const [name, text] of Object.entries(stubs)) writeFileSync(join(scratch, name), text);
+writeFileSync(
+  join(scratch, "tsconfig.json"),
+  JSON.stringify({ compilerOptions: { jsx: "react-jsx" } }),
+);
+const dependencies = {
+  "@openuidev/react-lang": "1.0.2",
+  "@openuidev/lang-core": "1.0.2",
+  zod: "4.1.12",
+  react: "19.2.0",
+  "react-dom": "19.2.0",
+  tsx: "4.20.6",
+};
+writeFileSync(
+  join(scratch, "package.json"),
+  JSON.stringify({ private: true, type: "module", dependencies }),
+);
 const env = { ...process.env, OPENUI_TELEMETRY_DISABLED: "1", DO_NOT_TRACK: "1" };
 function run(command, args) {
-  const result = spawnSync(command, args, { cwd: scratch, env, encoding: "utf8", timeout: 120_000 });
-  const log = (result.stdout ?? "") + (result.stderr ?? "") + (result.error ? String(result.error) : "");
+  const result = spawnSync(command, args, {
+    cwd: scratch,
+    env,
+    encoding: "utf8",
+    timeout: 120_000,
+  });
+  const log =
+    (result.stdout ?? "") + (result.stderr ?? "") + (result.error ? String(result.error) : "");
   process.stdout.write(log);
   return { status: result.status, log };
 }
-const install = run("npm", ["install", "--ignore-scripts", "--legacy-peer-deps", "--no-audit", "--no-fund"]);
-const result = install.status === 0 ? run(process.execPath, ["--import", "tsx", "--test", "report.test.ts", "charts.test.ts", "app-cards.test.ts"]) : install;
+const install = run("npm", [
+  "install",
+  "--ignore-scripts",
+  "--legacy-peer-deps",
+  "--no-audit",
+  "--no-fund",
+]);
+const result =
+  install.status === 0
+    ? run(process.execPath, [
+        "--import",
+        "tsx",
+        "--test",
+        "report.test.ts",
+        "charts.test.ts",
+        "app-cards.test.ts",
+      ])
+    : install;
 writeFileSync(join(out, "smoke.log"), result.log);
-const hash = (path) => createHash("sha256").update(readFileSync(join(root, path))).digest("hex");
+const hash = (path) =>
+  createHash("sha256")
+    .update(readFileSync(join(root, path)))
+    .digest("hex");
 const sourceSha256 = Object.fromEntries(Object.values(sources).map((path) => [path, hash(path)]));
-writeFileSync(join(out, "smoke-receipt.json"), JSON.stringify({ scope: "isolated stock parser + React SSR, not integrated T3 or browser", status: result.status, node: process.version, dependencies, sourceSha256, scratch }, null, 2));
+writeFileSync(
+  join(out, "smoke-receipt.json"),
+  JSON.stringify(
+    {
+      scope: "isolated stock parser + React SSR, not integrated T3 or browser",
+      status: result.status,
+      node: process.version,
+      dependencies,
+      sourceSha256,
+      scratch,
+    },
+    null,
+    2,
+  ),
+);
 process.exitCode = result.status ?? 1;

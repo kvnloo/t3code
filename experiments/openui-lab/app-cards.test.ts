@@ -29,46 +29,38 @@ test("app cards parse, render their brand and supplied data", () => {
     [
       ride,
       [
-        /Uber/,
-        /#000000/,
-        /Ferry Building → SFO Terminal 2/,
-        /Best price/,
+        /Uber ride options/,
+        /--ac-primary:#000000/,
+        /Ride to SFO Terminal 2/,
+        /Cheapest/,
         /\$52\.10/,
-        /Booking happens in the Uber app/,
+        /Choose UberX/,
+        /Nothing is booked from here/,
       ],
     ],
     [
       mail,
       [
-        /Gmail/,
+        /Gmail results/,
         /#EA4335/,
-        /“invoices from Acme” · 2 results · 1 unread/,
+        /invoices from Acme/,
+        /2 results/,
         /Invoice #4512/,
-        /aria-label="Unread"/,
+        /aria-label="Unread"|font-bold/,
       ],
     ],
-    [
-      route,
-      [
-        /Google Maps/,
-        /18 min/,
-        /6\.2 mi/,
-        /Driving · Home → Ferry Building/,
-        /Turn right onto Market St/,
-      ],
-    ],
-    [
-      pr("ready", 0),
-      [/GitHub/, /#128 · feat\/session-refresh → main/, /Ready to merge/, /Checks · 3 passed/],
-    ],
-    [pr("conflict", 3), [/3 conflicts with main/]],
-    [pr("merged", 0), [/>Merged</, /#8250DF/]],
+    [route, [/Directions from Home/, /18 min/, /6\.2 mi/, /Driving/, /Head north on Valencia St/]],
+    [pr("ready", 0), [/Pull request 128/, /feat\/session-refresh/, /All checks have passed/]],
+    [pr("conflict", 3), [/This branch has 3 conflicts that must be resolved/]],
+    [pr("merged", 0), [/>Merged</, /--ac-done:#8250df/]],
   ];
   for (const [code, patterns] of cases) {
     assert.deepEqual(inspectOpenUiChart(code), { kind: "ready" }, code.slice(0, 60));
     const html = render(code);
     for (const pattern of patterns) assert.match(html, pattern, `${code.slice(0, 40)} ${pattern}`);
-    assert.doesNotMatch(html, /<script|javascript:|href=/i, "cards have no links or actions");
+    assert.doesNotMatch(html, /<script|javascript:/i, "cards run no script");
+    for (const [, href] of html.matchAll(/<a [^>]*href="([^"]*)"/g))
+      assert.match(href, /^https:\/\//, "cards only link out to the app over https");
   }
   assert.equal(render(ride).match(/aria-pressed/g)?.length, 3);
   assert.match(openUiChartPrompt, /RideOptions\(app: "uber" \| "lyft"/);
@@ -94,7 +86,7 @@ route = Route("Home", "Airport", "transit", 52, "14 mi", ["Walk to 16th St BART"
 spend = BarChart("Ride spend", "USD", [{label: "Uber", value: 120}, {label: "Lyft", value: 80}])`;
   assert.deepEqual(inspectOpenUiChart(code), { kind: "ready" });
   const html = render(code);
-  assert.match(html, /#FF00BF/);
-  assert.match(html, /Transit · Home → Airport/);
+  assert.match(html, /--ac-primary:#ff00bf/);
+  assert.match(html, /Transit/);
   assert.match(html, /Ride spend/);
 });

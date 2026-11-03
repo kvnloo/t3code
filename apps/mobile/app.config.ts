@@ -124,6 +124,23 @@ const dmSansFonts = {
   bold: "@expo-google-fonts/dm-sans/700Bold/DMSans_700Bold.ttf",
 } as const;
 
+// OpenUI app cards draw each app in its own typeface (Google Sans, Inter Tight, Mona Sans; all OFL).
+const appCardFonts = [
+  ["GoogleSans-Regular", "google-sans/400Regular/GoogleSans_400Regular.ttf", 400],
+  ["GoogleSans-Medium", "google-sans/500Medium/GoogleSans_500Medium.ttf", 500],
+  ["GoogleSans-Bold", "google-sans/700Bold/GoogleSans_700Bold.ttf", 700],
+  ["InterTight-Regular", "inter-tight/400Regular/InterTight_400Regular.ttf", 400],
+  ["InterTight-SemiBold", "inter-tight/600SemiBold/InterTight_600SemiBold.ttf", 600],
+  ["InterTight-Bold", "inter-tight/700Bold/InterTight_700Bold.ttf", 700],
+  ["MonaSans-Regular", "mona-sans/400Regular/MonaSans_400Regular.ttf", 400],
+  ["MonaSans-SemiBold", "mona-sans/600SemiBold/MonaSans_600SemiBold.ttf", 600],
+  ["MonaSans-Bold", "mona-sans/700Bold/MonaSans_700Bold.ttf", 700],
+].map(([fontFamily, file, weight]) => ({
+  fontFamily: fontFamily as string,
+  path: `@expo-google-fonts/${file as string}`,
+  weight: weight as number,
+}));
+
 const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   "expo-widgets",
   {
@@ -284,7 +301,10 @@ const config: ExpoConfig = {
   },
   android: {
     icon: variant.assets.appIcon,
-    package: process.env.T3_OPENUI_LAB_BUILD === "1" ? "com.t3tools.t3code.openui" : variant.androidPackage,
+    package:
+      process.env.T3_OPENUI_LAB_BUILD === "1"
+        ? "com.t3tools.t3code.openui"
+        : variant.androidPackage,
     ...(repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE
       ? { googleServicesFile: repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE }
       : {}),
@@ -311,7 +331,12 @@ const config: ExpoConfig = {
       "expo-font",
       {
         ios: {
-          fonts: [dmSansFonts.regular, dmSansFonts.medium, dmSansFonts.bold],
+          fonts: [
+            dmSansFonts.regular,
+            dmSansFonts.medium,
+            dmSansFonts.bold,
+            ...appCardFonts.map((font) => font.path),
+          ],
         },
         android: {
           fonts: [
@@ -327,6 +352,10 @@ const config: ExpoConfig = {
               fontFamily: "DMSans-Bold",
               fontDefinitions: [{ path: dmSansFonts.bold, weight: 700 }],
             },
+            ...appCardFonts.map(({ fontFamily, path, weight }) => ({
+              fontFamily,
+              fontDefinitions: [{ path, weight }],
+            })),
           ],
         },
       },

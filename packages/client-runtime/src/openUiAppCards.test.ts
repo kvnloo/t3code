@@ -4,9 +4,11 @@ import { it as test } from "vite-plus/test";
 import {
   appCardProblem,
   avatarColor,
+  carClass,
+  checkTimeline,
+  formatSeconds,
   cheapestRide,
   checkCounts,
-  pullRequestSteps,
   rideReadout,
   type PullRequestCheck,
 } from "./openUiAppCards.ts";
@@ -63,17 +65,28 @@ test("pull request states must agree with checks and conflicts", () => {
     running: 0,
     skip: 0,
   });
-  NodeAssert.deepEqual(
-    pullRequestSteps("ready").map((step) => step.reached),
-    [true, true, true, false],
-  );
-  NodeAssert.deepEqual(
-    pullRequestSteps("merged").map((step) => step.reached),
-    [true, true, true, true],
-  );
 });
 
 test("a sender keeps one avatar color regardless of case or spacing", () => {
   NodeAssert.equal(avatarColor("Acme Billing"), avatarColor(" acme billing "));
   NodeAssert.match(avatarColor("Dana Ruiz"), /^#[0-9a-f]{6}$/);
+});
+
+test("ride names map to a vehicle glyph", () => {
+  NodeAssert.deepEqual(
+    ["UberX", "Comfort", "UberXL", "Black", "Black SUV", "Lyft XL", "Wait & Save"].map(carClass),
+    ["x", "comfort", "xl", "black", "xl", "xl", "x"],
+  );
+});
+
+test("checks with timing become gantt spans; any untimed check falls back", () => {
+  const timeline = checkTimeline([
+    { started: 0, seconds: 11 },
+    { started: 41, seconds: 33 },
+  ]);
+  NodeAssert.equal(timeline?.total, 74);
+  NodeAssert.deepEqual(timeline?.spans[1], { start: 41 / 74, length: 33 / 74 });
+  NodeAssert.equal(checkTimeline([{ started: 0, seconds: 3 }, {}]), null);
+  NodeAssert.equal(formatSeconds(64), "1m 4s");
+  NodeAssert.equal(formatSeconds(38), "38s");
 });

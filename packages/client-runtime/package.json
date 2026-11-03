@@ -522,6 +522,14 @@
     "./openui-app-cards": {
       "types": "./src/openUiAppCards.ts",
       "default": "./src/openUiAppCards.ts"
+    },
+    "./app-card-themes": {
+      "types": "./src/appCardThemes.ts",
+      "default": "./src/appCardThemes.ts"
+    },
+    "./octicons": {
+      "types": "./src/octicons.ts",
+      "default": "./src/octicons.ts"
     }
   },
   "scripts": {
