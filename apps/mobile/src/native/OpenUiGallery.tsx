@@ -3,6 +3,7 @@ import { Image } from "expo-image";
 import { memo, use, useEffect, useRef, useState, type ComponentRef } from "react";
 import {
   Linking,
+  useColorScheme,
   Modal,
   Pressable,
   ScrollView,
@@ -110,17 +111,16 @@ function SlideImage({ slide, fit }: { slide: Slide; fit: "cover" | "contain" }) 
   );
 }
 
-function toneColor(tone: GalleryTone, theme: ReturnType<typeof useUniwindTheme>) {
-  switch (tone) {
-    case "ok":
-      return "#22a06b";
-    case "warn":
-      return theme["--color-warning"];
-    case "bad":
-      return theme["--color-danger"];
-    case "info":
-      return "#3b82f6";
-  }
+// Fixed tones: some themes' warning/danger tokens are too dark to read as text on a dark card.
+const TONES: Record<GalleryTone, { dark: string; light: string }> = {
+  ok: { dark: "#34d399", light: "#047857" },
+  warn: { dark: "#fbbf24", light: "#b45309" },
+  bad: { dark: "#fb7185", light: "#be123c" },
+  info: { dark: "#60a5fa", light: "#1d4ed8" },
+};
+
+function toneColor(tone: GalleryTone, scheme: "dark" | "light") {
+  return TONES[tone][scheme];
 }
 
 function RoundButton({ label, glyph, onPress, style }: { label: string; glyph: string; onPress: () => void; style?: object }) {
@@ -216,6 +216,7 @@ function Pager({
 
 const GalleryPanel = memo(function GalleryPanel({ props }: { props: GalleryProps }) {
   const theme = useUniwindTheme();
+  const scheme = useColorScheme() === "light" ? "light" : "dark";
   const slides = props.slides;
   const groups = galleryGroups(slides);
   const [index, setIndex] = useState(0);
@@ -314,7 +315,7 @@ const GalleryPanel = memo(function GalleryPanel({ props }: { props: GalleryProps
       {groups.length > 1 ? (
         <View style={{ flexDirection: "row", justifyContent: "center", gap: 5, paddingTop: 6 }}>
           {groups.map((entry) => (
-            <View key={entry.key} style={{ height: 4, borderRadius: 2, width: entry.key === group ? 28 : 14, backgroundColor: entry.key === group ? entry.accent : theme["--color-subtle-strong"] }} />
+            <View key={entry.key} style={{ height: 4, borderRadius: 2, width: entry.key === group ? 28 : 14, backgroundColor: entry.key === group ? entry.accent : theme["--color-foreground-muted"], opacity: entry.key === group ? 1 : 0.35 }} />
           ))}
         </View>
       ) : null}
@@ -323,7 +324,7 @@ const GalleryPanel = memo(function GalleryPanel({ props }: { props: GalleryProps
         {slide.tags?.length ? (
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
             {slide.tags.map((tag, position) => {
-              const color = toneColor(tag.tone, theme);
+              const color = toneColor(tag.tone, scheme);
               return (
                 <View key={position} style={{ borderRadius: 999, borderWidth: 1, borderColor: color, paddingHorizontal: 8, paddingVertical: 3 }}>
                   <AppText style={{ color, fontSize: 11, fontFamily: "monospace" }}>{tag.text}</AppText>
@@ -364,7 +365,7 @@ const GalleryPanel = memo(function GalleryPanel({ props }: { props: GalleryProps
       </View>
 
       <Modal visible={expanded} transparent animationType="fade" onRequestClose={() => setExpanded(false)} statusBarTranslucent>
-        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.94)", paddingTop: 44, paddingBottom: 24 }}>
+        <View style={{ flex: 1, backgroundColor: "#000", paddingTop: 44, paddingBottom: 24 }}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingBottom: 12 }}>
             <AppText numberOfLines={1} style={{ flex: 1, color: "#fff", fontSize: 14 }}>
               {slide.title}{slide.caption ? ` · ${slide.caption}` : ""}
