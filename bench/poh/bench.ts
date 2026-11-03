@@ -707,6 +707,7 @@ try {
             ? {}
             : { serverOwnWriteBytes: ownWritesAfter - ownWritesBefore }),
           ...(io === undefined ? {} : { io, ioStart: tapBefore }),
+          startedAtMs: dispatchedAt,
           live: summarizeArrivals(arrivals, dispatchedAt),
           peakRss: turnSample.peakServerRss,
           cpuS: turnSample.cpuS,

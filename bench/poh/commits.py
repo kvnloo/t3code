@@ -32,7 +32,7 @@ WRITE = re.compile(r"^\s*(INSERT|UPDATE|DELETE|REPLACE)\b", re.I)
 
 
 def is_sql(s):
-    return s["name"].startswith("sql.")
+    return s["name"] == "sqlite" or s["name"].startswith("sql.")
 
 
 def ancestors(s):
@@ -59,6 +59,8 @@ def classify(s):
     if s["name"] == "sql.transaction":
         if any(c["name"] == "sql.transaction" for c in chain):
             return None  # savepoint inside an outer transaction
+        if s.get("attributes", {}).get("db.connection") not in (None, "writer"):
+            return None  # reader snapshot, no commit
         kind = "transaction"
     else:
         if any(c["name"] == "sql.transaction" for c in chain):
