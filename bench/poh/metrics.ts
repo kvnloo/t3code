@@ -262,6 +262,20 @@ export function metricsFor(samples: Sample[]): Metric[] {
     "s",
     turns.filter((s) => s.cpuS !== undefined).map((s) => s.cpuS),
   );
+  // Client-side streaming latency (bench.ts summarizeArrivals), one value per turn.
+  const live = turns.filter((s) => s.live !== undefined).map((s) => s.live);
+  const liveField = (field: string) =>
+    live.map((l) => l[field]).filter((v): v is number => typeof v === "number");
+  add("turn.live.first_event.ms", "ms", liveField("firstEventMs"));
+  add("turn.live.first_assistant.ms", "ms", liveField("firstAssistantMs"));
+  add("turn.live.event_lag_p50.ms", "ms", liveField("lagP50Ms"));
+  add("turn.live.event_lag_p95.ms", "ms", liveField("lagP95Ms"));
+  add("turn.live.event_lag_max.ms", "ms", liveField("lagMaxMs"));
+  add("turn.live.frame_gap_p50.ms", "ms", liveField("frameGapP50Ms"));
+  add("turn.live.assistant_gap_p50.ms", "ms", liveField("assistantGapP50Ms"));
+  add("turn.live.assistant_gap_p95.ms", "ms", liveField("assistantGapP95Ms"));
+  add("turn.live.events.count", "count", liveField("events"));
+  add("turn.live.frames.count", "count", liveField("frames"));
   const peaks = new Map<number, number>();
   for (const s of samples) {
     if (typeof s.peakRss === "number")
