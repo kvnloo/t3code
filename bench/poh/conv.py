@@ -21,6 +21,11 @@ tap = os.path.join(work, "tap")
 for d in (userdata, tmp, tap):
     os.makedirs(d)
 shutil.copyfile(seed, os.path.join(userdata, "statev2.sqlite"))
+# A live install is in WAL mode; VACUUM INTO seeds are not. POH_CONV_WAL=1 converts the copy first.
+start_mode = "delete"
+if os.environ.get("POH_CONV_WAL") == "1":
+    start_mode = subprocess.run(["sqlite3", os.path.join(userdata, "statev2.sqlite"), "PRAGMA journal_mode=WAL"],
+                                capture_output=True, text=True, check=True).stdout.strip()
 
 def tree_bytes(*roots):
     total = 0
@@ -31,6 +36,21 @@ def tree_bytes(*roots):
                     total += os.lstat(os.path.join(dirpath, f)).st_blocks * 512
                 except FileNotFoundError:
                     pass
+    return total
+
+def deleted_open_bytes(pid):
+    # SQLite unlinks its VACUUM temp database right after opening it, so a directory walk misses it.
+    total = 0
+    try:
+        fds = os.listdir(f"/proc/{pid}/fd")
+    except FileNotFoundError:
+        return 0
+    for fd in fds:
+        try:
+            if os.readlink(f"/proc/{pid}/fd/{fd}").endswith(" (deleted)"):
+                total += os.stat(f"/proc/{pid}/fd/{fd}").st_blocks * 512
+        except (FileNotFoundError, PermissionError):
+            pass
     return total
 
 env = {
@@ -57,7 +77,7 @@ while p.poll() is None:
                     write_bytes = max(write_bytes, int(line.split()[1]))
     except (FileNotFoundError, ProcessLookupError, PermissionError):
         pass
-    peak_disk = max(peak_disk, tree_bytes(userdata, tmp))
+    peak_disk = max(peak_disk, tree_bytes(userdata, tmp) + deleted_open_bytes(p.pid))
     time.sleep(0.1)
 wall = time.monotonic() - t0
 log = p.stdout.read().decode()
@@ -71,7 +91,7 @@ for f in os.listdir(tap):
 db = os.path.join(userdata, "statev2.sqlite")
 page = subprocess.run(["sqlite3", "-readonly", db, "PRAGMA page_size"], capture_output=True, text=True).stdout.strip()
 result = {
-    "seed": seed, "pageSizeFlag": size, "exit": p.returncode, "wallS": round(wall, 2),
+    "seed": seed, "startJournalMode": start_mode, "pageSizeFlag": size, "exit": p.returncode, "wallS": round(wall, 2),
     "peakRssBytes": peak_rss, "diskBeforeBytes": disk0, "peakDiskBytes": peak_disk,
     "peakExtraDiskBytes": peak_disk - disk0, "afterDbBytes": os.path.getsize(db),
     "afterPageSize": int(page or 0), "writeBytesLowerBound": write_bytes, "syscalls": syscalls,
