@@ -48,7 +48,9 @@ const SCENE_VARIABLES = [
 ] as const satisfies ReadonlyArray<keyof MobileThemeVariables>;
 
 // Panels on top of the scene stay a little denser so grouped content still reads as a pane.
+// Android pushes most secondary pages as full-screen `bg-sheet` pages, so sheets join the panels.
 const PANEL_VARIABLES = [
+  "--color-sheet",
   "--color-header",
   "--color-card",
   "--color-grouped-card",

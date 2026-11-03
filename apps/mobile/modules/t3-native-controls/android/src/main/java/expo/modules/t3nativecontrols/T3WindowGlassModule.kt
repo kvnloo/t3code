@@ -77,6 +77,25 @@ class T3WindowGlassModule : Module() {
       }
       window.setBackgroundBlurRadius(px)
     }
+    window.decorView.postDelayed({ logOpaqueBackgrounds(window.decorView, 0) }, 1500)
+  }
+
+  // Experiment diagnostics: every full-width view that paints a background, so an opaque layer
+  // hiding the wallpaper can be found in logcat (`adb logcat -s T3WindowGlass`).
+  private fun logOpaqueBackgrounds(view: android.view.View, depth: Int) {
+    if (depth > 40) return
+    val background = view.background
+    if (background != null && view.width >= view.rootView.width / 2 && view.visibility == android.view.View.VISIBLE) {
+      val color = (background as? ColorDrawable)?.color?.let { String.format("#%08X", it) }
+      android.util.Log.i(
+        "T3WindowGlass",
+        "${" ".repeat(depth)}${view.javaClass.simpleName} ${view.width}x${view.height} " +
+          "bg=${background.javaClass.simpleName} color=$color opacity=${background.opacity} alpha=${view.alpha}"
+      )
+    }
+    if (view is android.view.ViewGroup) {
+      for (index in 0 until view.childCount) logOpaqueBackgrounds(view.getChildAt(index), depth + 1)
+    }
   }
 
   private fun restore(activity: Activity) {
