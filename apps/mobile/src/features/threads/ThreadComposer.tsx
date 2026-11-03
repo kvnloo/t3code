@@ -102,6 +102,8 @@ import { ComposerCommandPopover } from "./ComposerCommandPopover";
 import { ComposerPopoverAnchor } from "./ComposerPopoverAnchor";
 import { ComposerQueuedEditAttachments } from "./ComposerQueuedEdit";
 import { useComposerCommandMenu } from "./use-composer-command-menu";
+import { useThreadShareActions } from "./useThreadShareActions";
+import { resolveHandoffSend } from "@t3tools/shared/threadHandoff";
 import type { ComposerEnvironmentCandidate } from "@t3tools/client-runtime/composerThreadItems";
 import { offersLinkedEnvironments } from "@t3tools/client-runtime/link-request";
 import {
@@ -535,6 +537,10 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   };
 
   const mentionableEnvironments = useMentionableEnvironments();
+  const threadShareActions = useThreadShareActions(
+    props.environmentId,
+    props.isDraft ? null : props.selectedThread.id,
+  );
   const composerMenu = useComposerCommandMenu({
     draftMessage: draftMessage,
     ownerKey: composerDraftKey,
@@ -558,6 +564,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
         ? undefined
         : props.onUpdateInteractionMode,
     offersUsageLimits: usageLimitsOffered,
+    ...(props.isDraft ? {} : { handoffDisabledReason: threadShareActions.handoffDisabledReason }),
     onUsageLimits:
       usageLimitsOffered && draftAttachments.length === 0 ? openUsageLimits : undefined,
   });
@@ -670,6 +677,29 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       return;
     if (usageLimitsOffered && isUsageLimitsCommand(draftMessage) && draftAttachments.length === 0) {
       if (openUsageLimits()) onChangeDraftMessage("");
+      return;
+    }
+    const handoffCommand =
+      props.isDraft || queuedEdit !== null
+        ? null
+        : resolveHandoffSend({
+            text: draftMessage,
+            pickedProviderCommand: composerMenu.pickedProviderCommand,
+          });
+    if (handoffCommand) {
+      const draftAtHandoff = getComposerDraftSnapshot(composerDraftKey);
+      if (draftAttachments.length > 0 || (draftAtHandoff.context?.records.length ?? 0) > 0) {
+        Dialog.alert(
+          "Handoff takes text only",
+          "Remove the attachments and context, then send it again.",
+        );
+        return;
+      }
+      const started = await threadShareActions.handoff(handoffCommand.focus);
+      // Clear only what was sent; the user may have edited the draft meanwhile.
+      if (started && getComposerDraftSnapshot(composerDraftKey).text === draftAtHandoff.text) {
+        onChangeDraftMessage("");
+      }
       return;
     }
     const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
