@@ -31,14 +31,9 @@ jobs:
       matrix:
         include: ${{ fromJSON(inputs.matrix || '[{"label":"pilot","slots":"0"}]') }}
     steps:
-      # As CI: .repos holds vendored references with submodules the bench never reads.
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-          sparse-checkout: |
-            /*
-            !/.repos/
-          sparse-checkout-cone-mode: false
+      # A plain clone: actions/checkout walks submodules and fails on the vendored .repos gitlinks.
+      - name: Clone
+        run: git clone -q --depth 1 --branch "$GITHUB_REF_NAME" "https://github.com/$GITHUB_REPOSITORY.git" . && git log -1 --format=%H
       - name: Run
         env:
           SEED_THREADS: ${{ inputs.seed_threads || '4' }}
