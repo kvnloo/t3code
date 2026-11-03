@@ -46,8 +46,9 @@ appearance:
   request stands, such as "This branch has 2 conflicts that must be resolved".
   A failing check opens with its detail; tap any check to see its detail.
 
-The Android experiment shows the same cards natively, with the same themes,
-commit graph, route and app links.
+On web and desktop a board fills in card by card while the agent is still
+writing it. The Android experiment shows the same cards natively, with the same
+themes, commit graph, route and app links, once the board is complete.
 
 Charts and cards keep their selections locally; tapping never sends a message,
 books, sends or merges anything. Links open the app itself, where any action

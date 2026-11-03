@@ -300,7 +300,10 @@ const RideOptionsCard = memo(function RideOptionsCard({
             {`from ${props.pickup}`}
           </p>
         </div>
-        <span className="ml-auto shrink-0 text-xs" style={{ color: "var(--ac-muted)" }}>
+        <span
+          className="ml-auto hidden shrink-0 text-xs @sm:inline"
+          style={{ color: "var(--ac-muted)" }}
+        >
           {`Prices from ${brand.name}`}
         </span>
       </header>

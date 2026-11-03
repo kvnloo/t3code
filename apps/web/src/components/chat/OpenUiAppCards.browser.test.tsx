@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import "~/index.css";
@@ -158,5 +158,26 @@ describe("OpenUI app cards", () => {
     } finally {
       setAppearanceMode("light");
     }
+  });
+
+  it("fills a streaming board in card by card", async () => {
+    const lines = BOARD.split("\n");
+    // Root, mail and half of the ride statement have arrived.
+    const partial = `${lines.slice(0, 2).join("\n")}\n${lines[2]!.slice(0, 40)}`;
+    const screen = await render(
+      <div className="w-[640px] bg-background p-4">
+        <OpenUiCharts code={partial} isStreaming />
+      </div>,
+    );
+    await expect.element(screen.getByText("INV-2041.pdf", { exact: false })).toBeVisible();
+    expect(screen.container.querySelectorAll("[data-app-card]")).toHaveLength(1);
+    await screen.rerender(
+      <div className="w-[640px] bg-background p-4">
+        <OpenUiCharts code={BOARD} />
+      </div>,
+    );
+    await vi.waitFor(() =>
+      expect(screen.container.querySelectorAll("[data-app-card]")).toHaveLength(4),
+    );
   });
 });

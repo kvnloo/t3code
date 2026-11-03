@@ -23,6 +23,7 @@ import {
   shade,
   stackSeries,
   stackedReadout,
+  streamingChartBoard,
   tailPath,
   treemapReadout,
 } from "@t3tools/client-runtime/openui-charts";
@@ -255,9 +256,13 @@ export function inspectOpenUiChart(code: string) {
   }
 }
 
-export function OpenUiCharts({ code }: { code: string }) {
-  const status = useMemo(() => inspectOpenUiChart(code), [code]);
-  if (status.kind !== "ready") return <p role="status" className="p-4 text-sm text-muted-foreground">{status.reason}</p>;
+export function OpenUiCharts({ code, isStreaming = false }: { code: string; isStreaming?: boolean }) {
+  const shown = isStreaming ? streamingChartBoard(code) : code;
+  const status = shown === null ? null : inspectOpenUiChart(shown);
+  if (status === null || status.kind !== "ready") {
+    const reason = isStreaming || status === null ? "Receiving chart board…" : status.reason;
+    return <p role="status" className="p-4 text-sm text-muted-foreground">{reason}</p>;
+  }
   // No tool provider, actions or state callbacks: generated content has no action authority.
-  return <Renderer response={code} library={library} isStreaming={false} />;
+  return <Renderer response={shown} library={library} isStreaming={false} />;
 }

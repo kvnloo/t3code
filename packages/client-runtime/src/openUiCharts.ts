@@ -76,6 +76,25 @@ export type OpenUiChartStatus =
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
 /** Decide whether a parsed board may render: read-only, complete, schema-valid and coherent. */
+/**
+ * What a streaming board can show so far: its complete statements, with the root's panel list cut
+ * to the panels already defined, so cards appear one by one. Null until the root and one panel
+ * are complete. Only for a fence that is still streaming; a finished fence is shown whole or not.
+ */
+export function streamingChartBoard(code: string): string | null {
+  // The last line is still arriving; Markdown hands an open fence over with a newline appended.
+  const body = code.replace(/\n$/, "");
+  const lines = body.slice(0, body.lastIndexOf("\n") + 1).split("\n").filter((line) => line.trim());
+  const defined = new Set(lines.map((line) => /^\s*([A-Za-z_]\w*)\s*=/.exec(line)?.[1]));
+  const rootIndex = lines.findIndex((line) => /^\s*root\s*=/.test(line));
+  const panels = rootIndex < 0 ? null : /\[([^[\]]*)\]\)\s*$/.exec(lines[rootIndex]!);
+  if (!panels) return null;
+  const kept = panels[1]!.split(",").map((name) => name.trim()).filter((name) => defined.has(name));
+  if (kept.length === 0) return null;
+  lines[rootIndex] = `${lines[rootIndex]!.slice(0, panels.index)}[${kept.join(", ")}])`;
+  return lines.join("\n");
+}
+
 export function inspectParsedChartBoard(
   parsed: ParsedChartProgram,
   panelSchemas: Readonly<Record<ChartPanel["typeName"], SafeParse>>,

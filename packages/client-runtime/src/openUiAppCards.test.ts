@@ -12,7 +12,7 @@ import {
   rideReadout,
   type PullRequestCheck,
 } from "./openUiAppCards.ts";
-import { chartPanelProblem } from "./openUiCharts.ts";
+import { chartPanelProblem, streamingChartBoard } from "./openUiCharts.ts";
 
 const options = [
   { name: "UberX", minutes: 4, price: "$31.20", seats: 4 },
@@ -89,4 +89,21 @@ test("checks with timing become gantt spans; any untimed check falls back", () =
   NodeAssert.equal(checkTimeline([{ started: 0, seconds: 3 }, {}]), null);
   NodeAssert.equal(formatSeconds(64), "1m 4s");
   NodeAssert.equal(formatSeconds(38), "38s");
+});
+
+test("a streaming board shows the panels whose statements are complete", () => {
+  const root = 'root = Board("Trip", "Demo.", [mail, ride, route])\n';
+  const mail = 'mail = MailList("q", [])\n';
+  NodeAssert.equal(streamingChartBoard(root), null);
+  NodeAssert.equal(
+    streamingChartBoard(root + mail + 'ride = RideOptions("ub'),
+    root.replace("[mail, ride, route]", "[mail]") + mail.trimEnd(),
+  );
+  NodeAssert.equal(streamingChartBoard('root = Board("Trip", "Demo.", [mail'), null);
+  NodeAssert.equal(streamingChartBoard(mail), null);
+  // An open fence arrives with a newline after the partial line.
+  NodeAssert.equal(
+    streamingChartBoard(`${root}${mail}ride = Ride\n`),
+    root.replace("[mail, ride, route]", "[mail]") + mail.trimEnd(),
+  );
 });

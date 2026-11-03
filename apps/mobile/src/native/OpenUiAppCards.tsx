@@ -3,7 +3,7 @@ import { Image } from "expo-image";
 import { memo, useState, type ReactNode } from "react";
 import { Linking, Pressable, Text, View, useColorScheme, type TextStyle } from "react-native";
 import Animated, { FadeInDown, ReduceMotion } from "react-native-reanimated";
-import Svg, { Circle, G, Path, Image as SvgImage } from "react-native-svg";
+import Svg, { Circle, G, Path, Rect, Image as SvgImage } from "react-native-svg";
 import { z } from "zod/v4";
 
 import { APP_BRANDS, type AppBrand, type AppBrandId } from "@t3tools/client-runtime/app-connectors";
@@ -631,8 +631,11 @@ function RouteMap({
             width={MAP_W}
             height={MAP_H}
             preserveAspectRatio="none"
-            opacity={scheme === "dark" ? 0.55 : 1}
           />
+        ) : null}
+        {/* Basemaps come light; dark mode dims them under Google's night land colour. */}
+        {map && scheme === "dark" ? (
+          <Rect width={MAP_W} height={MAP_H} fill={paint.land} opacity={0.6} />
         ) : null}
         <Path
           d={d}
