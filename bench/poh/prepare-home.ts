@@ -18,5 +18,7 @@ export function prepareHome(options: { readonly seed: string; readonly t3Home: s
   // A copied scheduled task would launch a real provider turn from the bench server.
   const disabled = sql.prepare("UPDATE scheduled_tasks SET enabled = 0 WHERE enabled != 0").run();
   sql.close();
+  // Holds the server's first background event-log pass six hours out, so none lands in a measurement.
+  NodeFS.writeFileSync(NodePath.join(userdata, "compacted-at"), String(Date.now()));
   return { db, disabledScheduledTasks: Number(disabled.changes) };
 }
