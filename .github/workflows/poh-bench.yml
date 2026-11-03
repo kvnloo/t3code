@@ -31,9 +31,14 @@ jobs:
       matrix:
         include: ${{ fromJSON(inputs.matrix || '[{"label":"pilot","slots":"0"}]') }}
     steps:
+      # As CI: .repos holds vendored references with submodules the bench never reads.
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
       - name: Run
         env:
           SEED_THREADS: ${{ inputs.seed_threads || '4' }}
