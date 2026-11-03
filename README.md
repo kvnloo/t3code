@@ -9,3 +9,7 @@ Kept off the code branch so the PR diff stays code only.
 - `live-activity-row.png`: the running row over time (Thinking, Tool, then
   "Reading from GitHub · #128" with the GitHub mark).
 - `board.png`, `ride-and-route-cards.png`, `pull-request-card.png`: the rendered cards.
+- `t3-app-cards-film.mp4` / `.gif`: the 40 s launch film, 1920×1080 at 60 fps with sound. Made with
+  fframes 1.3: a stageshow mock for the "before", the same real recording with a virtual camera
+  (labeled 3× and 1.5×), and synthesized sound (claude-motion sfx). Source: kvnloo/launch-videos,
+  `films/t3-openui-app-cards-v2`.
