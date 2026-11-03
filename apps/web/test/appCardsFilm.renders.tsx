@@ -46,10 +46,10 @@ const OUT = import.meta.env.VITE_APP_CARDS_FILM as string | undefined;
 const FPS = Number(import.meta.env.VITE_APP_CARDS_FILM_FPS ?? 60);
 // Resumes a killed run: frames before this one are replayed but not saved again.
 const FROM = Number(import.meta.env.VITE_APP_CARDS_FILM_FROM ?? 0);
-// Laid out at 1280x720 and drawn at 2x, so the frames stay sharp when scaled to 1080p.
+// Laid out at 1280x720 and drawn at 1.5x: 1080p frames with laptop-sized type.
 const WIDTH = 1280;
 const HEIGHT = 720;
-const ZOOM = 2;
+const ZOOM = 1.5;
 
 const TRIP = emptyThread("thread-trip", "Thursday before SFO");
 const THREADS = [
@@ -117,10 +117,10 @@ const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 // A cursor drawn over the app, since Playwright's pointer is invisible in screenshots.
 const cursor = document.createElement("div");
 cursor.style.cssText =
-  "position:fixed;left:0;top:0;width:40px;height:40px;z-index:2147483647;pointer-events:none;transform:translate(-100px,-100px);filter:drop-shadow(0 1px 2px rgb(0 0 0/.35))";
+  "position:fixed;left:0;top:0;width:30px;height:30px;z-index:2147483647;pointer-events:none;transform:translate(-100px,-100px);filter:drop-shadow(0 1px 2px rgb(0 0 0/.35))";
 cursor.innerHTML =
-  '<svg viewBox="0 0 24 24" width="40" height="40"><path d="M4 2.5v17.2l4.6-4.4 3 6.6 2.9-1.3-3-6.5h6.4z" fill="#111" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg>';
-let cursorAt: readonly [number, number] = [WIDTH * 2 * 0.62, HEIGHT * 2 * 0.9];
+  '<svg viewBox="0 0 24 24" width="30" height="30"><path d="M4 2.5v17.2l4.6-4.4 3 6.6 2.9-1.3-3-6.5h6.4z" fill="#111" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+let cursorAt: readonly [number, number] = [WIDTH * ZOOM * 0.62, HEIGHT * ZOOM * 0.9];
 
 function centerOf(element: Element): readonly [number, number] {
   const box = element.getBoundingClientRect();
@@ -148,6 +148,10 @@ it.skipIf(!OUT)(
   "app cards film",
   async () => {
     await page.viewport(WIDTH * ZOOM, HEIGHT * ZOOM);
+    const start = new Date("2026-03-17T19:12:24.000Z").getTime();
+    // Until connected, Date runs at real speed from just before the fixtures' timestamps, so the
+    // minute clock behind sidebar ages ("2m") starts there and discovery's backoff still elapses.
+    vi.useFakeTimers({ toFake: ["Date"], now: start - 90_000, shouldAdvanceTime: true });
     const router = getRouter(
       createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${TRIP.id}`] }),
     );
@@ -165,9 +169,9 @@ it.skipIf(!OUT)(
     document.body.append(cursor);
     await vi.waitFor(() => expect(isThreadSubscribed(TRIP.id)).toBe(true), { timeout: 30_000 });
     await document.fonts.ready;
-    // Date is faked only once connected: discovery retries on a Date-based backoff. It starts
-    // just before the fixture runs' timestamps, so "Working for" counts from zero.
-    const start = new Date("2026-03-17T19:12:24.000Z").getTime();
+    // From here Date only moves with the virtual clock. It starts just before the fixture runs'
+    // timestamps, so "Working for" counts from zero.
+    vi.useRealTimers();
     using _clock = fakeTimers({ toFake: ["Date"], now: start });
     await new Promise((resolve) => setTimeout(resolve, 1500));
 
@@ -379,7 +383,10 @@ it.skipIf(!OUT)(
       scrollTo(t, 42.0, 45.0, () => cardTop(/^Pull request/));
 
       // Let React commit, then pin animations to this frame's time and save it.
-      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+      // Frames being replayed only need React to commit, not a paint.
+      await new Promise((resolve) =>
+        frame >= FROM ? requestAnimationFrame(() => resolve(null)) : setTimeout(resolve, 0),
+      );
       cursor.style.transform = `translate(${cursorAt[0] - 3}px, ${cursorAt[1] - 2}px)`;
       pinAnimations(t);
       if (frame % 20 === 0) console.log(`film: frame ${frame} t=${t.toFixed(2)}`);
