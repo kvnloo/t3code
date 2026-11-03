@@ -115,7 +115,16 @@ function resolveAppVariant(value: string | undefined): AppVariant {
   }
 }
 
-const variant = VARIANT_CONFIG[APP_VARIANT];
+// Fork-only side-by-side lab build for the see-through window experiment.
+const glassLab = process.env.T3_GLASS_LAB_BUILD === "1";
+const variant = glassLab
+  ? {
+      ...VARIANT_CONFIG[APP_VARIANT],
+      appName: "T3 Code Glass",
+      scheme: "t3code-glass",
+      androidPackage: "com.t3tools.t3code.glass",
+    }
+  : VARIANT_CONFIG[APP_VARIANT];
 const iosBundleIdentifier = isIosPersonalTeamBuild
   ? personalTeamBundleIdentifier!
   : variant.iosBundleIdentifier;

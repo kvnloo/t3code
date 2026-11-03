@@ -1,5 +1,6 @@
 import {
   flattenThemeColor,
+  isMobilePaletteThemeId,
   themeColorContrastRatio,
   themeColorWithAlpha,
   themeColorWithContrast,
@@ -19,7 +20,7 @@ export function segmentedControlColors(
   const dark = appearance === "dark";
   const card = variant === "card";
   const accent =
-    colors[themeId === "material-you" ? "--color-primary" : "--color-prominent-action"];
+    colors[isMobilePaletteThemeId(themeId) ? "--color-primary" : "--color-prominent-action"];
   const trackColor = card
     ? dark
       ? colors["--color-screen"]

@@ -38,12 +38,16 @@ const PreviewOrb = memo(function PreviewOrb(props: {
   const idPrefix = useId().replaceAll(":", "");
   const accentGradientId = `${idPrefix}-accent-glow`;
   const actionGradientId = `${idPrefix}-action-glow`;
-  const { systemColorPalettes } = useAppearancePreferences();
-  const palette = systemColorPalettes?.[props.appearance];
-  const colors =
-    props.themeId === "material-you" && palette
-      ? { canvas: palette.surface, accent: palette.primary, messageAction: palette.tertiary }
-      : getMobileThemePreviewColors(props.themeId, props.appearance);
+  const { systemColorPalettes, desktopColorPalettes } = useAppearancePreferences();
+  const palette =
+    props.themeId === "desktop"
+      ? desktopColorPalettes?.[props.appearance]
+      : props.themeId === "material-you"
+        ? systemColorPalettes?.[props.appearance]
+        : undefined;
+  const colors = palette
+    ? { canvas: palette.surface, accent: palette.primary, messageAction: palette.tertiary }
+    : getMobileThemePreviewColors(props.themeId, props.appearance);
   const spec = THEME_PREVIEW_RENDER_SPECS[props.appearance];
   const accentRadius = Math.hypot(
     Math.max(spec.accent.center[0], 1 - spec.accent.center[0]),
@@ -293,6 +297,7 @@ export function ThemeAppearanceSection() {
     themeIds,
     themeMode,
     systemColorsAvailable,
+    desktopColorPalettes,
   } = useAppearancePreferences();
 
   return (
@@ -318,7 +323,9 @@ export function ThemeAppearanceSection() {
         <SectionLabel>Themes</SectionLabel>
         <View className="flex-row flex-wrap gap-3">
           {MOBILE_THEME_OPTIONS.filter(
-            (theme) => theme.id !== "material-you" || systemColorsAvailable,
+            (theme) =>
+              (theme.id !== "material-you" || systemColorsAvailable) &&
+              (theme.id !== "desktop" || desktopColorPalettes !== null),
           ).map((theme) => (
             <ThemeCard
               disabled={!isReady}

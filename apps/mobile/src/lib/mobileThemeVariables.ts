@@ -2,6 +2,7 @@ import defaultThemeVariables from "../../generated-uniwind-default-theme-variabl
 import {
   DEFAULT_MOBILE_THEME_ID,
   getMobileThemeVariables,
+  isMobilePaletteThemeId,
   themeColorWithAlpha,
   type MobileThemeAppearance,
   type MobileThemeId,
@@ -17,7 +18,7 @@ export function getMobileThemeRuntimeVariables(
   appearance: MobileThemeAppearance,
   platform: string,
 ): MobileThemeVariables {
-  const usesDefaultPalette = themeId === DEFAULT_MOBILE_THEME_ID || themeId === "material-you";
+  const usesDefaultPalette = themeId === DEFAULT_MOBILE_THEME_ID || isMobilePaletteThemeId(themeId);
   const variables = usesDefaultPalette
     ? defaults[appearance]
     : getMobileThemeVariables(themeId, appearance);

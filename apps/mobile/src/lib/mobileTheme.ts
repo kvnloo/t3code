@@ -16,8 +16,14 @@ import {
 } from "@t3tools/shared/themePreview";
 
 export const DEFAULT_MOBILE_THEME_ID = MOBILE_DEFAULT_THEME_ID;
-export const MOBILE_THEME_IDS = [...SHARED_MOBILE_THEME_IDS, "material-you"] as const;
-export type MobileThemeId = SharedMobileThemeId | "material-you";
+export const MOBILE_THEME_IDS = [...SHARED_MOBILE_THEME_IDS, "material-you", "desktop"] as const;
+export type MobileThemeId = SharedMobileThemeId | "material-you" | "desktop";
+/** Themes whose colors come from a runtime palette (system wallpaper, desktop dotfiles). */
+export type MobilePaletteThemeId = "material-you" | "desktop";
+
+export function isMobilePaletteThemeId(themeId: MobileThemeId): themeId is MobilePaletteThemeId {
+  return themeId === "material-you" || themeId === "desktop";
+}
 export type MobileThemeAppearance = ThemeAppearance;
 export type MobileThemeMode = MobileThemeAppearance | "system";
 export type MobileThemeIds = Readonly<Record<MobileThemeAppearance, MobileThemeId>>;
@@ -28,6 +34,7 @@ export const MOBILE_THEME_OPTIONS: ReadonlyArray<{
 }> = [
   { id: DEFAULT_MOBILE_THEME_ID, label: "T3 Code" },
   { id: "material-you", label: "Material You" },
+  { id: "desktop", label: "Desktop" },
   ...BUILT_IN_THEMES.map((theme) => ({ id: theme.id as MobileThemeId, label: theme.label })),
 ];
 
@@ -506,7 +513,7 @@ export function getMobileThemePreviewColors(
   themeId: MobileThemeId,
   appearance: MobileThemeAppearance,
 ): ThemePreviewColors {
-  if (themeId === DEFAULT_MOBILE_THEME_ID || themeId === "material-you")
+  if (themeId === DEFAULT_MOBILE_THEME_ID || isMobilePaletteThemeId(themeId))
     return STANDARD_THEME_PREVIEW_COLORS[appearance];
   const theme = BUILT_IN_THEMES.find((candidate) => candidate.id === themeId) ?? T3_CHAT_THEME;
   const colors = getThemeColorsForAppearance(theme, appearance) ?? theme.colors;
