@@ -523,6 +523,10 @@
       "types": "./src/openUiAppCards.ts",
       "default": "./src/openUiAppCards.ts"
     },
+    "./openui-gallery": {
+      "types": "./src/openUiGallery.ts",
+      "default": "./src/openUiGallery.ts"
+    },
     "./app-card-themes": {
       "types": "./src/appCardThemes.ts",
       "default": "./src/appCardThemes.ts"

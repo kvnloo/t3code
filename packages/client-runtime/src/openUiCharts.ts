@@ -8,6 +8,7 @@
  */
 
 import { APP_CARD_EXAMPLE, APP_CARD_PROMPT_RULES, appCardProblem, isAppCardType, type AppCardPanel } from "./openUiAppCards.ts";
+import { GALLERY_EXAMPLE, GALLERY_PROMPT_RULE, galleryProblem, type GalleryPanel } from "./openUiGallery.ts";
 
 export const OPENUI_CHART_FENCE = "openui-v2";
 
@@ -41,15 +42,17 @@ export const OPENUI_CHART_PROMPT = {
   preamble: "Create a read-only T3 chart board using only supplied facts. Never invent, round away or extend data.",
   additionalRules: [
     `Return the program inside an ${OPENUI_CHART_FENCE} fenced code block.`,
-    "Do not use Query, Mutation, actions, state, tools, URLs or functions. Every argument is a literal.",
+    "Do not use Query, Mutation, actions, state, tools or functions. Every argument is a literal. URLs appear only where a component asks for one.",
     "Use each component's arguments in declared order.",
     "StackedArea series need one value per category; Heatmap counts need one row per row label and one count per column label.",
     "After the fenced block include a normal Markdown summary for clients without the renderer.",
     ...APP_CARD_PROMPT_RULES,
+    GALLERY_PROMPT_RULE,
   ],
   examples: [
     'root = Board("Churn", "Login is the hottest file.", [map, top])\nmap = Treemap("Size and churn", "LOC", "commits", [{path: "src/login.ts", size: 80, color: 12}, {path: "src/ui.ts", size: 120, color: 4}])\ntop = BarChart("Most commits", "commits", [{label: "login.ts", value: 12}, {label: "ui.ts", value: 4}])',
     APP_CARD_EXAMPLE,
+    GALLERY_EXAMPLE,
   ],
 };
 
@@ -111,7 +114,7 @@ export function inspectParsedChartBoard(
   }
   for (const panel of panels) {
     const typeName = isRecord(panel) ? panel.typeName : undefined;
-    if (typeName !== "Treemap" && typeName !== "BarChart" && typeName !== "StackedArea" && typeName !== "Heatmap" && !isAppCardType(typeName)) {
+    if (typeName !== "Treemap" && typeName !== "BarChart" && typeName !== "StackedArea" && typeName !== "Heatmap" && typeName !== "Gallery" && !isAppCardType(typeName)) {
       return { kind: "invalid", reason: "Chart board contains an unknown panel." };
     }
     const props = panelSchemas[typeName](isRecord(panel) ? panel.props : undefined);
@@ -375,7 +378,8 @@ export type ChartPanel =
   | { readonly typeName: "BarChart"; readonly props: { readonly bars: ReadonlyArray<{ readonly label: string; readonly value: number }> } }
   | { readonly typeName: "StackedArea"; readonly props: { readonly categories: ReadonlyArray<string>; readonly series: ReadonlyArray<StackedSeries> } }
   | { readonly typeName: "Heatmap"; readonly props: { readonly rows: ReadonlyArray<string>; readonly columns: ReadonlyArray<string>; readonly counts: ReadonlyArray<ReadonlyArray<number>> } }
-  | AppCardPanel;
+  | AppCardPanel
+  | GalleryPanel;
 
 /** Cross-field rules the schemas cannot express; returns a reader-facing reason or null. */
 export function chartPanelProblem(panel: ChartPanel): string | null {
@@ -406,6 +410,8 @@ export function chartPanelProblem(panel: ChartPanel): string | null {
       const index = counts.findIndex((row) => row.length !== columns.length);
       return index >= 0 ? `Heatmap row "${rows[index]}" needs ${columns.length} counts.` : null;
     }
+    case "Gallery":
+      return galleryProblem(panel);
     default:
       return appCardProblem(panel);
   }

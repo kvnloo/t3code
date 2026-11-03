@@ -190,6 +190,7 @@ import { resolveLinkTarget } from "../browser/browserLinkTarget";
 import { PullRequestLinkPreview } from "./pullRequest/PullRequestLinkPreview";
 import { MarkdownCodeBlock, SuspenseShikiCodeBlock } from "./chat/MarkdownCodeBlock";
 import { MarkdownOpenUiCodeBlock } from "./chat/MarkdownOpenUiCodeBlock";
+import { OpenUiImageSourceContext, type OpenUiImageTarget } from "./chat/openUiImageSource";
 import { MarkdownMermaidCodeBlock } from "./chat/MarkdownMermaidCodeBlock";
 import { MarkdownTable } from "./chat/MarkdownTable";
 import { MarkdownDetails } from "./chat/MarkdownDetails";
@@ -928,6 +929,31 @@ const ChatMarkdownRendererContext = React.createContext<
 // Isolate streamed source text from the renderer context; only offset-based renderers need it.
 const ChatMarkdownTextContext = React.createContext("");
 
+/** OpenUI cards load images the way Markdown images in the same message do. */
+function OpenUiMarkdownImages({ children }: { children: React.ReactNode }) {
+  const { cwd, imageBaseDir, threadRef } = use(ChatMarkdownRendererContext);
+  const hostImageUrl = use(HostImageUrlContext);
+  const resolve = React.useCallback(
+    (source: string): OpenUiImageTarget | null => {
+      const src = normalizeMarkdownLinkDestination(source.trim());
+      const imageSource = classifyMarkdownImageSource(src, imageBaseDir ?? cwd);
+      if (imageSource._tag === "Direct") {
+        return /^https?:\/\//i.test(imageSource.uri) ? { kind: "url", url: imageSource.uri } : null;
+      }
+      if (imageSource._tag !== "WorkspaceFile") return null;
+      if (hostImageUrl !== null) return { kind: "url", url: hostImageUrl(imageSource.path) };
+      if (!threadRef) return null;
+      return {
+        kind: "asset",
+        environmentId: threadRef.environmentId,
+        resource: { _tag: "media-file", threadId: threadRef.threadId, path: imageSource.path },
+      };
+    },
+    [cwd, imageBaseDir, threadRef, hostImageUrl],
+  );
+  return <OpenUiImageSourceContext value={resolve}>{children}</OpenUiImageSourceContext>;
+}
+
 function markdownHeadingRenderer(level: 1 | 2 | 3 | 4 | 5 | 6) {
   const Tag = `h${level}` as const;
   return function MarkdownHeading({
@@ -1592,7 +1618,11 @@ const CHAT_MARKDOWN_COMPONENTS = {
       </RenderErrorBoundary>
     );
     if (language === "openui-v1" || language === "openui-v2") {
-      return <MarkdownOpenUiCodeBlock code={codeBlock.code} version={language === "openui-v2" ? 2 : 1} isStreaming={isStreaming && !isClosedCodeFence(node, text, codeBlock.code)} />;
+      return (
+        <OpenUiMarkdownImages>
+          <MarkdownOpenUiCodeBlock code={codeBlock.code} version={language === "openui-v2" ? 2 : 1} isStreaming={isStreaming && !isClosedCodeFence(node, text, codeBlock.code)} />
+        </OpenUiMarkdownImages>
+      );
     }
     if (language === "mermaid") {
       return (
