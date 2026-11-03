@@ -3,6 +3,7 @@ import { it as test } from "vite-plus/test";
 
 import {
   appCardProblem,
+  avatarColor,
   cheapestRide,
   checkCounts,
   pullRequestSteps,
@@ -70,4 +71,9 @@ test("pull request states must agree with checks and conflicts", () => {
     pullRequestSteps("merged").map((step) => step.reached),
     [true, true, true, true],
   );
+});
+
+test("a sender keeps one avatar color regardless of case or spacing", () => {
+  NodeAssert.equal(avatarColor("Acme Billing"), avatarColor(" acme billing "));
+  NodeAssert.match(avatarColor("Dana Ruiz"), /^#[0-9a-f]{6}$/);
 });

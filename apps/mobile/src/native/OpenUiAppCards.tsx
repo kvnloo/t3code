@@ -33,6 +33,7 @@ export const rideOptionsProps = z.object({
         minutes,
         price: z.string().min(1).max(LIMITS.price),
         seats: z.number().int().min(1).max(20),
+        arrival: text.optional(),
       }),
     )
     .min(1)
@@ -48,6 +49,7 @@ export const mailListProps = z.object({
         snippet: z.string().max(LIMITS.snippet),
         time: text,
         unread: z.boolean(),
+        attachment: text.optional(),
       }),
     )
     .max(LIMITS.messages),
@@ -70,6 +72,21 @@ export const pullRequestProps = z.object({
     .array(z.object({ name, status: z.enum(["pass", "fail", "running", "skip"]), detail: text }))
     .max(LIMITS.checks),
   conflicts: z.number().int().min(0).max(10_000),
+  // Accepted for parity with web, which draws the commit graph; this card shows checks only.
+  commits: z
+    .array(
+      z.object({
+        title: name,
+        sha: z.string().min(4).max(12),
+        author: name,
+        age: text,
+        lane: z.enum(["base", "head", "side"]),
+        branch: text.optional(),
+        conflict: z.boolean().optional(),
+      }),
+    )
+    .max(LIMITS.commits)
+    .optional(),
 });
 
 /** Brand header shared by every card: monogram, service name, one line of context. */
@@ -180,7 +197,7 @@ const RideOptionsCard = memo(function RideOptionsCard({
                 <AppText className="text-sm font-semibold">{option.name}</AppText>
                 {option.name === best ? <Tag label="Best price" color="#1A7F37" /> : null}
               </View>
-              <AppText className="text-xs text-foreground-muted">{`${option.minutes} min away · ${option.seats} seats`}</AppText>
+              <AppText className="text-xs text-foreground-muted">{`${option.minutes} min away · ${option.seats} seats${option.arrival ? ` · ${option.arrival}` : ""}`}</AppText>
             </View>
             <AppText className="text-base font-semibold">{option.price}</AppText>
           </Pressable>
@@ -250,6 +267,11 @@ const MailListCard = memo(function MailListCard({
             >
               {message.snippet}
             </AppText>
+            {message.attachment ? (
+              <AppText numberOfLines={1} className="text-xs text-foreground-muted">
+                {`📎 ${message.attachment}`}
+              </AppText>
+            ) : null}
           </View>
         </Pressable>
       ))}

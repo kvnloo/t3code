@@ -16,18 +16,19 @@ export const APP_CARD_LIMITS = {
   messages: 20,
   steps: 20,
   checks: 12,
+  commits: 12,
   minutes: 100_000,
 } as const;
 
 export const APP_CARD_DESCRIPTIONS: Readonly<Record<AppCardType, string>> = {
   RideOptions:
-    'Ride choices a ride app returned for one trip: app is "uber" or "lyft"; each option has a name, pickup minutes, a price string and seats.',
+    'Ride choices a ride app returned for one trip: app is "uber" or "lyft"; each option has a name, pickup minutes, a price string, seats and optionally an arrival time text.',
   MailList:
-    "Messages a mail search returned: the query, then each message's sender, subject, snippet, time text and unread flag.",
+    "Messages a mail search returned: the query, then each message's sender, subject, snippet, time text, unread flag and optionally one attachment file name.",
   Route:
     "Directions a maps app returned: origin, destination, mode (drive, walk, transit or bike), minutes, a distance string, then the steps in order.",
   PullRequest:
-    "One pull request: number, title, state (open, conflict, ready, merged or closed), head and base branches, its checks (pass, fail, running or skip) and the conflict count.",
+    "One pull request: number, title, state (open, conflict, ready, merged or closed), head and base branches, its checks (pass, fail, running or skip), the conflict count, and optionally its recent commits newest first (title, short sha, author, age text, lane base, head or side, an optional branch label on a lane's tip, and conflict true on base commits that conflict).",
 };
 
 export const APP_CARD_PROMPT_RULES = [
@@ -163,3 +164,38 @@ export const CHECK_STATUS_SYMBOL: Readonly<Record<CheckStatus, string>> = {
   running: "●",
   skip: "–",
 };
+
+/** x of a commit-graph lane, in px from the card's left edge. */
+export function commitLaneX(lane: "base" | "head" | "side") {
+  return lane === "head" ? 34 : lane === "side" ? 46 : 22;
+}
+
+const AVATAR_COLORS = [
+  "#5b6cf0",
+  "#0f9d73",
+  "#e37400",
+  "#c2410c",
+  "#7c3aed",
+  "#0284c7",
+  "#be185d",
+  "#4d7c0f",
+];
+
+/** A stable avatar color for a sender, so one sender keeps one color across cards. */
+export function avatarColor(name: string) {
+  let hash = 0;
+  for (const char of name.trim().toLowerCase()) hash = (hash * 31 + char.codePointAt(0)!) >>> 0;
+  return AVATAR_COLORS[hash % AVATAR_COLORS.length]!;
+}
+
+/** Fixed colors the cards draw: the attachment chip, the route, the cheapest tag and the car glyph. */
+export const APP_CARD_PAINT = {
+  googleRed: "#ea4335",
+  routeBlue: "#1a73e8",
+  routeCasing: "#cfe0fb",
+  cheapest: "#1a7f37",
+  shadow: "rgba(0,0,0,.10)",
+  glass: "#cfd8e3",
+  tyre: "#1d1d1d",
+  white: "#ffffff",
+} as const;

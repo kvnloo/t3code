@@ -27,19 +27,26 @@ Chart boards can also hold app cards, drawn in the colors of the service the
 data came from:
 
 - **RideOptions** (Uber or Lyft): pickup and drop-off, then each ride option
-  with its pickup time, price and seats. The cheapest option is tagged. Tap an
-  option to see it in full; booking still happens in the ride app.
-- **MailList** (Gmail): the search, then each message's sender, subject, time
-  and snippet, with unread messages marked. Tap a message to show its whole
-  snippet.
-- **Route** (Google Maps): travel time, distance and mode, then the steps. Tap a
-  step to highlight it.
-- **PullRequest** (GitHub): number, title, branches, a progress track (opened,
-  checks, ready, merged), the conflict count and check chips. Tap a check to
-  see its detail. A merged pull request fills its track once when it appears.
+  with its pickup time, price, seats and arrival time. The cheapest option is
+  tagged and selected. Tap another option to select it; the button opens the
+  ride app, where booking happens.
+- **MailList** (Gmail): the search, then each message's sender, subject, time,
+  snippet and attachment, with unread messages in bold. Tap a message to show
+  its whole snippet; "Open in Gmail" runs the same search in Gmail.
+- **Route** (Google Maps): travel time, distance and mode, a route line, then
+  one step at a time. Step through with the arrows; "Open in Maps" opens the
+  same directions in Google Maps.
+- **PullRequest** (GitHub): number, title, state, recent commits on a small
+  commit graph with conflicting commits marked, the checks, and one line that
+  says where the pull request stands (for example, "2 conflicts with main").
+  Tap a check to see its detail.
+
+In the Android experiment the cards show the same facts in a simpler layout;
+the commit graph, route line and app links are on web and desktop only.
 
 Charts and cards keep their selections locally; tapping never sends a message,
-books, sends or merges anything. Scrolling a long conversation can reset a
+books, sends or merges anything. Links open the app itself, where any action
+still needs you. Scrolling a long conversation can reset a
 selection.
 
 When an agent uses a tool from a known app, its activity row shows that app's
@@ -76,7 +83,7 @@ the same facts, model, prompt overhead, and completion criteria.
 
 - Reports and chart boards use [OpenUI](https://github.com/thesysdev/openui)
   (`@openuidev/react-lang`, `@openuidev/lang-core`).
-- The PullRequest card's progress track, conflict count and check chips follow
+- The PullRequest card's commit graph, conflict marks and check chips follow
   [@pitus_'s "Generative UI #2 – Merge conflicts"](https://x.com/pitus_/status/2111519352503873866).
 - The idea of brand-colored app cards in place of a bare "thinking" row comes
   from Kevin Rajan ([@kvnloo](https://github.com/kvnloo)).
