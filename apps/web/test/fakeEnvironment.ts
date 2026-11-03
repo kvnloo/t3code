@@ -101,7 +101,7 @@ const serverConfig: ServerConfig = {
   keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
 };
 
-const project: OrchestrationProjectShell = {
+let project: OrchestrationProjectShell = {
   id: PROJECT_ID,
   title: "render",
   workspaceRoot: "/workspace/render",
@@ -408,8 +408,16 @@ const encodedDescriptor = Schema.encodeSync(ExecutionEnvironmentDescriptor)(
 );
 
 /** Serves the environment's HTTP API and these threads until disposed. */
-export function installFakeEnvironment(fixtures: ReadonlyArray<FakeThread>): Disposable {
+export function installFakeEnvironment(
+  fixtures: ReadonlyArray<FakeThread>,
+  {
+    projectTitle,
+    environmentLabel,
+  }: { readonly projectTitle?: string; readonly environmentLabel?: string } = {},
+): Disposable {
   threads = fixtures;
+  if (projectTitle) project = { ...project, title: projectTitle };
+  if (environmentLabel) descriptor.label = environmentLabel;
   globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
     if (url.origin !== window.location.origin) return realFetch(input, init);
@@ -457,6 +465,30 @@ export async function emitThreadEvent(
       event: { ...event, id: EventId.make(`event-${sequence}`), threadId, occurredAt: AT },
     } as OrchestrationV2ThreadStreamItem),
   );
+}
+
+/** A tool call from an MCP server, as providers report it (`mcp__server__tool`). */
+export function toolItem(
+  threadId: ThreadId,
+  runId: RunId,
+  id: string,
+  ordinal: number,
+  toolName: string,
+  input: unknown,
+  running: boolean,
+) {
+  return {
+    ...base(threadId, runId, id, ordinal),
+    type: "dynamic_tool",
+    toolName,
+    input,
+    ...(running ? { status: "running" as const, completedAt: null } : {}),
+  } satisfies OrchestrationV2TurnItem;
+}
+
+/** An empty thread: the user has not sent anything yet. */
+export function emptyThread(name: string, title: string): FakeThread {
+  return { id: ThreadId.make(name), title, runs: [], items: [] };
 }
 
 export function runningRun(threadId: ThreadId, id: string, ordinal: number, userMessageId: string) {

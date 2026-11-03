@@ -5,11 +5,11 @@ import { Button } from "../ui/button";
 const Report = lazy(() => import("./OpenUiReport").then((module) => ({ default: module.OpenUiReport })));
 const Charts = lazy(() => import("./OpenUiCharts").then((module) => ({ default: module.OpenUiCharts })));
 
-/** The versioned fence stays in the normal transcript; v1 reports render on request, v2 boards once complete. */
+/** The versioned fence stays in the normal transcript; v1 reports render on request, v2 boards as they stream. */
 export function MarkdownOpenUiCodeBlock({ code, version, isStreaming }: { code: string; version: 1 | 2; isStreaming: boolean }) {
-  // Chart boards are the answer itself, so they render once the fence completes unless the reader chose source.
+  // Chart boards are the answer itself, so they render card by card while streaming unless the reader chose source.
   const [choice, setChoice] = useState<boolean | null>(null);
-  const showReport = choice ?? (version === 2 && !isStreaming);
+  const showReport = choice ?? version === 2;
   const Renderer = version === 2 ? Charts : Report;
   const noun = version === 2 ? "chart" : "report";
   const source = <pre className="max-h-96 overflow-auto p-4 text-xs"><code>{code}</code></pre>;
@@ -24,7 +24,7 @@ export function MarkdownOpenUiCodeBlock({ code, version, isStreaming }: { code: 
       {showReport ? (
         <RenderErrorBoundary resetKeys={[code]} fallback={<><p role="alert" className="p-3 text-sm">{version === 2 ? "Chart" : "Report"} unavailable. Original source:</p>{source}</>}>
           <Suspense fallback={<p role="status" className="p-4 text-sm">Loading {noun} renderer…</p>}>
-            <Renderer code={code} />
+            <Renderer code={code} isStreaming={isStreaming} />
           </Suspense>
         </RenderErrorBoundary>
       ) : source}

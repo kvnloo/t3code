@@ -7,6 +7,8 @@
  * zod and OpenUI copies, which keeps duplicate React/zod instances out of either bundle.
  */
 
+import { APP_CARD_EXAMPLE, APP_CARD_PROMPT_RULES, appCardProblem, isAppCardType, type AppCardPanel } from "./openUiAppCards.ts";
+
 export const OPENUI_CHART_FENCE = "openui-v2";
 
 /** Bounds every client applies to the schemas. */
@@ -43,9 +45,11 @@ export const OPENUI_CHART_PROMPT = {
     "Use each component's arguments in declared order.",
     "StackedArea series need one value per category; Heatmap counts need one row per row label and one count per column label.",
     "After the fenced block include a normal Markdown summary for clients without the renderer.",
+    ...APP_CARD_PROMPT_RULES,
   ],
   examples: [
     'root = Board("Churn", "Login is the hottest file.", [map, top])\nmap = Treemap("Size and churn", "LOC", "commits", [{path: "src/login.ts", size: 80, color: 12}, {path: "src/ui.ts", size: 120, color: 4}])\ntop = BarChart("Most commits", "commits", [{label: "login.ts", value: 12}, {label: "ui.ts", value: 4}])',
+    APP_CARD_EXAMPLE,
   ],
 };
 
@@ -72,6 +76,25 @@ export type OpenUiChartStatus =
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null;
 
 /** Decide whether a parsed board may render: read-only, complete, schema-valid and coherent. */
+/**
+ * What a streaming board can show so far: its complete statements, with the root's panel list cut
+ * to the panels already defined, so cards appear one by one. Null until the root and one panel
+ * are complete. Only for a fence that is still streaming; a finished fence is shown whole or not.
+ */
+export function streamingChartBoard(code: string): string | null {
+  // The last line is still arriving; Markdown hands an open fence over with a newline appended.
+  const body = code.replace(/\n$/, "");
+  const lines = body.slice(0, body.lastIndexOf("\n") + 1).split("\n").filter((line) => line.trim());
+  const defined = new Set(lines.map((line) => /^\s*([A-Za-z_]\w*)\s*=/.exec(line)?.[1]));
+  const rootIndex = lines.findIndex((line) => /^\s*root\s*=/.test(line));
+  const panels = rootIndex < 0 ? null : /\[([^[\]]*)\]\)\s*$/.exec(lines[rootIndex]!);
+  if (!panels) return null;
+  const kept = panels[1]!.split(",").map((name) => name.trim()).filter((name) => defined.has(name));
+  if (kept.length === 0) return null;
+  lines[rootIndex] = `${lines[rootIndex]!.slice(0, panels.index)}[${kept.join(", ")}])`;
+  return lines.join("\n");
+}
+
 export function inspectParsedChartBoard(
   parsed: ParsedChartProgram,
   panelSchemas: Readonly<Record<ChartPanel["typeName"], SafeParse>>,
@@ -88,7 +111,7 @@ export function inspectParsedChartBoard(
   }
   for (const panel of panels) {
     const typeName = isRecord(panel) ? panel.typeName : undefined;
-    if (typeName !== "Treemap" && typeName !== "BarChart" && typeName !== "StackedArea" && typeName !== "Heatmap") {
+    if (typeName !== "Treemap" && typeName !== "BarChart" && typeName !== "StackedArea" && typeName !== "Heatmap" && !isAppCardType(typeName)) {
       return { kind: "invalid", reason: "Chart board contains an unknown panel." };
     }
     const props = panelSchemas[typeName](isRecord(panel) ? panel.props : undefined);
@@ -351,7 +374,8 @@ export type ChartPanel =
   | { readonly typeName: "Treemap"; readonly props: { readonly rows: ReadonlyArray<TreemapRow> } }
   | { readonly typeName: "BarChart"; readonly props: { readonly bars: ReadonlyArray<{ readonly label: string; readonly value: number }> } }
   | { readonly typeName: "StackedArea"; readonly props: { readonly categories: ReadonlyArray<string>; readonly series: ReadonlyArray<StackedSeries> } }
-  | { readonly typeName: "Heatmap"; readonly props: { readonly rows: ReadonlyArray<string>; readonly columns: ReadonlyArray<string>; readonly counts: ReadonlyArray<ReadonlyArray<number>> } };
+  | { readonly typeName: "Heatmap"; readonly props: { readonly rows: ReadonlyArray<string>; readonly columns: ReadonlyArray<string>; readonly counts: ReadonlyArray<ReadonlyArray<number>> } }
+  | AppCardPanel;
 
 /** Cross-field rules the schemas cannot express; returns a reader-facing reason or null. */
 export function chartPanelProblem(panel: ChartPanel): string | null {
@@ -382,5 +406,7 @@ export function chartPanelProblem(panel: ChartPanel): string | null {
       const index = counts.findIndex((row) => row.length !== columns.length);
       return index >= 0 ? `Heatmap row "${rows[index]}" needs ${columns.length} counts.` : null;
     }
+    default:
+      return appCardProblem(panel);
   }
 }

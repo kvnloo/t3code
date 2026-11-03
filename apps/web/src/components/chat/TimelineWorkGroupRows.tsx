@@ -2,7 +2,11 @@ import { TimelinePendingApprovalRow } from "./TimelinePendingApprovalRow";
 import { WorkLogButton, WorkLogList, WorkLogRow } from "./WorkLog";
 import type { WorktreeSetupSnapshot } from "@t3tools/contracts";
 import { type ToolActivityIcon } from "@t3tools/contracts";
-import { liveThoughtLine } from "@t3tools/client-runtime/work-log/presentation";
+import type { AppBrand } from "@t3tools/client-runtime/app-connectors";
+import {
+  liveThoughtLine,
+  resolveWorkEntryAppActivity,
+} from "@t3tools/client-runtime/work-log/presentation";
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
 import { observeResize } from "~/lib/observeResize";
 import { tickTextContent } from "~/lib/tickTextContent";
@@ -46,6 +50,7 @@ import {
   ThreadReadLabel,
   ReasoningTraceContent,
   SimpleWorkEntryRow,
+  AppActivityMark,
 } from "./TimelineWorkEntryRow";
 import {
   remarkThoughtPreview,
@@ -384,6 +389,7 @@ function LiveActivityRow({
   label,
   iconName,
   toolIcon,
+  brand,
   failed = false,
   active = false,
   shimmer = false,
@@ -391,6 +397,7 @@ function LiveActivityRow({
   label: ReactNode;
   iconName?: WorkEntryIconName;
   toolIcon?: ToolActivityIcon | undefined;
+  brand?: AppBrand | undefined;
   failed?: boolean;
   active?: boolean;
   shimmer?: boolean;
@@ -406,13 +413,20 @@ function LiveActivityRow({
         label={label}
         iconName={iconName}
         toolIcon={toolIcon}
+        brand={brand}
         failed={failed}
         announceFailure={failed}
         active={animated && !shimmer}
       />
       {showShimmer ? (
         <ActivityShimmerOverlay>
-          <LiveActivityContent label={label} iconName={iconName} toolIcon={toolIcon} highlighted />
+          <LiveActivityContent
+            label={label}
+            iconName={iconName}
+            toolIcon={toolIcon}
+            brand={brand}
+            highlighted
+          />
         </ActivityShimmerOverlay>
       ) : null}
     </div>
@@ -423,6 +437,7 @@ function LiveActivityContent({
   label,
   iconName,
   toolIcon,
+  brand,
   failed = false,
   announceFailure = false,
   active = false,
@@ -431,6 +446,7 @@ function LiveActivityContent({
   label: ReactNode;
   iconName: WorkEntryIconName | undefined;
   toolIcon?: ToolActivityIcon | undefined;
+  brand?: AppBrand | undefined;
   failed?: boolean;
   announceFailure?: boolean;
   active?: boolean;
@@ -442,7 +458,9 @@ function LiveActivityContent({
   return (
     <WorkLogRow
       icon={
-        iconName ? (
+        brand && !failed ? (
+          <AppActivityMark brand={brand} />
+        ) : iconName ? (
           <span
             className={cn(
               "flex size-4 items-center justify-center",
@@ -572,6 +590,7 @@ export function LiveWorkEntryTimelineRow({
         }
         iconName={workEntryIconName(row.entry)}
         toolIcon={row.entry.toolIcon ?? row.entry.toolSource?.icon}
+        brand={resolveWorkEntryAppActivity(row.entry)?.brand}
         failed={failed}
         active={row.active}
       />

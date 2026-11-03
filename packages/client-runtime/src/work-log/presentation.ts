@@ -15,6 +15,7 @@ import {
   type T3McpToolDefinition,
   type T3McpToolSummaryAction,
 } from "@t3tools/shared/t3McpToolPresentation";
+import { brandForServer, resolveAppActivity } from "@t3tools/client-runtime/app-connectors";
 import { classifyMarkdownImageSource } from "@t3tools/client-runtime/markdown-images";
 import { resolveMediaSource } from "@t3tools/client-runtime/media-source";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
@@ -240,6 +241,31 @@ export function resolveWorkEntryToolPresentation(
     definition && t3ToolResultIndicatesFailure(workEntryToolOutput(entry)) ? "failed" : status,
     entry.toolData,
   );
+}
+
+/** Brand-colored activity for tools from known apps (Gmail, Uber, Maps, ...), or null. */
+export function resolveWorkEntryAppActivity(
+  entry: Pick<
+    WorkLogPresentationEntry,
+    "label" | "toolTitle" | "toolData" | "toolLifecycleStatus" | "structuredPayload"
+  >,
+) {
+  return resolveAppActivity(
+    workEntryToolName(entry),
+    workEntryToolInput(entry),
+    entry.toolLifecycleStatus,
+  );
+}
+
+/** "Searching Gmail · invoices" for known apps, or null; `status` overrides the entry's own. */
+export function workEntryAppActivityLabel(
+  entry: Parameters<typeof resolveWorkEntryAppActivity>[0],
+  status?: string,
+): string | null {
+  const activity = resolveWorkEntryAppActivity(
+    status === undefined ? entry : { ...entry, toolLifecycleStatus: status as never },
+  );
+  return activity ? [activity.label, activity.detail].filter(Boolean).join(" · ") : null;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -571,14 +597,18 @@ export function summarizeToolGroup(entries: ReadonlyArray<WorkLogPresentationEnt
   const labels = selected.map(({ label }) => label);
   if (sources.size > 0) {
     const sourceValues = [...sources.values()];
-    const sourceNames = [...new Set(sourceValues.map((source) => source.name))];
+    const brands = sourceValues.map((source) => brandForServer(source.name));
+    const sourceNames = [
+      ...new Set(sourceValues.map((source, index) => brands[index]?.name ?? source.name)),
+    ];
     const formattedNames =
       sourceNames.length < 2
         ? sourceNames[0]!
         : sourceNames.length === 2
           ? sourceNames.join(" and ")
           : `${sourceNames.slice(0, -1).join(", ")}, and ${sourceNames.at(-1)}`;
-    const allIntegrations = sourceValues.every((source) => source.kind === "integration");
+    const allIntegrations =
+      !brands.every(Boolean) && sourceValues.every((source) => source.kind === "integration");
     labels.unshift(
       `Used ${formattedNames}${allIntegrations ? ` ${sourceNames.length === 1 ? "integration" : "integrations"}` : ""}`,
     );
