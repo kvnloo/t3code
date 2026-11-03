@@ -1,0 +1,48 @@
+# PoH 04b: the commit-window A/B across #29806 on hosted runners, from committed source and a
+# synthetic seed built inside each job (bench/poh/p04b-job.sh). Lives on exp/poh/04b-post29806 only.
+# A push of this file runs the small pilot; workflow_dispatch runs any slot matrix.
+name: PoH bench
+on:
+  push:
+    branches: [exp/poh/04b-post29806]
+    paths: [.github/workflows/poh-bench.yml]
+  workflow_dispatch:
+    inputs:
+      matrix:
+        description: 'JSON list of {"label","slots"}; each entry is one runner'
+        default: '[{"label":"pilot","slots":"0"}]'
+      seed_threads:
+        default: "4"
+      seed_turns:
+        default: "24"
+      seed_concurrency:
+        default: "4"
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    name: bench ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(inputs.matrix || '[{"label":"pilot","slots":"0"}]') }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Run
+        env:
+          SEED_THREADS: ${{ inputs.seed_threads || '4' }}
+          SEED_TURNS: ${{ inputs.seed_turns || '24' }}
+          SEED_CONCURRENCY: ${{ inputs.seed_concurrency || '4' }}
+        run: bash bench/poh/p04b-job.sh exp/poh/04b-pre29806 ${{ matrix.label }} ${{ matrix.slots }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: p04b-${{ matrix.label }}
+          path: bench-out/
+          retention-days: 30
