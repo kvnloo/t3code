@@ -5,6 +5,7 @@
 //             The copy carries an event-log prune mark two days old, as a database that has been
 //             running a pruning build for more than a day would (#29806 prunes only through a mark
 //             at least a day old; builds before it ignore the row).
+//             auto_vacuum is off in the copy, so doctor always runs its database repair.
 //   doctor:   runs this checkout's own `t3 doctor --fix` (its event-log maintenance plus VACUUM)
 //             on a copy of a seed, so each base benches the steady state its maintenance leaves.
 //
@@ -247,6 +248,9 @@ async function generate() {
      ON CONFLICT(projection_name) DO UPDATE SET
        last_sequence = excluded.last_sequence, updated_at = excluded.updated_at`,
   ).run(PRUNE_MARK, new Date(Date.now() - 2 * 86_400_000).toISOString());
+  // Without incremental auto_vacuum, `doctor --fix` recommends its database repair, which runs the
+  // base's own event-log maintenance (PRE: compaction; POST: pruning) before its VACUUM.
+  db.exec("PRAGMA auto_vacuum = NONE; VACUUM");
   db.close();
   NodeFS.rmSync(t3Home, { recursive: true, force: true });
   const manifest = {

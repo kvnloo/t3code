@@ -73,6 +73,13 @@ step seed
   --threads "${SEED_THREADS:-16}" --turns "${SEED_TURNS:-960}" --concurrency "${SEED_CONCURRENCY:-8}")
 (cd "$pre" && node bench/poh/synth-seed.ts doctor --seed "$seeds/seed.sqlite" --out "$seeds/seed-pre.sqlite")
 (cd "$post" && node bench/poh/synth-seed.ts doctor --seed "$seeds/seed.sqlite" --out "$seeds/seed-post.sqlite")
+# POST's doctor must have pruned, or the pruning comparison measures nothing.
+python3 - "$seeds/seed-post.sqlite.json" <<'EOF2'
+import json, sys
+m = json.load(open(sys.argv[1]))
+print(f"POST doctor: {m['before']['events']} -> {m['after']['events']} events")
+sys.exit(0 if m["after"]["events"] < m["before"]["events"] else "POST doctor pruned no events")
+EOF2
 rm -f "$seeds/seed.sqlite"
 gzip -f "$seeds/synth-server.log"
 cp "$seeds"/*.json "$seeds"/*.log "$seeds"/*.gz "$out/"
