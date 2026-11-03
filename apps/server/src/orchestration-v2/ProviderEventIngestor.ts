@@ -23,6 +23,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as SqlError from "effect/sql/SqlError";
+import { deferredEntityKey, isDeferrableProviderEvent } from "./commitWindow.ts";
 
 import { AgentScope } from "@t3tools/shared/AgentScope";
 import { isTemporaryWorktreeBranch } from "@t3tools/shared/git";
@@ -220,6 +221,11 @@ export interface ProviderEventIngestorV2Shape {
         readonly activeAttemptId: RunAttemptId;
         readonly expectedLastRunOrdinal: number;
       };
+      /**
+       * Experimental commit window: queue plain node, message, turn item and plan writes for one
+       * group commit (`EventSinkV2.writeDeferred`) and return no stored events for them.
+       */
+      readonly deferCommit?: boolean;
     },
   ) => Effect.Effect<ReadonlyArray<OrchestrationV2StoredEvent>, ProviderEventIngestorV2Error>;
 }
@@ -673,6 +679,38 @@ export const layer: Layer.Layer<
         /* This helper runs for individual orchestration events; the enclosing operation owns the span. */
         Effect.fnUntraced(
           function* (input) {
+            const { writeDeferred, flushDeferred } = eventSink;
+            const deferred =
+              input.deferCommit === true &&
+              writeDeferred !== undefined &&
+              flushDeferred !== undefined
+                ? { writeDeferred, flushDeferred }
+                : undefined;
+            const deferThis =
+              deferred !== undefined &&
+              input.writeIfProviderThreadOwner === undefined &&
+              input.writeIfRunCurrent === undefined &&
+              isDeferrableProviderEvent(input.event);
+            const entityKey = deferThis ? deferredEntityKey(input.event) : undefined;
+            if (deferred !== undefined) {
+              // Normalization below compares with stored rows; commit queued writes it depends on.
+              // Any other write commits the whole queue first, inside the sink.
+              yield* deferred
+                .flushDeferred({
+                  threadId: input.threadId,
+                  entityKeys: !deferThis ? "all" : entityKey === undefined ? [] : [entityKey],
+                })
+                .pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new ProviderEventPublishError({
+                        providerSessionId: input.providerSessionId,
+                        eventCount: 0,
+                        cause,
+                      }),
+                  ),
+                );
+            }
             const events = yield* normalize(input);
             if (events.length === 0) {
               return [];
@@ -683,6 +721,13 @@ export const layer: Layer.Layer<
                 eventCount: events.length,
                 cause,
               });
+            if (deferThis && deferred !== undefined) {
+              yield* deferred
+                .writeDeferred({ events, entityKeys: entityKey === undefined ? [] : [entityKey] })
+                .pipe(Effect.mapError(mapWriteError));
+              // Committed and published with the window; callers read no results for these kinds.
+              return [];
+            }
             if (input.writeIfProviderThreadOwner !== undefined) {
               const ownerResult = yield* eventSink
                 .writeIfProviderThreadOwner({
