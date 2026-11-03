@@ -177,22 +177,27 @@ try {
     }
   })();
 
+  // WebSocket sessions expire after 5 minutes (SessionStore), so the probe reconnects every 30 s
+  // and each turn opens its own socket, as a long-lived client re-authenticates.
   const probe = (async () => {
-    const rpc = await connect();
     let i = 0;
     while (!state.stopped) {
-      const started = performance.now();
-      const at = rel();
-      await rpc.call("orchestration.dispatchCommand", {
-        type: "thread.visit",
-        commandId: NodeCrypto.randomUUID(),
-        threadId,
-        visitedAt: new Date().toISOString(),
-      });
-      record({ kind: "probe", i: i++, at, ms: performance.now() - started });
-      await sleep(Math.max(0, PROBE_MS - (performance.now() - started)));
+      const rpc = await connect();
+      const opened = performance.now();
+      while (!state.stopped && performance.now() - opened < 30_000) {
+        const started = performance.now();
+        const at = rel();
+        await rpc.call("orchestration.dispatchCommand", {
+          type: "thread.visit",
+          commandId: NodeCrypto.randomUUID(),
+          threadId,
+          visitedAt: new Date().toISOString(),
+        });
+        record({ kind: "probe", i: i++, at, ms: performance.now() - started });
+        await sleep(Math.max(0, PROBE_MS - (performance.now() - started)));
+      }
+      await rpc.close();
     }
-    await rpc.close();
   })();
 
   const cpu = (async () => {
@@ -210,11 +215,13 @@ try {
     }
   })();
 
+  await driver.close();
   let turn = 0;
   while (rel() < WINDOW_MS) {
+    const turnSocket = await connect();
     const at = rel();
     const started = performance.now();
-    await driver.call("orchestration.dispatchCommand", {
+    await turnSocket.call("orchestration.dispatchCommand", {
       type: "message.dispatch",
       commandId: NodeCrypto.randomUUID(),
       threadId,
@@ -225,7 +232,8 @@ try {
       creationSource: "web",
       dispatchMode: { type: "start_immediately" },
     });
-    const runs = await waitForRuns(driver, threadId, ++runCount);
+    const runs = await waitForRuns(turnSocket, threadId, ++runCount);
+    await turnSocket.close();
     record({
       kind: "turn",
       turn,
@@ -237,7 +245,6 @@ try {
   }
   state.stopped = true;
   await Promise.all([watchLog, probe, cpu]);
-  await driver.close();
   const folded = NodeFS.readFileSync(logPath, "utf8").match(
     /Folded superseded orchestration snapshots[\s\S]*?passMillis: ([\d.]+)/,
   );
