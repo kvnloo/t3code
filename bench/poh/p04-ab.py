@@ -6,7 +6,10 @@ client latency (time to first event / first assistant delta, lag, delta cadence)
 CPU. Per measured boot: reconnect-replay wire bytes. Prints a markdown table of p50/p95 per arm,
 the median shift against `off` with a bootstrap 95% CI, and optionally writes JSON.
 
-usage: p04-ab.py <raw dir> <sha8> [--json out.json]
+usage: p04-ab.py <raw dir> <sha8>[,<sha8>...] [--json out.json]
+
+Several comma-separated SHAs pool runs from those SHAs (only when the bench code is unchanged
+between them); a slot is counted per (sha, slot).
 """
 import glob, json, os, random, re, statistics, sys
 
@@ -17,11 +20,12 @@ ARMS = ["off", "w25", "idx", "w150"]
 turns = {a: [] for a in ARMS}
 boots = {a: [] for a in ARMS}
 slots = {a: set() for a in ARMS}
-for d in sorted(glob.glob(os.path.join(raw, f"ab-{sha}-*-*/"))):
-    m = re.search(rf"ab-{sha}-(\d+)-(\w+)/$", d)
-    if not m or not os.path.exists(os.path.join(d, "run.json")):
+dirs = sorted(d for s in sha.split(",") for d in glob.glob(os.path.join(raw, f"ab-{s}-*-*/")))
+for d in dirs:
+    m = re.search(r"ab-([0-9a-f]{8})-(\d+)-(\w+)/$", d)
+    if not m or m.group(3) not in ARMS or not os.path.exists(os.path.join(d, "run.json")):
         continue
-    slot, arm = int(m.group(1)), m.group(2)
+    slot, arm = (m.group(1), int(m.group(2))), m.group(3)
     slots[arm].add(slot)
     for line in open(os.path.join(d, "samples.ndjson")):
         s = json.loads(line)
