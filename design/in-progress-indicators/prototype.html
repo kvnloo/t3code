@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>T3 Code mobile: in-progress indicator prototypes</title>
+<style>
+  :root {
+    --bg: #0a0a0a; --card: #121212; --line: #1f1f1f; --fg: #ececec; --muted: #8a8a8a;
+    --sky: #38bdf8; --sky-dim: rgba(56,189,248,.14); --emerald: #34d399; --amber: #fbbf24;
+    --indigo: #a5b4fc; --blue: #2563eb;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #050505; color: var(--fg); font: 14px/1.35 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header.page { padding: 20px 24px 4px; max-width: 1500px; margin: 0 auto; }
+  header.page h1 { font-size: 18px; margin: 0 0 6px; }
+  header.page p { margin: 0 0 4px; color: var(--muted); max-width: 980px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 22px; padding: 16px 24px 32px; max-width: 1500px; margin: 0 auto; }
+  figure { margin: 0; width: 300px; }
+  figcaption { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+  figcaption b { color: var(--fg); display: block; font-size: 13.5px; margin-bottom: 2px; }
+  .phone { position: relative; width: 300px; height: 620px; border-radius: 30px; background: var(--bg); border: 1px solid #222; overflow: hidden; }
+  .status { height: 26px; display: flex; justify-content: space-between; align-items: center; padding: 0 18px; font-size: 11px; color: #ddd; }
+  .appbar { height: 52px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; }
+  .brand { font-weight: 700; font-size: 21px; letter-spacing: -.5px; }
+  .brand span { color: #9a9a9a; font-weight: 500; }
+  .brand small { font-size: 8.5px; color: #aaa; border: 1px solid #333; border-radius: 6px; padding: 2px 5px; margin-left: 6px; vertical-align: middle; letter-spacing: .5px; }
+  .icons { display: flex; gap: 16px; color: #ddd; font-size: 15px; align-items: center; }
+  .sheet { position: absolute; top: 78px; left: 0; right: 0; bottom: 0; background: #0d0d0d; border-radius: 22px 22px 0 0; overflow: hidden; }
+  .list { height: 100%; overflow: hidden; padding-top: 6px; }
+  .row { display: grid; grid-template-columns: 22px 1fr auto; gap: 2px 8px; padding: 9px 14px; }
+  .ico { width: 18px; height: 18px; border-radius: 5px; background: #1d4ed8; color: #fff; font: 700 8px/18px ui-sans-serif; text-align: center; margin-top: 1px; }
+  .ico.hp { background: #3b0a24; color: #f472b6; }
+  .ico.chat { background: transparent; border: 1px solid #555; }
+  .title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+  .meta { grid-column: 2; color: var(--muted); font-size: 11px; }
+  .trail { font-size: 11px; color: var(--muted); text-align: right; white-space: nowrap; }
+  .done { color: var(--emerald); font-weight: 600; }
+  .working { color: var(--sky); font-weight: 600; }
+  .approval { color: var(--amber); font-weight: 600; }
+  .shelf { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px 6px; color: var(--muted); font-size: 11.5px; font-weight: 600; letter-spacing: .3px; text-transform: uppercase; cursor: pointer; user-select: none; }
+  .nav { position: absolute; left: 10px; right: 10px; bottom: 14px; display: flex; gap: 8px; align-items: center; }
+  .navbar { flex: 1; height: 52px; border-radius: 26px; background: #1a1a1a; display: flex; align-items: center; justify-content: space-around; position: relative; }
+  .tab { width: 50px; height: 38px; border-radius: 19px; display: grid; place-items: center; color: #e5e5e5; font-size: 17px; position: relative; }
+  .tab.on { background: #2b2b2b; }
+  .fab { width: 54px; height: 54px; border-radius: 18px; background: var(--blue); display: grid; place-items: center; font-size: 20px; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--sky); }
+  .ring { position: absolute; inset: 2px; border-radius: 19px; box-shadow: inset 0 0 0 1.5px var(--sky); }
+  .badge { position: absolute; top: -3px; right: 2px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--sky); color: #04131c; font: 700 10px/16px ui-sans-serif; text-align: center; }
+  .tray { position: absolute; left: 10px; right: 10px; border-radius: 18px; background: #161616; border: 1px solid #262626; box-shadow: 0 10px 30px rgba(0,0,0,.6); padding: 6px 0; display: none; }
+  .tray.open { display: block; }
+  .tray .row { padding: 8px 12px; }
+  .tray h4 { margin: 4px 12px 4px; font-size: 10.5px; color: var(--muted); letter-spacing: .4px; text-transform: uppercase; }
+  .capsule { position: absolute; left: 50%; transform: translateX(-50%); height: 30px; padding: 0 12px 0 10px; border-radius: 15px; background: #151a1e; border: 1px solid #23313a; color: #d7eefa; display: flex; gap: 8px; align-items: center; font-size: 12px; cursor: pointer; white-space: nowrap; }
+  .capsule .sep { color: #4b5a63; }
+  .avatars { display: flex; }
+  .avatars i { width: 14px; height: 14px; border-radius: 4px; background: #1d4ed8; border: 1.5px solid #151a1e; margin-left: -4px; font: 700 6px/12px ui-sans-serif; color: #fff; text-align: center; font-style: normal; }
+  .avatars i:first-child { margin-left: 0; }
+  .avatars i.hp { background: #3b0a24; color: #f472b6; }
+  .strip { display: flex; gap: 6px; padding: 8px 12px 8px; overflow: hidden; border-bottom: 1px solid var(--line); background: #0d0d0d; }
+  .chip { flex: none; max-width: 120px; height: 28px; border-radius: 14px; background: #141a1e; border: 1px solid #22313a; display: flex; align-items: center; gap: 6px; padding: 0 10px; font-size: 11.5px; }
+  .chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip em { font-style: normal; color: var(--muted); font-size: 10.5px; }
+  .chip.amber { border-color: #4a3a12; background: #1d1909; }
+  .chip.amber .dot { background: var(--amber); }
+  .sumrow { margin: 6px 10px 4px; border-radius: 14px; background: #10171b; border: 1px solid #1d2c35; padding: 9px 12px; cursor: pointer; }
+  .sumrow .top { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; font-weight: 600; color: #d7eefa; }
+  .sumrow .sub { color: var(--muted); font-size: 11px; margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .problem { position: absolute; left: 10px; right: 10px; bottom: 76px; border-radius: 12px; background: rgba(127,29,29,.85); color: #fecaca; font-size: 11px; padding: 7px 10px; }
+  .hint { color: var(--muted); font-size: 10.5px; padding: 2px 14px 0; }
+  .pill { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
+  .table { max-width: 1452px; margin: 0 auto 40px; padding: 0 24px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th, td { text-align: left; border-bottom: 1px solid #1f1f1f; padding: 7px 8px; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+</style>
+</head>
+<body>
+<header class="page">
+  <h1>Mobile in-progress indicators: five prototypes</h1>
+  <p>Problem: on the home list, the Working shelf sits below every active (Done, Approval, Input) thread and starts collapsed. With 13 Done threads waiting to be settled, running agents are a long scroll away, so the first screen shows only finished work. Desktop/web keeps its Working shelf in the sidebar, where it stays in reach.</p>
+  <p>Constraints carried into every variant: zero idle cost (hidden when nothing runs), no continuously repainting animation (upstream measured the mobile shimmer at about 70&nbsp;mW), one tap to the working thread, and the same count as the Android Live Update ("3 working"). Tap the indicators to open them.</p>
+</header>
+
+<section class="grid" id="grid"></section>
+
+<section class="table">
+  <table>
+    <thead><tr><th>Variant</th><th>Visible on first screen</th><th>Taps to a working thread</th><th>Cost / risk</th><th>Precedent</th></tr></thead>
+    <tbody>
+      <tr><td>A. Nav-bar capsule</td><td>Always (above the dock)</td><td>2 (capsule, then row)</td><td>Overlaps the last list row; needs list bottom inset</td><td>GitHub Mobile Copilot tab, iOS mini player</td></tr>
+      <tr><td>B. Threads-tab badge</td><td>Always (count only)</td><td>2 (tab long-press or tap again)</td><td>Smallest; a count without names</td><td>Badged tabs; Android Live Update count</td></tr>
+      <tr><td>C. Floating top pill</td><td>Always, below the header</td><td>2 (pill, then row)</td><td>Covers the first row while open</td><td>Dynamic Island / Live Activity, upstream 27342 (header jump)</td></tr>
+      <tr><td>D. Sticky chip strip</td><td>Always; names visible</td><td>1</td><td>Costs one row of height; many agents overflow</td><td>Warp agent pill bar</td></tr>
+      <tr><td>E. Working shelf first</td><td>Yes, as one summary row</td><td>1 (row expands)</td><td>Changes default order; pushes Done down one row</td><td>Codex Desktop issue 33730, desktop sidebar parity</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<script>
+const done = [
+  ["T3","can you see the gh forks in my account? iirc i may…"],
+  ["T3","i wanna add continuous voice mode and context wind…"],
+  ["T3","set a few new issues when I click on a link to a c…"],
+  ["T3","Repro: GitHub comment + discussion links on Android"],
+  ["chat","https://x.com/owengretzinger/status/21162919242…"],
+  ["chat","https://github.com/kvnloo/hermes-agent/pull/654 ta…"],
+  ["T3","did we finish the discussion or issue & pr to add …"],
+  ["chat","can u update the virtual display to show all work …"],
+];
+const idle = [
+  ["T3","can you go through and fully set up t3code? i look…","16m"],
+  ["T3","can you run a test on t3code downstream? i want to…","1h"],
+  ["chat","i cant change the effort level in the hermes app p…","1h"],
+];
+const working = [
+  ["T3","OpenUI Framework and UI Generation","Running vp test","24m","working"],
+  ["T3","Prototype in-progress agent indicators","Writing prototype.html","3m","working"],
+  ["HP","lets add layersfs https://x.com/mweinbach/…","Needs approval","41m","approval"],
+];
+const ico = k => `<div class="ico ${k==='HP'?'hp':k==='chat'?'chat':''}">${k==='chat'?'':k}</div>`;
+const row = (k,t,trail,meta='groot') => `<div class="row">${ico(k)}<div class="title">${t}</div><div class="trail">${trail}</div><div class="meta">▭ ${meta}</div><div class="trail" style="opacity:.6">∞</div></div>`;
+const doneRow = ([k,t]) => row(k,t,'<span class="done">✓ Done</span>');
+const idleRow = ([k,t,a]) => row(k,t,a);
+const workRow = ([k,t,act,dur,st]) => row(k,t,`<span class="${st}">${st==='approval'?'! Approval':'◌ Working '+dur}</span>`, `${act}`);
+const frame = (inner, overlay='', navExtra={}) => `
+  <div class="phone">
+    <div class="status"><span>8:41</span><span>⌁ ▾ ▮ 61</span></div>
+    <div class="appbar"><div class="brand">T3 <span>Code</span><small>BETA</small></div><div class="icons">${navExtra.headerBtn||''}<span>⌕</span><span>⏷</span></div></div>
+    <div class="sheet"><div class="list">${inner}</div></div>
+    ${overlay}
+    <div class="nav"><div class="navbar">
+      <div class="tab on">▤${navExtra.tabBadge||''}</div><div class="tab">⑂</div><div class="tab">▥</div><div class="tab">⚙</div>
+    </div><div class="fab">✎</div></div>
+  </div>`;
+const base = () => [...idle.map(idleRow), ...done.map(doneRow)].join('');
+const trayRows = () => `<h4>Working · ${working.length}</h4>` + working.map(workRow).join('');
+const variants = [
+  {
+    t: "Today (nightly 4093): Working shelf below the fold",
+    d: "Repro of the screenshot. Three agents are running, but their collapsed shelf sits under eight Done rows plus older active threads.",
+    h: frame(base() + `<div class="shelf">Working (3) <span>›</span></div>`, `<div class="problem">3 agents running · none visible on this screen</div>`),
+  },
+  {
+    t: "A. Nav-bar capsule",
+    d: "A slim capsule docked above the bottom bar: count, provider icons, longest elapsed. Tap opens a tray of working rows; tap a row to open it. Hidden at zero.",
+    h: frame(base(), `
+      <div class="capsule" data-toggle="trayA" style="bottom:74px"><span class="dot"></span>3 working <span class="sep">·</span><span class="avatars"><i>T3</i><i>T3</i><i class="hp">HP</i></span><span class="sep">·</span><span class="approval">1 needs you</span></div>
+      <div class="tray" id="trayA" style="bottom:112px">${trayRows()}</div>`),
+  },
+  {
+    t: "B. Threads-tab badge",
+    d: "The quietest option: a sky ring and count on the Threads tab. Tapping the already-selected tab scrolls to the Working shelf and expands it (the same move as upstream 27342, from the dock).",
+    h: frame(base(), `<div class="tray" id="trayB" style="bottom:76px">${trayRows()}</div>`, {tabBadge: `<span class="ring"></span><span class="badge" data-toggle="trayB">3</span>`}),
+  },
+  {
+    t: "C. Floating top pill",
+    d: "Island-style pill under the header. Collapsed it says how many and the newest action; tap drops a card over the list. Fades out when the last agent stops.",
+    h: frame(`<div style="height:34px"></div>` + base(), `
+      <div class="capsule" data-toggle="trayC" style="top:84px"><span class="dot"></span>3 working <span class="sep">·</span><span style="color:#9fb4c0">Running vp test</span></div>
+      <div class="tray" id="trayC" style="top:120px">${trayRows()}</div>`),
+  },
+  {
+    t: "D. Sticky chip strip",
+    d: "One sticky row of chips above the list, one chip per working thread, amber when it needs you. Names are always visible and one tap opens the thread. Like Warp's agent pill bar.",
+    h: frame(`<div class="strip">${working.map(([k,t,act,dur,st],i) => `<div class="chip ${st==='approval'?'amber':''}"><span class="dot"></span><span>${['OpenUI','Indicators','layersfs'][i]}</span><em>${dur}</em></div>`).join('')}</div>` + base()),
+  },
+  {
+    t: "E. Working shelf first",
+    d: "Keep today's shelf but place it above Done as one summary row with the titles inline. Tap expands in place. This matches desktop, where the shelf stays in reach.",
+    h: frame(`<div class="sumrow" data-toggle="trayE"><div class="top"><span><span class="dot"></span>&nbsp; Working · 3</span><span class="approval" style="font-size:11px">1 needs you ›</span></div><div class="sub">OpenUI Framework · Prototype in-progress · layersfs</div></div><div id="trayE" class="tray" style="position:static;margin:0 10px 6px;box-shadow:none">${working.map(workRow).join('')}</div>` + base()),
+  },
+];
+document.getElementById('grid').innerHTML = variants.map(v => `<figure>${v.h}<figcaption><b>${v.t}</b>${v.d}</figcaption></figure>`).join('');
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-toggle]');
+  if (el) document.getElementById(el.dataset.toggle).classList.toggle('open');
+});
+// Open one state per variant for static screenshots: ?open=1
+if (new URLSearchParams(location.search).has('open')) ['trayA','trayC','trayE'].forEach(id => document.getElementById(id).classList.add('open'));
+</script>
+</body>
+</html>
