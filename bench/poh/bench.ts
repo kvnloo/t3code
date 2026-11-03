@@ -671,6 +671,8 @@ try {
             undefined,
             arrivals,
           );
+          // Surface a stream failure when awaited below, not as an unhandled rejection meanwhile.
+          settled.catch(() => {});
           dispatchedAt = Date.now();
           await driver.rpc.call("orchestration.dispatchCommand", {
             type: "message.dispatch",
