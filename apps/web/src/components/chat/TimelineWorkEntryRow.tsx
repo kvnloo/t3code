@@ -573,7 +573,7 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
 }
 
 /** Brand monogram for tools from a known app (Gmail, Uber, Maps, ...); no logos are bundled. */
-function AppActivityMark({ brand }: { brand: AppBrand }) {
+export function AppActivityMark({ brand }: { brand: AppBrand }) {
   return (
     <span
       role="img"
