@@ -4,11 +4,11 @@
 # installs both, runs the commit-window tests on both, generates a synthetic seed with the PRE
 # server, gives each base its own doctor pass, runs the interleaved 2x2 slots, then pools them.
 #
-# usage: bench/poh/p04b-job.sh <pre sha> <job label> <slot>...
+# usage: bench/poh/p04b-job.sh <pre sha or branch> <job label> <slot>...
 # env:   SEED_THREADS (16), SEED_TURNS (960), SEED_CONCURRENCY (8)
 # out:   bench-out/<job label>/ (logs, host.json, seed manifests, raw arm dirs, ab.md, ab.json)
 set -euo pipefail
-pre_sha=$1 job=$2
+pre_ref=$1 job=$2
 shift 2
 post=$(pwd)
 out=$post/bench-out/$job
@@ -41,11 +41,11 @@ if ! node -e "process.exit(Number(process.versions.node.split('.')[0]) === $want
 fi
 node --version
 
-step checkout PRE "$pre_sha"
+step checkout PRE "$pre_ref"
 pre=$(realpath -m "$post/../pre")
 if [ ! -d "$pre" ]; then
-  git fetch -q --depth 1 https://github.com/kvnloo/t3code.git "$pre_sha"
-  git worktree add -q --detach "$pre" "$pre_sha"
+  git fetch -q --depth 1 https://github.com/kvnloo/t3code.git "$pre_ref"
+  git worktree add -q --detach "$pre" FETCH_HEAD
 fi
 git -C "$pre" rev-parse HEAD; git -C "$post" rev-parse HEAD
 
