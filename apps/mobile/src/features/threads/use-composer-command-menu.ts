@@ -30,6 +30,7 @@ import {
   useComposerDraftSelection,
 } from "../../state/use-composer-drafts";
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
+import { HANDOFF_COMMAND, pickedProviderCommandForDraft } from "@t3tools/shared/threadHandoff";
 import {
   detectComposerTrigger,
   replaceTextRange,
@@ -104,6 +105,8 @@ export function buildComposerSlashCommandItems(input: {
   readonly hasThread: boolean;
   readonly hasCompactableConversation?: boolean;
   readonly offersUsageLimits?: boolean;
+  /** Offers `/handoff`; null when it can run now, otherwise why it cannot. Absent hides it. */
+  readonly handoffDisabledReason?: string | null;
   readonly allowInteractionMode: boolean;
   readonly selectedProviderStatus: Pick<
     ServerProvider,
@@ -143,6 +146,20 @@ export function buildComposerSlashCommandItems(input: {
   // Providers expand commands only at the start of a message. T3 commands
   // change local state and do not have this restriction.
   if (!input.atMessageStart) return items;
+  // `/handoff [focus]` is the whole message, so it too starts one.
+  const offersHandoff =
+    input.hasThread &&
+    input.handoffDisabledReason !== undefined &&
+    HANDOFF_COMMAND.name.includes(query);
+  if (offersHandoff) {
+    items.push({
+      id: `cmd:${HANDOFF_COMMAND.name}`,
+      type: "slash-command",
+      command: HANDOFF_COMMAND.name,
+      label: `/${HANDOFF_COMMAND.name}`,
+      description: input.handoffDisabledReason ?? HANDOFF_COMMAND.description,
+    });
+  }
   for (const command of input.selectedProviderStatus?.slashCommands ?? []) {
     if (!command.name.toLowerCase().includes(query)) continue;
     if (command.name === "compact" && !input.hasCompactableConversation) continue;
@@ -156,12 +173,14 @@ export function buildComposerSlashCommandItems(input: {
     ) {
       continue;
     }
+    // Listed after T3's own command of the same name, and still sent to the provider when picked.
+    const shadowsBuiltIn = offersHandoff && command.name.toLowerCase() === HANDOFF_COMMAND.name;
     items.push({
       id: `pcmd:${command.name}`,
       type: "provider-slash-command",
       command,
       label: `/${command.name}`,
-      description: command.description ?? "",
+      description: command.description ?? (shadowsBuiltIn ? "The provider's own command" : ""),
     });
   }
   return items;
@@ -221,6 +240,7 @@ export function useComposerCommandMenu({
   hasThread,
   hasCompactableConversation,
   offersUsageLimits = false,
+  handoffDisabledReason,
   enabled = true,
   onChangeDraftMessage,
   onUpdateInteractionMode,
@@ -242,6 +262,8 @@ export function useComposerCommandMenu({
   readonly hasThread: boolean;
   readonly hasCompactableConversation: boolean;
   readonly offersUsageLimits?: boolean;
+  /** Offers `/handoff`; see `buildComposerSlashCommandItems`. */
+  readonly handoffDisabledReason?: string | null;
   readonly enabled?: boolean;
   readonly onChangeDraftMessage: (value: string) => void;
   readonly onUpdateInteractionMode?: (mode: ProviderInteractionMode) => void;
@@ -251,6 +273,11 @@ export function useComposerCommandMenu({
     ownerKey,
     ...composerSelectionAtEnd(draftMessage),
   }));
+  // A provider command picked from the menu that shares its name with a T3 built-in.
+  const [pickedProviderCommand, setPickedProviderCommand] = useState<{
+    readonly ownerKey: string | null;
+    readonly name: string;
+  } | null>(null);
   // Thread mentions rank by recency as of when the composer mounted.
   const [now] = useState(() => Date.now());
   const insertedSelection = useComposerDraftSelection(ownerKey, draftMessage);
@@ -349,6 +376,7 @@ export function useComposerCommandMenu({
         hasThread,
         hasCompactableConversation,
         offersUsageLimits,
+        ...(handoffDisabledReason === undefined ? {} : { handoffDisabledReason }),
         allowInteractionMode: onUpdateInteractionMode !== undefined,
         selectedProviderStatus: selectedProviderStatus
           ? {
@@ -602,6 +630,13 @@ export function useComposerCommandMenu({
         onUpdateInteractionMode !== undefined &&
         selectedProviderStatus?.showInteractionModeToggle !== false,
     });
+    // Picking the provider's `/handoff` sends it to the provider; T3's own clears that.
+    if (item.type === "provider-slash-command" || item.type === "slash-command") {
+      const name = item.type === "slash-command" ? null : item.command.name;
+      setPickedProviderCommand(
+        name !== null && name.toLowerCase() === HANDOFF_COMMAND.name ? { ownerKey, name } : null,
+      );
+    }
     setSelection({ start: result.cursor, end: result.cursor });
     onChangeDraftMessage(result.text);
     if (result.interactionMode !== null) {
@@ -624,5 +659,11 @@ export function useComposerCommandMenu({
           : pullRequestSearch.error
         : null,
     onSelect,
+    /** The provider command picked over a T3 built-in, while the draft still starts with it. */
+    pickedProviderCommand: pickedProviderCommandForDraft({
+      picked: pickedProviderCommand,
+      ownerKey,
+      draft: draftMessage,
+    }),
   };
 }

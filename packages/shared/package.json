@@ -375,6 +375,10 @@
       "types": "./src/usageLimits.ts",
       "import": "./src/usageLimits.ts"
     },
+    "./threadHandoff": {
+      "types": "./src/threadHandoff.ts",
+      "import": "./src/threadHandoff.ts"
+    },
     "./desktopAppControl": {
       "types": "./src/desktopAppControl.ts",
       "import": "./src/desktopAppControl.ts"

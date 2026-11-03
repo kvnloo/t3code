@@ -257,6 +257,23 @@ and appears once the provider reports usage. Open it for usage details and
 Claude instances can also compact idle threads for you. See
 [compact long conversations](./providers-claude.md#compact-long-conversations).
 
+## Hand off to a new thread
+
+Send `/handoff` to continue in a new thread that keeps this conversation. T3 Code forks the
+thread at its latest finished reply, names the new thread after it with "(handoff)", and opens
+it. Text after the command, as in `/handoff now write the migration`, becomes the new thread's
+first message. The original thread stays as it was.
+
+`/handoff` must be the whole message, and it waits until the first reply has finished and no
+turn is running; the slash menu says why when it cannot run yet. On mobile it is also
+**Hand off to new thread** in the thread's **More actions** menu (⋮) on Android, its **Share**
+menu on iPhone and iPad, and the command palette.
+
+If the provider has its own `/handoff`, the slash menu lists T3 Code's first and the provider's
+after it, with the provider's description. Pick the provider's from the menu to send it to the
+agent instead. The new thread carries the conversation like any fork, also to another provider;
+see [portable handoffs](./portable-handoffs.md).
+
 ## Goals
 
 With Codex and Claude, send `/goal` followed by what "done" means, for example

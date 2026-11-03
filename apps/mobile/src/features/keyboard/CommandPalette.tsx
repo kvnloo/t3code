@@ -73,6 +73,8 @@ import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 import { openSettings } from "../settings/settings-navigation";
 import { useSelectWorkspaceTab } from "../workspace/useSelectWorkspaceTab";
 import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
+import { useThreadShareActions } from "../threads/useThreadShareActions";
+import type { ThreadShareActionId } from "../threads/threadShareMenu";
 
 const PALETTE_COMMANDS: ReadonlyArray<HardwareKeyboardCommand> = [
   "commandPalette",
@@ -98,6 +100,15 @@ const ACTION_ICONS: Record<string, AppSymbolName> = {
   terminal: "terminal",
   review: PullRequestGlyph.pullRequest,
   copyThreadReference: "link",
+  "share:handoff": "arrow.triangle.branch",
+  "share:share-guest": "person.badge.plus",
+  "share:stop-guest-share": "person.fill.xmark",
+};
+
+const SHARE_ACTION_SEARCH_TERMS: Record<ThreadShareActionId, ReadonlyArray<string>> = {
+  handoff: ["handoff", "fork", "new thread", "continue", "transfer"],
+  "share-guest": ["share", "guest", "link", "collaborate", "invite", "friend"],
+  "stop-guest-share": ["share", "guest", "link", "revoke", "unshare"],
 };
 
 function itemIcon(item: CommandPaletteItem): AppSymbolName {
@@ -229,6 +240,11 @@ export function CommandPalette(props: {
   const threads = useVisibleThreadShells();
   const activeThreadRef = parseActiveThreadPath(props.pathname);
   const activeThread = useThreadShell(activeThreadRef);
+  const threadShareActions = useThreadShareActions(
+    activeThreadRef?.environmentId ?? null,
+    activeThreadRef?.threadId ?? null,
+  );
+  const runShareAction = threadShareActions.run;
   const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
   const environments = useWorkspaceEnvironments();
   const { savedConnectionsById } = useSavedRemoteConnections();
@@ -399,6 +415,14 @@ export function CommandPalette(props: {
           searchTerms,
           run: () => runCommand(command),
         })),
+        ...threadShareActions.actions.map((action) => ({
+          key: `share:${action.id}`,
+          kind: "action" as const,
+          title: action.title,
+          ...(action.subtitle === undefined ? {} : { detail: action.subtitle }),
+          searchTerms: SHARE_ACTION_SEARCH_TERMS[action.id],
+          run: () => runShareAction(action.id),
+        })),
       );
     }
     const openProjects = projects.filter((project) => project.archivedAt == null);
@@ -464,6 +488,8 @@ export function CommandPalette(props: {
     selectTab,
     activeThread,
     activeThreadRef,
+    threadShareActions.actions,
+    runShareAction,
     environments.length,
     canTriage,
     navigation,

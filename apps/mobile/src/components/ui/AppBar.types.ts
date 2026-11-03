@@ -11,6 +11,10 @@ export interface AppBarAction {
   readonly loading?: boolean;
   readonly selected?: boolean;
   readonly tintColor?: ColorValue;
+  /** Android: listed only in the overflow menu, with this subtitle. iOS ignores them. */
+  readonly overflowOnly?: boolean;
+  readonly subtitle?: string;
+  readonly destructive?: boolean;
 }
 
 export type AppBarMenuItem =

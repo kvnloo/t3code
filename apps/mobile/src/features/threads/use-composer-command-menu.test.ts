@@ -126,3 +126,113 @@ describe("mobile slash commands", () => {
     ).toEqual({ text: "/plan ", cursor: 6, interactionMode: null });
   });
 });
+
+describe("mobile /handoff", () => {
+  const codex = (slashCommands: ReadonlyArray<{ name: string; description?: string }>) => ({
+    driver: ProviderDriverKind.make("codex"),
+    slashCommands,
+  });
+
+  it("offers /handoff at the message start of a thread and inserts it for a focus", () => {
+    const items = buildComposerSlashCommandItems({
+      query: "hand",
+      atMessageStart: true,
+      hasThread: true,
+      handoffDisabledReason: null,
+      allowInteractionMode: true,
+      selectedProviderStatus: codex([]),
+    });
+    expect(items.map((item) => [item.id, item.label, item.description])).toEqual([
+      ["cmd:handoff", "/handoff", "Continue in a new thread that keeps this conversation"],
+    ]);
+    const [item] = items;
+    if (!item) throw new Error("Expected /handoff");
+    expect(
+      resolveComposerCommandSelection({
+        draftMessage: "/hand",
+        trigger: { rangeStart: 0, rangeEnd: 5 },
+        item,
+        allowInteractionMode: true,
+      }),
+    ).toEqual({ text: "/handoff ", cursor: 9, interactionMode: null });
+  });
+
+  it("shows why /handoff cannot run yet", () => {
+    const [item] = buildComposerSlashCommandItems({
+      query: "handoff",
+      atMessageStart: true,
+      hasThread: true,
+      handoffDisabledReason: "Hand off after the first reply finishes.",
+      allowInteractionMode: true,
+      selectedProviderStatus: codex([]),
+    });
+    expect(item?.description).toBe("Hand off after the first reply finishes.");
+  });
+
+  it("hides /handoff in drafts, mid-message, and where it is not offered", () => {
+    const base = {
+      query: "handoff",
+      allowInteractionMode: true,
+      selectedProviderStatus: codex([]),
+    };
+    expect(
+      buildComposerSlashCommandItems({
+        ...base,
+        atMessageStart: true,
+        hasThread: false,
+        handoffDisabledReason: null,
+      }),
+    ).toEqual([]);
+    expect(
+      buildComposerSlashCommandItems({
+        ...base,
+        atMessageStart: false,
+        hasThread: true,
+        handoffDisabledReason: null,
+      }),
+    ).toEqual([]);
+    expect(
+      buildComposerSlashCommandItems({ ...base, atMessageStart: true, hasThread: true }),
+    ).toEqual([]);
+  });
+
+  it("lists T3's /handoff first and keeps the provider's /handoff reachable", () => {
+    const items = buildComposerSlashCommandItems({
+      query: "handoff",
+      atMessageStart: true,
+      hasThread: true,
+      handoffDisabledReason: null,
+      allowInteractionMode: true,
+      selectedProviderStatus: codex([{ name: "handoff", description: "Write a handoff note" }]),
+    });
+    expect(items.map((item) => [item.id, item.label, item.description])).toEqual([
+      ["cmd:handoff", "/handoff", "Continue in a new thread that keeps this conversation"],
+      ["pcmd:handoff", "/handoff", "Write a handoff note"],
+    ]);
+    const providerItem = items[1];
+    if (!providerItem) throw new Error("Expected the provider's /handoff");
+    expect(
+      resolveComposerCommandSelection({
+        draftMessage: "/handoff",
+        trigger: { rangeStart: 0, rangeEnd: 8 },
+        item: providerItem,
+        allowInteractionMode: true,
+      }),
+    ).toEqual({ text: "/handoff ", cursor: 9, interactionMode: null });
+  });
+
+  it("names the provider's /handoff when it has no description", () => {
+    const items = buildComposerSlashCommandItems({
+      query: "handoff",
+      atMessageStart: true,
+      hasThread: true,
+      handoffDisabledReason: null,
+      allowInteractionMode: true,
+      selectedProviderStatus: codex([{ name: "handoff" }]),
+    });
+    expect(items[1]).toMatchObject({
+      id: "pcmd:handoff",
+      description: "The provider's own command",
+    });
+  });
+});

@@ -3,6 +3,7 @@ import {
   normalizeSearchQuery,
   scoreQueryMatch,
 } from "@t3tools/shared/searchRanking";
+import { HANDOFF_COMMAND } from "@t3tools/shared/threadHandoff";
 
 import type { ComposerCommandItem } from "./ComposerCommandMenu";
 import { scoreProviderSkill } from "../../providerSkillSearch";
@@ -12,7 +13,44 @@ type SlashSearchItem = Extract<
   { type: "slash-command" | "provider-slash-command" | "skill" }
 >;
 
-/** Provider commands, `/side` and `/btw` work only at the message start. */
+/** T3's `/handoff`, described by why it cannot run yet when `disabledReason` is set. */
+export function handoffSlashCommandItems(input: {
+  readonly available: boolean;
+  readonly disabledReason: string | null;
+}): Array<Extract<ComposerCommandItem, { type: "slash-command" }>> {
+  if (!input.available) return [];
+  return [
+    {
+      id: `slash:${HANDOFF_COMMAND.name}`,
+      type: "slash-command",
+      command: HANDOFF_COMMAND.name,
+      label: `/${HANDOFF_COMMAND.name}`,
+      description: input.disabledReason ?? HANDOFF_COMMAND.description,
+    },
+  ];
+}
+
+/**
+ * A provider command named like an offered T3 built-in stays listed after it, and says it is
+ * the provider's when it has no description of its own.
+ */
+export function describeProviderCommandsShadowingBuiltIns<
+  Item extends Extract<ComposerCommandItem, { type: "provider-slash-command" }>,
+>(
+  items: ReadonlyArray<Item>,
+  builtIns: ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>,
+): Item[] {
+  const builtInNames = new Set(builtIns.map((item) => item.command.toLowerCase()));
+  return items.map((item) =>
+    builtInNames.has(item.command.name.toLowerCase()) &&
+    item.command.description === undefined &&
+    item.command.input?.hint === undefined
+      ? { ...item, description: "The provider's own command" }
+      : item,
+  );
+}
+
+/** Provider commands, `/side`, `/btw` and `/handoff` work only at the message start. */
 export function slashCommandItemsForPromptPosition(
   items: ReadonlyArray<SlashSearchItem>,
   isAtPromptStart: boolean,
@@ -23,7 +61,10 @@ export function slashCommandItemsForPromptPosition(
   return items.filter(
     (item) =>
       item.type === "skill" ||
-      (item.type === "slash-command" && item.command !== "side" && item.command !== "btw"),
+      (item.type === "slash-command" &&
+        item.command !== "side" &&
+        item.command !== "btw" &&
+        item.command !== "handoff"),
   );
 }
 

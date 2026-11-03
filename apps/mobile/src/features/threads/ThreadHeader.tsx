@@ -23,6 +23,7 @@ export function ThreadHeader(
   const { layout, panes, toggleAuxiliaryPane, composerKeyboardActive } =
     useAdaptiveWorkspaceLayout();
   const { onOpenTerminal, onMergeBack } = props.gitControls;
+  const { shareActions, onShareAction } = props;
   const native = useThreadHeaderOptions(props);
   const androidHeaderActions = useMemo<ReadonlyArray<AppBarAction>>(() => {
     const actions: AppBarAction[] = [];
@@ -61,6 +62,19 @@ export function ThreadHeader(
         onPress: onMergeBack,
       });
     }
+    if (onShareAction) {
+      for (const action of shareActions ?? []) {
+        actions.push({
+          accessibilityLabel: action.title,
+          icon: action.icon,
+          onPress: () => onShareAction(action.id),
+          overflowOnly: true,
+          ...(action.subtitle === undefined ? {} : { subtitle: action.subtitle }),
+          ...(action.disabled ? { disabled: true } : {}),
+          ...(action.destructive ? { destructive: true } : {}),
+        });
+      }
+    }
     return actions;
   }, [
     props.inspectorMode,
@@ -74,6 +88,8 @@ export function ThreadHeader(
     props.hasThreadCwd,
     props.hasWorkspaceRoot,
     props.gitControls.canOpenTerminal,
+    shareActions,
+    onShareAction,
   ]);
 
   return (

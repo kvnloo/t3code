@@ -44,6 +44,8 @@ import {
 } from "../pullRequest/pullRequestList.logic";
 import type { ComposerCommandItem } from "./ComposerCommandMenu";
 import {
+  describeProviderCommandsShadowingBuiltIns,
+  handoffSlashCommandItems,
   searchSlashCommandItems,
   slashCommandItemsForPromptPosition,
 } from "./composerSlashCommandSearch";
@@ -66,6 +68,8 @@ export function useComposerMenuItems({
   planModeUiEnabled,
   sideChatAvailable,
   sideChatDisabledReason,
+  handoffAvailable = false,
+  handoffDisabledReason = null,
   compactSlashCommandAvailable,
   selectedProvider,
   selectedProviderSkills,
@@ -85,6 +89,9 @@ export function useComposerMenuItems({
   readonly planModeUiEnabled: boolean;
   readonly sideChatAvailable: boolean;
   readonly sideChatDisabledReason: string | null;
+  /** Offers `/handoff`, described by `handoffDisabledReason` when it cannot run yet. */
+  readonly handoffAvailable?: boolean;
+  readonly handoffDisabledReason?: string | null;
   readonly compactSlashCommandAvailable: boolean;
   readonly selectedProvider: ProviderDriverKind;
   readonly selectedProviderSkills: ServerProvider["skills"];
@@ -260,6 +267,10 @@ export function useComposerMenuItems({
               },
             ] as const)
           : []),
+        ...handoffSlashCommandItems({
+          available: handoffAvailable,
+          disabledReason: handoffDisabledReason,
+        }),
       ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
       const slashMenuSkills = getProviderSkillsForSlashMenu(
         selectedProviderSkills,
@@ -288,8 +299,11 @@ export function useComposerMenuItems({
           skill.description ??
           (skill.scope ? `${skill.scope} skill` : ""),
       }));
-      const visibleProviderSlashCommandItems = providerSlashCommandItems.filter(
-        (item) => item.command.name !== "compact" || compactSlashCommandAvailable,
+      const visibleProviderSlashCommandItems = describeProviderCommandsShadowingBuiltIns(
+        providerSlashCommandItems.filter(
+          (item) => item.command.name !== "compact" || compactSlashCommandAvailable,
+        ),
+        builtInSlashCommandItems,
       );
       const slashCommandItems = slashCommandItemsForPromptPosition(
         [...builtInSlashCommandItems, ...visibleProviderSlashCommandItems, ...skillItems],

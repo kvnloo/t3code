@@ -276,6 +276,8 @@ import { getTriggerDisplayModelName } from "./chat/providerIconUtils";
 import { resolveScrollToEndClearance } from "./composerFooterLayout";
 import { ChatHeader } from "./chat/ChatHeader";
 import { useSideChat } from "./chat/useSideChat";
+import { useThreadHandoff } from "./chat/useThreadHandoff";
+import { threadHandoffDisabledReason } from "@t3tools/shared/threadHandoff";
 import { useRemoteOpenState } from "~/remoteOpen";
 import { shouldShowOpenInPicker } from "./chat/OpenInPicker.logic";
 import { useOpenFavoriteEditorShortcut } from "./chat/OpenInPickerShortcut";
@@ -2790,6 +2792,22 @@ export default function ChatView(props: ChatViewProps) {
                 : null;
   const openSideChatStable = useStableCallback(() => void sideChat.open());
   const sendSideChatStable = useStableCallback((prompt: string) => sideChat.open(prompt));
+  // `/handoff` forks into a new listed thread, so a subagent or side chat cannot start one.
+  const handoff = useThreadHandoff({
+    threadRef:
+      !embedded &&
+      canOperateThread &&
+      isServerThread &&
+      activeThread?.lineage.sideChat !== true &&
+      !isSubagentThread
+        ? activeThreadRef
+        : null,
+    onError: (message) => {
+      if (activeThread) setThreadError(activeThread.id, message);
+    },
+  });
+  const handoffDisabledReason = threadHandoffDisabledReason(serverProjection?.runs ?? []);
+  const sendHandoffStable = useStableCallback((focus: string) => handoff.open(focus));
   const { onConfirmRevertStable, onForkFromRunStable, onRevertTimelineTurnStable } =
     useTimelineRewind({
       environmentId,
@@ -2954,6 +2972,8 @@ export default function ChatView(props: ChatViewProps) {
     handleInteractionModeChange,
     onSideChat: sideChat.available ? sendSideChatStable : undefined,
     sideChatDisabledReason,
+    onHandoff: handoff.available ? sendHandoffStable : undefined,
+    handoffDisabledReason,
     handleNewThreadInActiveProject,
     persistThreadSettingsForNextTurn,
   });
@@ -3639,6 +3659,8 @@ export default function ChatView(props: ChatViewProps) {
                               onToggleKeepFullHistory={toggleKeepFullHistoryStable}
                               sideChatAvailable={sideChat.available}
                               sideChatDisabledReason={sideChatDisabledReason}
+                              handoffAvailable={handoff.available}
+                              handoffDisabledReason={handoffDisabledReason}
                               onUsageLimitsCommand={
                                 usageLimitsOffered &&
                                 usageLimitsKey !== null &&
