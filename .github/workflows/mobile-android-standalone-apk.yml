@@ -30,7 +30,12 @@ jobs:
               - --filter=@t3tools/mobile...
       - name: Prebuild
         working-directory: apps/mobile
-        run: vp exec expo prebuild --clean --platform android --no-install
+        run: |
+          vp exec expo prebuild --clean --platform android --no-install
+          # Distinct id so it installs beside the EAS-signed Preview app instead of clashing on signature.
+          sed -i 's/applicationId "com.t3tools.t3code.preview"/applicationId "com.t3tools.t3code.preview.fork"/' android/app/build.gradle
+          grep -n applicationId android/app/build.gradle
+          sed -i 's/<string name="app_name">[^<]*</<string name="app_name">T3 Fork</' android/app/src/main/res/values/strings.xml
       - uses: gradle/actions/setup-gradle@v5
       - name: Assemble release APK (debug-signed, JS bundled)
         working-directory: apps/mobile/android
