@@ -179,9 +179,12 @@ const MailListCard = memo(function MailListCard({
       {props.messages.length === 0 ? (
         <p className="text-muted-foreground">No messages matched.</p>
       ) : null}
-      <ul className="divide-y divide-border">
+      <ul className="m-0 list-none divide-y divide-border p-0">
         {props.messages.map((message, index) => (
-          <li key={`${message.from}\u0000${message.subject}\u0000${message.time}`}>
+          <li
+            key={`${message.from}\u0000${message.subject}\u0000${message.time}`}
+            className="list-none"
+          >
             <button
               type="button"
               aria-expanded={open === index}
@@ -252,9 +255,9 @@ const RouteCard = memo(function RouteCard({ props }: { props: z.infer<typeof rou
         >{`${props.minutes} min`}</span>
         <span className="text-muted-foreground">{props.distance}</span>
       </p>
-      <ol className="space-y-1">
+      <ol className="m-0 list-none space-y-1 p-0">
         {props.steps.map((entry, index) => (
-          <li key={`${index + 1}. ${entry}`}>
+          <li key={`${index + 1}. ${entry}`} className="list-none">
             <button
               type="button"
               aria-pressed={step === index}
