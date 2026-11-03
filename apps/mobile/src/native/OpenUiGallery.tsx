@@ -1,6 +1,6 @@
 import { defineComponent } from "@openuidev/react-lang";
 import { Image } from "expo-image";
-import { memo, use, useEffect, useRef, useState } from "react";
+import { memo, use, useEffect, useRef, useState, type ComponentRef } from "react";
 import {
   Linking,
   Modal,
@@ -166,7 +166,7 @@ function Pager({
   onTap?: () => void;
 }) {
   const [width, setWidth] = useState(0);
-  const scroller = useRef<ScrollView>(null);
+  const scroller = useRef<ComponentRef<typeof ScrollView>>(null);
   const settled = useRef(index);
   useEffect(() => {
     if (width > 0 && settled.current !== index) {
@@ -221,7 +221,7 @@ const GalleryPanel = memo(function GalleryPanel({ props }: { props: GalleryProps
   const [index, setIndex] = useState(0);
   const [expanded, setExpanded] = useState(false);
   const [starred, setStarred] = useState<ReadonlySet<string>>(new Set());
-  const thumbs = useRef<ScrollView>(null);
+  const thumbs = useRef<ComponentRef<typeof ScrollView>>(null);
   const current = galleryIndex(index, slides.length);
   const slide = slides[current]!;
   const accent = galleryAccent(slides, current);
