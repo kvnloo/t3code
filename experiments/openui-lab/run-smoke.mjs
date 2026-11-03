@@ -14,6 +14,10 @@ const sources = {
   "OpenUiReport.tsx": "apps/web/src/components/chat/OpenUiReport.tsx",
   "OpenUiCharts.tsx": "apps/web/src/components/chat/OpenUiCharts.tsx",
   "openUiCharts.ts": "packages/client-runtime/src/openUiCharts.ts",
+  "OpenUiAppCards.tsx": "apps/web/src/components/chat/OpenUiAppCards.tsx",
+  "openUiAppCards.ts": "packages/client-runtime/src/openUiAppCards.ts",
+  "appConnectors.ts": "packages/client-runtime/src/appConnectors.ts",
+  "app-cards.test.ts": "experiments/openui-lab/app-cards.test.ts",
   "report.test.ts": "experiments/openui-lab/report.test.ts",
   "charts.test.ts": "experiments/openui-lab/charts.test.ts",
   "source-demo-fences.md": "experiments/openui-lab/source-demo-fences.md",
@@ -22,6 +26,8 @@ const rewrites = [
   ["../../apps/web/src/components/chat/OpenUiReport", "./OpenUiReport"],
   ["../../apps/web/src/components/chat/OpenUiCharts", "./OpenUiCharts"],
   ["@t3tools/client-runtime/openui-charts", "./openUiCharts"],
+  ["@t3tools/client-runtime/openui-app-cards", "./openUiAppCards"],
+  ["@t3tools/client-runtime/app-connectors", "./appConnectors"],
 ];
 for (const [name, path] of Object.entries(sources)) {
   if (name.endsWith(".md")) {
@@ -43,7 +49,7 @@ function run(command, args) {
   return { status: result.status, log };
 }
 const install = run("npm", ["install", "--ignore-scripts", "--legacy-peer-deps", "--no-audit", "--no-fund"]);
-const result = install.status === 0 ? run(process.execPath, ["--import", "tsx", "--test", "report.test.ts", "charts.test.ts"]) : install;
+const result = install.status === 0 ? run(process.execPath, ["--import", "tsx", "--test", "report.test.ts", "charts.test.ts", "app-cards.test.ts"]) : install;
 writeFileSync(join(out, "smoke.log"), result.log);
 const hash = (path) => createHash("sha256").update(readFileSync(join(root, path))).digest("hex");
 const sourceSha256 = Object.fromEntries(Object.values(sources).map((path) => [path, hash(path)]));

@@ -27,6 +27,7 @@ import {
 } from "@t3tools/client-runtime/openui-charts";
 
 import { AppText } from "../components/ui/AppText";
+import { MailList, PullRequest, RideOptions, Route, appCardSchemas } from "./OpenUiAppCards";
 
 // Catalog v2: the shared definition in client-runtime bound to this app's zod and OpenUI.
 const title = z.string().max(LIMITS.title);
@@ -274,7 +275,7 @@ const Board = defineComponent({
   props: z.object({
     title,
     summary: z.string().max(LIMITS.summary),
-    panels: z.array(z.union([Treemap.ref, BarChart.ref, StackedArea.ref, Heatmap.ref])).min(1).max(LIMITS.panels),
+    panels: z.array(z.union([Treemap.ref, BarChart.ref, StackedArea.ref, Heatmap.ref, RideOptions.ref, MailList.ref, Route.ref, PullRequest.ref])).min(1).max(LIMITS.panels),
   }),
   component: function NativeBoard({ props, renderNode }) {
     return (
@@ -289,12 +290,13 @@ const Board = defineComponent({
   },
 });
 
-const library = createLibrary({ components: [Board, Treemap, BarChart, StackedArea, Heatmap], root: "Board" });
+const library = createLibrary({ components: [Board, Treemap, BarChart, StackedArea, Heatmap, RideOptions, MailList, Route, PullRequest], root: "Board" });
 const panelSchemas = {
   Treemap: (value: unknown) => treemapProps.safeParse(value),
   BarChart: (value: unknown) => barChartProps.safeParse(value),
   StackedArea: (value: unknown) => stackedAreaProps.safeParse(value),
   Heatmap: (value: unknown) => heatmapProps.safeParse(value),
+  ...appCardSchemas,
 };
 
 export function inspectOpenUiChart(code: string) {
