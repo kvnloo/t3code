@@ -36,6 +36,7 @@ import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlError from "effect/sql/SqlError";
 import * as Stream from "effect/Stream";
+import * as TestClock from "effect/testing/TestClock";
 
 import { toolOutputImages } from "@t3tools/shared/toolOutput";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
@@ -2360,4 +2361,80 @@ it.effect.each([
     );
     assert.isEmpty(persisted);
   }).pipe(Effect.provide(layerFailingWrites(errors))),
+);
+
+// PoH 04: the opt-in commit window must not change which events a run stores.
+it.effect("defers plain provider events without duplicating a node the window still holds", () =>
+  Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const eventSink = yield* EventSink.EventSinkV2;
+    const eventStore = yield* EventStore.EventStoreV2;
+    const ingestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
+    const idAllocator = yield* IdAllocator.IdAllocatorV2;
+    assert.isDefined(eventSink.writeDeferred);
+    const threadEvent = yield* threadCreatedEvent(now);
+    const threadId = threadEvent.threadId;
+    yield* eventSink.write({ events: [threadEvent] });
+    const providerSessionId = yield* idAllocator.allocate.providerSession({
+      providerInstanceId: modelSelection.instanceId,
+      threadId,
+    });
+    const nodeId = NodeId.make(`${threadId}:deferred`);
+    const node: OrchestrationV2ExecutionNode = {
+      id: nodeId,
+      threadId,
+      runId: null,
+      parentNodeId: null,
+      rootNodeId: nodeId,
+      kind: "approval_request",
+      status: "waiting",
+      countsForRun: false,
+      providerThreadId: null,
+      providerTurnId: null,
+      nativeItemRef: null,
+      runtimeRequestId: null,
+      checkpointScopeId: null,
+      startedAt: now,
+      completedAt: null,
+    };
+    const ingestNode = (sent: OrchestrationV2ExecutionNode) =>
+      ingestor.ingestNormalized({
+        deferCommit: true,
+        providerSessionId,
+        providerInstanceId: modelSelection.instanceId,
+        threadId,
+        event: { type: "node.updated", driver: CODEX_DRIVER, node: sent },
+      });
+    const nodeEvents = eventStore.read({ threadId }).pipe(
+      Stream.filter((stored) => stored.event.type === "node.updated"),
+      Stream.map((stored) => (stored.event.payload as OrchestrationV2ExecutionNode).status),
+      Stream.runCollect,
+      Effect.map((chunk) => Array.from(chunk)),
+    );
+
+    // Queued, not yet stored.
+    assert.isEmpty(yield* ingestNode(node));
+    assert.isEmpty(yield* nodeEvents);
+    // The resend compares with the queued node: the queue commits first, so it is skipped.
+    assert.isEmpty(yield* ingestNode({ ...node }));
+    assert.deepEqual(yield* nodeEvents, ["waiting"]);
+    assert.isEmpty(yield* ingestNode({ ...node, status: "completed", completedAt: now }));
+    assert.deepEqual(yield* nodeEvents, ["waiting"]);
+    yield* TestClock.adjust("50 millis");
+    assert.deepEqual(yield* nodeEvents, ["waiting", "completed"]);
+  }).pipe(
+    Effect.provide(
+      Layer.unwrap(
+        Effect.sync(() => {
+          process.env.T3CODE_EXPERIMENTAL_COMMIT_WINDOW_MS = "50";
+          return makeLayerTest(layerTestEventSink);
+        }),
+      ),
+    ),
+    Effect.ensuring(
+      Effect.sync(() => {
+        delete process.env.T3CODE_EXPERIMENTAL_COMMIT_WINDOW_MS;
+      }),
+    ),
+  ),
 );

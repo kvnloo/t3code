@@ -56,6 +56,7 @@ import {
 import * as RunFinalizationService from "./RunFinalizationService.ts";
 import * as TurnItemPositionStore from "./TurnItemPositionStore.ts";
 import { userFacingDatabaseErrorMessage } from "./UserFacingErrors.ts";
+import { experimentalCommitWindowMs } from "./commitWindow.ts";
 
 export interface ProviderEventRoutingState {
   readonly ownedThreadIds: ReadonlySet<ThreadId>;
@@ -611,6 +612,8 @@ export const layer: Layer.Layer<
     const eventSink = yield* EventSink.EventSinkV2;
     const idAllocator = yield* IdAllocator.IdAllocatorV2;
     const providerEventIngestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
+    // Experimental: queue this run's plain provider events for group commits (PoH 04).
+    const deferProviderCommits = experimentalCommitWindowMs() > 0;
     const serverSettings = yield* ServerSettings.ServerSettingsService;
     const mcpAppModelContext = yield* McpAppModelContext.McpAppModelContext;
     const previewAgentActivity = yield* PreviewAgentActivity.PreviewAgentActivity;
@@ -1430,6 +1433,7 @@ export const layer: Layer.Layer<
                   firstRootProviderTurnId ??= event.providerTurn.id;
                 }
                 const storedEvents = yield* providerEventIngestor.ingestNormalized({
+                  ...(deferProviderCommits ? { deferCommit: true } : {}),
                   analyticsContext: nativeChildTurn
                     ? {
                         ...analyticsContext,
