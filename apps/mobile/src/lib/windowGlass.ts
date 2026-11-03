@@ -59,6 +59,25 @@ const PANEL_VARIABLES = [
   "--color-sidebar-search",
 ] as const satisfies ReadonlyArray<keyof MobileThemeVariables>;
 
+/**
+ * `#RRGGBBAA`, the form runtime-scoped Uniwind variables accept (as Material You uses);
+ * `rgba()` strings are ignored there and the compiled opaque theme color wins.
+ */
+export function colorWithAlphaHex(color: string, alpha: number): string {
+  const native = themeColorToNativeColor(color).trim();
+  const hex = /^#([\da-f]{6})(?:[\da-f]{2})?$/iu.exec(native)?.[1];
+  const rgb = /^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/iu.exec(native);
+  const channels = hex
+    ? [0, 2, 4].map((offset) => Number.parseInt(hex.slice(offset, offset + 2), 16))
+    : rgb
+      ? [rgb[1], rgb[2], rgb[3]].map((channel) => Math.round(Number(channel)))
+      : null;
+  if (!channels) return color;
+  return `#${[...channels, Math.round(Math.min(1, Math.max(0, alpha)) * 255)]
+    .map((channel) => channel.toString(16).padStart(2, "0"))
+    .join("")}`;
+}
+
 export function applyWindowGlass(
   variables: MobileThemeVariables,
   plan: WindowGlassPlan | null,
@@ -67,10 +86,10 @@ export function applyWindowGlass(
   const next: Record<string, string> = { ...variables };
   const panelAlpha = Math.min(0.92, plan.tint + 0.2);
   for (const name of SCENE_VARIABLES) {
-    next[name] = themeColorWithAlpha(themeColorToNativeColor(variables[name]), plan.tint);
+    next[name] = colorWithAlphaHex(variables[name], plan.tint);
   }
   for (const name of PANEL_VARIABLES) {
-    next[name] = themeColorWithAlpha(themeColorToNativeColor(variables[name]), panelAlpha);
+    next[name] = colorWithAlphaHex(variables[name], panelAlpha);
   }
   return next as MobileThemeVariables;
 }
