@@ -129,3 +129,21 @@ store, verified in source). The matrix and its caveats live in `RESERVE` in `acc
 bench turns), `durable-after.json`, `run.json` (SHA, picks, host), `server-boot-*.log`, `bench.log`.
 `report.ts` writes p50/p95 tables and one ledger row per metric:
 `{experiment, sha, metric, unit, n, p50, p95, raw, at}`. Percentiles are nearest-rank.
+
+## Synthetic seed and the 04b cloud A/B
+
+Cloud runners never see real data. `synth-seed.ts generate` builds a public seed from scratch: a
+fresh T3 home, a fixed number of devReplay turns round-robin across a fixed set of threads, then a
+`VACUUM INTO` copy whose event-log prune mark is two days old (what a database that ran a #29806
+build for over a day carries). `synth-seed.ts doctor` runs a checkout's own `t3 doctor --fix` on a
+copy, so each base is benched on the event log its own maintenance leaves.
+
+```bash
+node bench/poh/synth-seed.ts generate --out seed.sqlite --threads 16 --turns 960 --concurrency 8
+node bench/poh/synth-seed.ts doctor --seed seed.sqlite --out seed-post.sqlite
+```
+
+`p04b-job.sh <pre sha> <label> <slot>...` is one runner's whole job, run from a checkout of
+`exp/poh/04b-post29806`: it installs both bases, runs the commit-window tests on each, builds the
+seed, runs `p04b-ab.sh` (pre/post × window off/25 ms, interleaved per slot) and pools the result
+with `p04b-ab.py` into `bench-out/<label>/`.
