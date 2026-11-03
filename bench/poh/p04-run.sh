@@ -15,8 +15,8 @@ wait_mem() {
   done
 }
 # The host's pressure-relief guard TERMs bench servers (disposable class) under memory pressure;
-# such a run is incomplete, so it is retried from scratch (at most 4 attempts).
-for attempt in 1 2 3 4; do
+# such a run is incomplete, so it is retried from scratch (at most 8 attempts).
+for attempt in 1 2 3 4 5 6 7 8; do
   wait_mem
   rm -rf "$out"
   echo "[$(date -Is)] start $(basename "$out") attempt $attempt (avail $(avail) GB)"
@@ -26,6 +26,6 @@ for attempt in 1 2 3 4; do
   echo "[$(date -Is)] end $(basename "$out") attempt $attempt exit=$code"
   [ $code -eq 0 ] && exit 0
   cp "$out.log" "$out.attempt$attempt.log"
-  sleep 120
+  sleep 30
 done
 exit $code
