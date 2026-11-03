@@ -53,6 +53,7 @@ import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
 import { splitTransferredFiles } from "./workspaceFileDrop";
 import { createModelSelection, normalizeModelSlug } from "@t3tools/shared/model";
 import { USAGE_LIMITS_COMMAND } from "@t3tools/shared/usageLimits";
+import { HANDOFF_COMMAND, pickedProviderCommandForDraft } from "@t3tools/shared/threadHandoff";
 import {
   memo,
   use,
@@ -339,6 +340,8 @@ export interface ChatComposerHandle {
     interactionMode: ProviderInteractionMode;
     interactionModeEnabled: boolean;
     shownPendingApprovalIds: ReadonlyArray<RuntimeRequestId>;
+    /** A provider command picked over a T3 built-in, while the prompt still starts with it. */
+    pickedProviderCommand: string | null;
   };
   validateProviderInput: (providerInput: string) => boolean;
   setMultipleModelSelections: (selections: ReadonlyArray<ModelSelection>) => void;
@@ -383,6 +386,9 @@ export interface ChatComposerProps {
   onUsageLimitsCommand?: (() => void) | undefined;
   sideChatAvailable?: boolean;
   sideChatDisabledReason?: string | null;
+  /** Offers `/handoff`; `handoffDisabledReason` says why it cannot run yet. */
+  handoffAvailable?: boolean;
+  handoffDisabledReason?: string | null;
   environmentUnavailable: {
     readonly label: string;
     readonly connection: EnvironmentConnectionPresentation;
@@ -606,6 +612,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   );
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const composerDraftTargetKey = composerTargetKey(composerDraftTarget);
+  // A provider command picked from the menu that shares its name with a T3 built-in.
+  const pickedProviderCommandRef = useRef<{ ownerKey: string | null; name: string } | null>(null);
   const {
     heldRequestIds,
     onDraftChange: onTypingGuardDraftChange,
@@ -1151,6 +1159,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     planModeUiEnabled,
     sideChatAvailable: props.sideChatAvailable === true,
     sideChatDisabledReason: props.sideChatDisabledReason ?? null,
+    handoffAvailable: props.handoffAvailable === true,
+    handoffDisabledReason: props.handoffDisabledReason ?? null,
     compactSlashCommandAvailable,
     selectedProvider,
     selectedProviderSkills,
@@ -1880,8 +1890,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         }
         return;
       }
-      if (item.command === "side" || item.command === "btw") {
-        if (props.sideChatDisabledReason) return;
+      if (item.command === "side" || item.command === "btw" || item.command === "handoff") {
+        if (item.command === "handoff") {
+          if (props.handoffDisabledReason) return;
+          pickedProviderCommandRef.current = null;
+        } else if (props.sideChatDisabledReason) return;
         const applied = applyPromptReplacement(
           trigger.rangeStart,
           trigger.rangeEnd,
@@ -1914,6 +1927,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         return;
       }
       const replacement = `/${item.command.name} `;
+      // Picking the provider's `/handoff` sends it to the provider instead of T3's.
+      pickedProviderCommandRef.current =
+        item.command.name.toLowerCase() === HANDOFF_COMMAND.name
+          ? { ownerKey: composerDraftTargetKey, name: item.command.name }
+          : null;
       const replacementRangeEnd = extendReplacementRangeForTrailingSpace(
         snapshot.value,
         trigger.rangeEnd,
@@ -3016,6 +3034,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         selectedProviderModels,
         interactionMode,
         interactionModeEnabled: planModeUiEnabled,
+        pickedProviderCommand: pickedProviderCommandForDraft({
+          picked: pickedProviderCommandRef.current,
+          ownerKey: composerDraftTargetKey,
+          draft: promptRef.current,
+        }),
       }),
       setMultipleModelSelections,
       validateProviderInput: (providerInput: string) => {

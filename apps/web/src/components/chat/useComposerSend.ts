@@ -57,6 +57,7 @@ import {
   parseSideChatCommand,
   parseStandaloneComposerSlashCommand,
 } from "../../composer-logic";
+import { resolveHandoffSend } from "@t3tools/shared/threadHandoff";
 import { resolvePlanFollowUpSubmission } from "../../proposedPlan";
 import { type ChatMessage } from "../../types";
 import { recordPromptSent } from "../GitHubStarPrompt";
@@ -245,6 +246,10 @@ interface ComposerSendInput {
   readonly onSideChat?: ((prompt: string) => Promise<boolean>) | undefined;
   /** Refuses `/side` with this reason and keeps the draft. */
   readonly sideChatDisabledReason: string | null;
+  /** Resolves true once `/handoff` opened its new thread. */
+  readonly onHandoff?: ((focus: string) => Promise<boolean>) | undefined;
+  /** Refuses `/handoff` with this reason and keeps the draft. */
+  readonly handoffDisabledReason?: string | null;
   readonly handleNewThreadInActiveProject: () => void;
   readonly persistThreadSettingsForNextTurn: (input: {
     threadId: ThreadId;
@@ -332,6 +337,8 @@ export function useComposerSend(input: ComposerSendInput) {
     handleInteractionModeChange,
     onSideChat,
     sideChatDisabledReason,
+    onHandoff,
+    handoffDisabledReason = null,
     handleNewThreadInActiveProject,
     persistThreadSettingsForNextTurn,
   } = input;
@@ -527,6 +534,52 @@ export function useComposerSend(input: ComposerSendInput) {
         currentRouteThreadKeyRef.current === routeThreadKey &&
         promptRef.current === promptAtSend
       ) {
+        promptRef.current = "";
+        setComposerDraftPrompt(composerDraftTarget, "");
+        composerRef.current?.resetCursorState();
+      }
+      return;
+    }
+    // `/handoff` text can still answer an open question; a provider `/handoff` picked from the
+    // menu goes to the provider as typed.
+    const handoffCommand =
+      sendCtx && !directAnnotation && !queuedRunEdit.isEditing
+        ? resolveHandoffSend({
+            text: promptAtSend,
+            pickedProviderCommand: sendCtx.pickedProviderCommand,
+          })
+        : null;
+    if (sendCtx && handoffCommand && onHandoff && !answeringQuestion) {
+      if (handoffDisabledReason !== null) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: "Handoff not started",
+            description: handoffDisabledReason,
+          }),
+        );
+        return;
+      }
+      if (
+        sendCtx.images.length > 0 ||
+        sendCtx.files.length > 0 ||
+        filterTerminalContextsWithText(sendCtx.terminalContexts).length > 0 ||
+        sendCtx.previewAnnotations.length > 0 ||
+        sendCtx.reviewComments.length > 0 ||
+        sendCtx.threadContexts.length > 0 ||
+        sendCtx.environmentContexts.length > 0
+      ) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: "Handoff takes text only",
+            description: "Remove the attachments and context, then send it again.",
+          }),
+        );
+        return;
+      }
+      const started = await onHandoff(handoffCommand.focus);
+      if (started && promptRef.current === promptAtSend) {
         promptRef.current = "";
         setComposerDraftPrompt(composerDraftTarget, "");
         composerRef.current?.resetCursorState();
