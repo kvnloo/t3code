@@ -20,6 +20,9 @@ const sources = {
   "appCardThemes.ts": "packages/client-runtime/src/appCardThemes.ts",
   "octicons.ts": "packages/client-runtime/src/octicons.ts",
   "app-cards.test.ts": "experiments/openui-lab/app-cards.test.ts",
+  "OpenUiGallery.tsx": "apps/web/src/components/chat/OpenUiGallery.tsx",
+  "openUiGallery.ts": "packages/client-runtime/src/openUiGallery.ts",
+  "gallery.test.ts": "experiments/openui-lab/gallery.test.ts",
   "report.test.ts": "experiments/openui-lab/report.test.ts",
   "charts.test.ts": "experiments/openui-lab/charts.test.ts",
   "source-demo-fences.md": "experiments/openui-lab/source-demo-fences.md",
@@ -33,10 +36,19 @@ const rewrites = [
   ["@t3tools/client-runtime/app-card-themes", "./appCardThemes"],
   ["@t3tools/client-runtime/octicons", "./octicons"],
   ["~/hooks/useTheme", "./useTheme"],
+  ["@t3tools/client-runtime/openui-gallery", "./openUiGallery"],
+  ["../../apps/web/src/components/chat/OpenUiGallery", "./OpenUiGallery"],
+  ["../../lib/utils", "./utils"],
+  ["../ui/dialog", "./dialog"],
+  ["./openUiImageSource", "./imageSource"],
 ];
 // SSR in plain Node has no bundler: fonts are dropped, images become their file names, the theme is light.
 const stubs = {
   "useTheme.ts": 'export const useRenderedAppearance = () => "light";\n',
+  // The host signs file paths through its asset route; SSR shows paths as given and no dialog.
+  "utils.ts": 'export const cn = (...values: unknown[]) => values.filter(Boolean).join(" ");\n',
+  "dialog.tsx": "export const Dialog = (_: any) => null;\nexport const DialogPopup = (_: any) => null;\nexport const DialogTitle = (_: any) => null;\n",
+  "imageSource.ts": 'export const useOpenUiImage = (source: string) => ({ status: "ready" as const, url: source });\n',
 };
 const bundlerOnly = /^import "@fontsource[^"]*";\n/gm;
 const assetImport = /^import (\w+) from "~\/assets\/[^"]*\/([^"/]+)";$/gm;
@@ -61,6 +73,7 @@ const dependencies = {
   zod: "4.1.12",
   react: "19.2.0",
   "react-dom": "19.2.0",
+  "lucide-react": "0.564.0",
   tsx: "4.20.6",
 };
 writeFileSync(
@@ -96,6 +109,7 @@ const result =
         "report.test.ts",
         "charts.test.ts",
         "app-cards.test.ts",
+        "gallery.test.ts",
       ])
     : install;
 writeFileSync(join(out, "smoke.log"), result.log);
