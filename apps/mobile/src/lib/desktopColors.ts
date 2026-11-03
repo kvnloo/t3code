@@ -126,3 +126,13 @@ export function desktopColorsToPalettes(colors: DesktopColors | null): MaterialY
   const palette = desktopColorsToPalette(colors);
   return { light: palette, dark: palette };
 }
+
+/** Whether a palette is a light or a dark scheme, from its surface (WCAG relative luminance). */
+export function paletteAppearance(palette: { readonly surface: string }): "light" | "dark" {
+  const [r, g, b] = channels(palette.surface).map((channel) => {
+    const value = channel / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  }) as [number, number, number];
+  // 0.179 is where black and white text have equal contrast on the surface.
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.179 ? "light" : "dark";
+}

@@ -26,12 +26,16 @@ import {
   type MaterialYouPalettes,
 } from "../../../lib/materialYouPalette";
 import { materialYouPaletteToMobileThemeVariables } from "../../../lib/materialYouTheme";
-import { desktopColorsToPalettes, parseDesktopColors } from "../../../lib/desktopColors";
 import {
-  applyWindowGlass,
+  desktopColorsToPalettes,
+  paletteAppearance,
+  parseDesktopColors,
+} from "../../../lib/desktopColors";
+import {
   normalizeWindowGlassMode,
+  resolveReadableTheme,
   resolveWindowGlassPlan,
-  windowGlassRootColor,
+  type ReadableTheme,
   type WindowGlassMode,
   type WindowGlassPlan,
 } from "../../../lib/windowGlass";
@@ -159,15 +163,20 @@ function resolveThemeVariablesByAppearance(
   themeIds: MobileThemeIds,
   palettes: Readonly<Record<"material-you" | "desktop", MaterialYouPalettes | null>>,
   glass: WindowGlassPlan | null,
-): Readonly<Record<MobileThemeAppearance, MobileThemeVariables>> {
+): Readonly<Record<MobileThemeAppearance, ReadableTheme>> {
   const resolve = (appearance: MobileThemeAppearance) => {
     const themeId = themeIds[appearance];
-    const base = getMobileThemeRuntimeVariables(themeId, appearance, Platform.OS);
     const palette = isMobilePaletteThemeId(themeId) ? palettes[themeId] : null;
+    // A desktop palette is one fixed scheme (pywal/Noctalia), light or dark on its own terms;
+    // map it with the tones of the scheme it is, not the phone's, or dark text lands on a dark
+    // surface.
+    const toneAppearance =
+      themeId === "desktop" && palette ? paletteAppearance(palette[appearance]) : appearance;
+    const base = getMobileThemeRuntimeVariables(themeId, toneAppearance, Platform.OS);
     const variables = palette
-      ? materialYouPaletteToMobileThemeVariables(palette[appearance], appearance, base)
+      ? materialYouPaletteToMobileThemeVariables(palette[appearance], toneAppearance, base)
       : base;
-    return applyWindowGlass(variables, glass);
+    return resolveReadableTheme(variables, glass);
   };
   return { light: resolve("light"), dark: resolve("dark") };
 }
@@ -290,20 +299,17 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
   const windowGlass = useAtomValue(windowGlassModeAtom);
   const windowGlassBlurSupported = useAtomValue(windowGlassBlurSupportedAtom);
   const windowGlassPlan = resolveWindowGlassPlan(windowGlass, windowGlassBlurSupported);
-  const themeVariablesByAppearance = resolveThemeVariablesByAppearance(
+  const readableThemes = resolveThemeVariablesByAppearance(
     themeIds,
     { "material-you": systemColorPalettes, desktop: desktopColorPalettes },
     windowGlassPlan,
   );
+  const themeVariablesByAppearance = {
+    light: readableThemes.light.variables,
+    dark: readableThemes.dark.variables,
+  };
   const themeVariables = themeVariablesByAppearance[themeAppearance];
-  const glassRootColor = windowGlassRootColor(
-    resolveThemeVariablesByAppearance(
-      themeIds,
-      { "material-you": systemColorPalettes, desktop: desktopColorPalettes },
-      null,
-    )[themeAppearance],
-    windowGlassPlan,
-  );
+  const glassRootColor = readableThemes[themeAppearance].glassRootColor;
   const activeThemeName = getMobileUniwindThemeName(themeId, themeAppearance);
   const { baseFontSize, codeFontSize, codeWordBreak, terminalFontSize } = preferences;
   const appearance = useMemo(

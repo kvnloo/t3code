@@ -1,4 +1,9 @@
 import { themeColorToNativeColor, type MobileThemeVariables } from "./mobileTheme";
+import {
+  enforceTextContrast,
+  minimumTextContrast,
+  TEXT_CONTRAST_MINIMUM,
+} from "./themeContrastAudit";
 
 /**
  * See-through app background (Android): the wallpaper, live wallpapers included, shows behind
@@ -94,4 +99,74 @@ export function windowGlassRootColor(
   plan: WindowGlassPlan | null,
 ): string | undefined {
   return plan ? colorWithAlphaHex(variables["--color-screen"], plan.tint) : undefined;
+}
+
+// Primary text roles drawn straight on the tint. The tint must make these read on their own:
+// secondary roles are then nudged toward them (`enforceTextContrast`) rather than thickening the
+// glass for every faint label.
+const PRIMARY_TEXT_ROLES = [
+  "--color-foreground",
+  "--color-header-foreground",
+  "--color-drawer-foreground",
+] as const satisfies ReadonlyArray<keyof MobileThemeVariables>;
+
+/**
+ * Wallpaper detail behind unblurred glass is sharp, so body text gets AAA (7:1) there; behind a
+ * real blur AA (4.5:1) reads as well as on a solid color.
+ */
+function primaryTextTarget(plan: WindowGlassPlan): number {
+  return plan.blurDp > 0 ? TEXT_CONTRAST_MINIMUM : 7;
+}
+
+/**
+ * Raises the tint just enough that primary text reads over any wallpaper, pure white and pure
+ * black included (live wallpapers and photos can be either under any given line of text).
+ * The mode's own tint is the floor, so darker wallpapers never get a thinner tint than asked for.
+ */
+export function readableWindowGlassPlan(
+  variables: MobileThemeVariables,
+  plan: WindowGlassPlan | null,
+): WindowGlassPlan | null {
+  if (!plan) return null;
+  const target = primaryTextTarget(plan);
+  const reads = (tint: number) => {
+    const candidate = { ...plan, tint };
+    return (
+      minimumTextContrast(applyWindowGlass(variables, candidate), PRIMARY_TEXT_ROLES, {
+        glassRootColor: windowGlassRootColor(variables, candidate),
+      }) >= target
+    );
+  };
+  if (reads(plan.tint)) return plan;
+  let low = plan.tint;
+  let high = 1;
+  for (let step = 0; step < 16; step += 1) {
+    const middle = (low + high) / 2;
+    if (reads(middle)) high = middle;
+    else low = middle;
+  }
+  return { ...plan, tint: Math.ceil(high * 100) / 100 };
+}
+
+export interface ReadableTheme {
+  readonly variables: MobileThemeVariables;
+  /** The tint painted over the wallpaper at the root; undefined for a solid window. */
+  readonly glassRootColor: string | undefined;
+}
+
+/**
+ * The theme as painted: glass applied with a readable tint, then every text role checked against
+ * every background it sits on (and, through glass, against black and white wallpaper) and moved
+ * just far enough to reach 4.5:1 where it falls short.
+ */
+export function resolveReadableTheme(
+  variables: MobileThemeVariables,
+  plan: WindowGlassPlan | null,
+): ReadableTheme {
+  const readablePlan = readableWindowGlassPlan(variables, plan);
+  const glassRootColor = windowGlassRootColor(variables, readablePlan);
+  return {
+    variables: enforceTextContrast(applyWindowGlass(variables, readablePlan), { glassRootColor }),
+    glassRootColor,
+  };
 }
