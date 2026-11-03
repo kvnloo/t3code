@@ -193,6 +193,18 @@ such as another drive, set **Settings → Worktrees → Worktree location** to a
 `D:\worktrees` or `~/worktrees`. The setting is per machine. Existing worktrees stay where they
 are, and cleanup covers both the default folder and the custom one.
 
+## Worktree templates
+
+**Settings → Worktrees → Advanced → Clone new worktrees from templates** is off by default. When
+it is on and the worktree folder's filesystem supports copy-on-write clones (APFS, Btrfs, XFS),
+T3 keeps a template of a worktree after its setup script succeeds: the files at its commit plus
+its `node_modules`. A new worktree whose lockfiles match a template is cloned from it, and its
+setup script then finds the dependencies already installed. Progress shows as the checkout step.
+T3 checks the filesystem once per worktree folder and keeps the two most recent templates per
+repository in a `.t3-templates` folder beside the worktrees. Anywhere clones are unsupported, or
+if a clone fails, worktrees are created as usual. Turning the setting off deletes the templates
+the next time that repository gets a worktree.
+
 ## Storage cleanup
 
 Open **Settings → Worktrees → Cleanup** to enable automatic cleanup on one machine or all connected

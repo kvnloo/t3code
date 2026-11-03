@@ -230,6 +230,17 @@ const make = Effect.gen(function* () {
         cause,
       });
 
+  // A worktree whose setup succeeded seeds later ones with the same lockfiles, off the launch's path.
+  const captureWorktreeTemplate = (worktreePath: string) =>
+    serverSettings.getSettings.pipe(
+      Effect.flatMap((settings) =>
+        settings.enableWorktreeTemplates ? git.captureWorktreeTemplate(worktreePath) : Effect.void,
+      ),
+      Effect.ignore,
+      Effect.forkIn(preparationScope),
+      Effect.asVoid,
+    );
+
   const readReceipt = (input: ThreadLaunchInput, commandId: CommandId) =>
     receipts
       .getByCommandId(commandId)
@@ -606,12 +617,15 @@ const make = Effect.gen(function* () {
           },
         }));
         if (setup.completion) {
+          const createdHere = createdWorktreePath;
           const awaitCompletion = Effect.gen(function* () {
             const completion = yield* setup.completion!;
             yield* setupTracker.stage(threadId, "setup-script", {
               status: completion.exitCode === 0 ? "done" : "failed",
               detail: `exited with ${completion.exitCode ?? "no exit code"}`,
             });
+            if (completion.exitCode === 0 && createdHere !== null)
+              yield* captureWorktreeTemplate(createdHere);
             if (completion.exitCode !== 0 && !setup.async)
               return yield* mapError(
                 input,

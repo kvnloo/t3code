@@ -250,6 +250,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["worktree location folder directory path drive external disk"],
   },
   {
+    id: "worktree-templates",
+    title: "Clone new worktrees from templates",
+    to: "/settings/worktrees",
+    scope: "environment-defaults",
+    searchTerms: [
+      "cow reflink clonefile apfs btrfs xfs template node_modules install setup fast worktree",
+    ],
+  },
+  {
     id: "storage-artifacts",
     title: "Artifacts and logs",
     to: "/settings/maintenance",

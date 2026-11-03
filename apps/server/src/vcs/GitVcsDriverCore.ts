@@ -45,6 +45,7 @@ import * as GitVcsDriver from "./GitVcsDriver.ts";
 import { removeEmptyDirectory } from "./removeEmptyDirectory.ts";
 import { explicitBareRepositoryEnv, gitConfigEnv } from "./VcsProcess.ts";
 import { removeLinkedWorktree } from "./worktreeRemoval.ts";
+import { makeWorktreeTemplates } from "./worktreeTemplates.ts";
 import { resolveWorktreesDirectory } from "../worktreesDirectory.ts";
 import {
   parseRemoteNames,
@@ -1233,6 +1234,10 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         result.stdoutTruncated ? `${result.stdout}${OUTPUT_TRUNCATED_MARKER}` : result.stdout,
       ),
     );
+
+  const templates = yield* makeWorktreeTemplates((operation, cwd, args, options) =>
+    runGitStdoutWithOptions(operation, cwd, args, options),
+  );
 
   const branchExists = (cwd: string, refName: string): Effect.Effect<boolean, GitCommandError> =>
     executeGit(
@@ -4157,7 +4162,18 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         "git worktree add failed",
       );
     }
-    const args = ["worktree", "add", "--", worktreePath, input.newRefName ?? input.refName];
+    if (options?.worktreeTemplates === false) yield* templates.removeAll(worktreePath);
+    const template = options?.worktreeTemplates
+      ? yield* templates.find({ cwd: input.cwd, refName: input.refName, worktreePath })
+      : null;
+    const args = [
+      "worktree",
+      "add",
+      ...(template ? ["--no-checkout"] : []),
+      "--",
+      worktreePath,
+      input.newRefName ?? input.refName,
+    ];
     const progress = options?.progress;
     const onCheckoutProgress = progress?.onCheckoutProgress;
 
@@ -4199,6 +4215,26 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
 
     if (progress?.onWorktreeClaimed) {
       yield* progress.onWorktreeClaimed(worktreePath);
+    }
+    if (template) {
+      yield* templates.clone(template, worktreePath, onCheckoutProgress).pipe(
+        Effect.catch((cause) =>
+          Effect.logWarning("worktree template clone failed; checking out instead", {
+            worktreePath,
+            cause,
+          }).pipe(
+            Effect.andThen(templates.clear(worktreePath)),
+            Effect.andThen(
+              runGit(
+                "GitVcsDriver.createWorktree.checkout",
+                worktreePath,
+                ["-c", `checkout.workers=${checkoutWorkers}`, "reset", "--hard", "-q"],
+                { timeoutMs: null },
+              ),
+            ),
+          ),
+        ),
+      );
     }
 
     // worktree add leaves submodules empty, potentially omitting project skills, tools or source.
@@ -4986,6 +5022,17 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         Effect.ensuring(invalidateWorktreeCreationCaches(input.cwd)),
       );
     }),
+    captureWorktreeTemplate: Effect.fn("GitVcsDriver.captureWorktreeTemplate")(
+      function* (worktreePath) {
+        yield* templates
+          .capture(worktreePath)
+          .pipe(
+            Effect.catch((cause) =>
+              Effect.logWarning("worktree template capture skipped", { worktreePath, cause }),
+            ),
+          );
+      },
+    ),
     fetchRefIntoBranch: Effect.fnUntraced(function* (input) {
       return yield* withListRefsInvalidation(input.cwd, fetchRefIntoBranch(input));
     }),
