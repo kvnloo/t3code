@@ -514,6 +514,10 @@
     "./openui-charts": {
       "types": "./src/openUiCharts.ts",
       "default": "./src/openUiCharts.ts"
+    },
+    "./app-connectors": {
+      "types": "./src/appConnectors.ts",
+      "default": "./src/appConnectors.ts"
     }
   },
   "scripts": {

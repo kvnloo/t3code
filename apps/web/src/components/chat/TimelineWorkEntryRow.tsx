@@ -16,6 +16,7 @@ import { Link } from "@tanstack/react-router";
 import { notificationChildThreadId } from "@t3tools/client-runtime/state/thread-execution";
 import {
   resolveViewedImageAsset,
+  resolveWorkEntryAppActivity,
   toolGroupAction,
   workEntryViewedImagePath,
 } from "@t3tools/client-runtime/work-log/presentation";
@@ -23,6 +24,7 @@ import {
   turnItemHasDetail,
   turnItemNeedsDetailFetch,
 } from "@t3tools/client-runtime/work-log/item-detail";
+import type { AppBrand } from "@t3tools/client-runtime/app-connectors";
 import { claudeSkillInvocation } from "@t3tools/shared/toolActivity";
 import { memo, use, useState, type KeyboardEvent } from "react";
 import {
@@ -278,6 +280,8 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       ? undefined
       : (workEntry.toolIcon ?? workEntry.toolSource?.icon);
   const isReasoning = workEntry.itemType === "reasoning";
+  const appActivity =
+    showWarningIndicator || showDestructiveRowStyle ? null : resolveWorkEntryAppActivity(workEntry);
   const questionHeading = workEntry.questionAnswer
     ? getQuestionTextPreview(workEntry.questionAnswer)
     : "";
@@ -286,7 +290,9 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       ? workEntry.toolLifecycleStatus === "inProgress"
         ? "Thinking"
         : "Thought"
-      : questionHeading || (displayLabel ?? workEntryDisplayLabel(workEntry, workspaceRoot));
+      : appActivity
+        ? [appActivity.label, appActivity.detail].filter(Boolean).join(" · ")
+        : questionHeading || (displayLabel ?? workEntryDisplayLabel(workEntry, workspaceRoot));
   const answerPreview =
     workEntry.questionAnswer && hasQuestionAnswer(workEntry.questionAnswer)
       ? getQuestionAnswerPreview(workEntry.questionAnswer)
@@ -395,18 +401,22 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
       data-v2-item-visibility={workEntry.projectedItem?.visibility}
       {...rowToggleProps}
       icon={
-        <span
-          className={iconWrapperClass}
-          role={showFailedIndicator ? "img" : undefined}
-          aria-label={showFailedIndicator ? "Tool call failed" : undefined}
-        >
-          <ToolActivityIconView
-            icon={entryToolIcon}
-            fallbackName={entryIconName}
-            className="block size-4 shrink-0 stroke-2"
-            muted
-          />
-        </span>
+        appActivity ? (
+          <AppActivityMark brand={appActivity.brand} />
+        ) : (
+          <span
+            className={iconWrapperClass}
+            role={showFailedIndicator ? "img" : undefined}
+            aria-label={showFailedIndicator ? "Tool call failed" : undefined}
+          >
+            <ToolActivityIconView
+              icon={entryToolIcon}
+              fallbackName={entryIconName}
+              className="block size-4 shrink-0 stroke-2"
+              muted
+            />
+          </span>
+        )
       }
       label={
         <div className="min-w-0 flex-1 overflow-hidden">
@@ -558,6 +568,24 @@ function WorkEntryLogRow(props: WorkEntryRowProps) {
         </WorkLogDetails>
       ) : null}
     </WorkLogRow>
+  );
+}
+
+/** Brand monogram for tools from a known app (Gmail, Uber, Maps, ...); no logos are bundled. */
+function AppActivityMark({ brand }: { brand: AppBrand }) {
+  return (
+    <span
+      role="img"
+      aria-label={brand.name}
+      className="flex size-4 shrink-0 items-center justify-center rounded-sm font-bold leading-none"
+      style={{
+        backgroundColor: brand.color,
+        color: brand.onColor,
+        fontSize: brand.mark.length > 1 ? 7 : 10,
+      }}
+    >
+      {brand.mark}
+    </span>
   );
 }
 
