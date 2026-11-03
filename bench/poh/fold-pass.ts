@@ -18,7 +18,9 @@ const { values: args } = NodeUtil.parseArgs({
     seed: { type: "string" },
     out: { type: "string" },
     "server-env": { type: "string", multiple: true, default: [] },
-    "window-s": { type: "string", default: "240" },
+    "window-s": { type: "string", default: "600" },
+    // On arm: stop this long after the fold ends (window-s stays the cap).
+    "after-fold-s": { type: "string", default: "60" },
     "probe-ms": { type: "string", default: "250" },
   },
 });
@@ -31,6 +33,9 @@ const serverEnv = Object.fromEntries(
 );
 const WINDOW_MS = Number(args["window-s"]) * 1000;
 const PROBE_MS = Number(args["probe-ms"]);
+const AFTER_FOLD_MS = Number(args["after-fold-s"]) * 1000;
+const running = () =>
+  rel() < WINDOW_MS && (pass.foldEnd === undefined || rel() < pass.foldEnd + AFTER_FOLD_MS);
 const sha = NodeChildProcess.execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: repoRoot,
   encoding: "utf8",
@@ -179,22 +184,28 @@ try {
 
   // WebSocket sessions expire after 5 minutes (SessionStore), so the probe reconnects every 30 s
   // and each turn opens its own socket, as a long-lived client re-authenticates.
+  // A dropped socket (WebSocket sessions expire after 5 minutes) is recorded and reconnected,
+  // as a client does; the probe also reconnects every 30 s.
   const probe = (async () => {
     let i = 0;
     while (!state.stopped) {
       const rpc = await connect();
       const opened = performance.now();
-      while (!state.stopped && performance.now() - opened < 30_000) {
-        const started = performance.now();
-        const at = rel();
-        await rpc.call("orchestration.dispatchCommand", {
-          type: "thread.visit",
-          commandId: NodeCrypto.randomUUID(),
-          threadId,
-          visitedAt: new Date().toISOString(),
-        });
-        record({ kind: "probe", i: i++, at, ms: performance.now() - started });
-        await sleep(Math.max(0, PROBE_MS - (performance.now() - started)));
+      try {
+        while (!state.stopped && performance.now() - opened < 30_000) {
+          const started = performance.now();
+          const at = rel();
+          await rpc.call("orchestration.dispatchCommand", {
+            type: "thread.visit",
+            commandId: NodeCrypto.randomUUID(),
+            threadId,
+            visitedAt: new Date().toISOString(),
+          });
+          record({ kind: "probe", i: i++, at, ms: performance.now() - started });
+          await sleep(Math.max(0, PROBE_MS - (performance.now() - started)));
+        }
+      } catch (error) {
+        record({ kind: "socket-error", source: "probe", at: rel(), error: String(error) });
       }
       await rpc.close();
     }
@@ -217,31 +228,40 @@ try {
 
   await driver.close();
   let turn = 0;
-  while (rel() < WINDOW_MS) {
+  while (running()) {
     const turnSocket = await connect();
     const at = rel();
     const started = performance.now();
-    await turnSocket.call("orchestration.dispatchCommand", {
-      type: "message.dispatch",
-      commandId: NodeCrypto.randomUUID(),
-      threadId,
-      messageId: NodeCrypto.randomUUID(),
-      text: `Pass turn ${++turn}`,
-      attachments: [],
-      createdBy: "user",
-      creationSource: "web",
-      dispatchMode: { type: "start_immediately" },
-    });
-    const runs = await waitForRuns(turnSocket, threadId, ++runCount);
+    try {
+      await turnSocket.call("orchestration.dispatchCommand", {
+        type: "message.dispatch",
+        commandId: NodeCrypto.randomUUID(),
+        threadId,
+        messageId: NodeCrypto.randomUUID(),
+        text: `Pass turn ${++turn}`,
+        attachments: [],
+        createdBy: "user",
+        creationSource: "web",
+        dispatchMode: { type: "start_immediately" },
+      });
+      runCount += 1;
+      const runs = await waitForRuns(turnSocket, threadId, runCount);
+      record({
+        kind: "turn",
+        turn,
+        at,
+        end: rel(),
+        ms: performance.now() - started,
+        status: [...runs.values()].at(-1),
+      });
+    } catch (error) {
+      record({ kind: "socket-error", source: "turn", turn, at: rel(), error: String(error) });
+      // The dispatched run may still be going; wait for it on a fresh socket before the next turn.
+      const recover = await connect();
+      runCount = (await waitForRuns(recover, threadId, 1)).size;
+      await recover.close();
+    }
     await turnSocket.close();
-    record({
-      kind: "turn",
-      turn,
-      at,
-      end: rel(),
-      ms: performance.now() - started,
-      status: [...runs.values()].at(-1),
-    });
   }
   state.stopped = true;
   await Promise.all([watchLog, probe, cpu]);

@@ -34,8 +34,8 @@ export class WsRpc {
       });
     });
     this.socket.addEventListener("message", (event) => this.onMessage(event.data));
-    this.socket.addEventListener("close", () => {
-      this.closedError = new Error("websocket closed");
+    this.socket.addEventListener("close", (event) => {
+      this.closedError = new Error(`websocket closed (${event.code} ${event.reason})`);
       for (const pending of this.pending.values()) pending.reject(this.closedError);
       this.pending.clear();
     });
