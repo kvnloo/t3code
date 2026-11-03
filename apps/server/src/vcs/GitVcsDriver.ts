@@ -144,6 +144,8 @@ export interface CreateWorktreeOptions {
   /** Null or omitted defers to the checkout's t3.json. */
   readonly submodules?: WorktreeSubmodules | null;
   readonly worktreesDirectory?: string;
+  /** Clone a captured copy-on-write template when one matches; false also removes the templates. */
+  readonly worktreeTemplates?: boolean;
 }
 
 export interface GitCommitProgress {
@@ -422,6 +424,8 @@ export class GitVcsDriver extends Context.Service<
     readonly removeWorktree: (
       input: VcsRemoveWorktreeInput,
     ) => Effect.Effect<void, GitCommandError>;
+    /** Keeps this set-up worktree as the template for its lockfiles; logs and skips on any failure. */
+    readonly captureWorktreeTemplate: (worktreePath: string) => Effect.Effect<void>;
     readonly pruneWorktrees: (input: {
       readonly cwd: string;
     }) => Effect.Effect<void, GitCommandError>;

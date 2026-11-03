@@ -113,6 +113,7 @@ export class GitWorkflowService extends Context.Service<
     readonly removeWorktree: (
       input: VcsRemoveWorktreeInput,
     ) => Effect.Effect<void, GitCommandError>;
+    readonly captureWorktreeTemplate: (worktreePath: string) => Effect.Effect<void>;
     readonly pruneWorktrees: (input: {
       readonly cwd: string;
     }) => Effect.Effect<void, GitCommandError>;
@@ -461,6 +462,7 @@ export const make = Effect.gen(function* () {
         Effect.andThen(git.removeWorktree(input)),
       );
     }),
+    captureWorktreeTemplate: git.captureWorktreeTemplate,
     pruneWorktrees: Effect.fn("GitWorkflowService.pruneWorktrees")(function (input) {
       return ensureGitCommand("GitWorkflowService.pruneWorktrees", input.cwd).pipe(
         Effect.andThen(git.pruneWorktrees(input)),

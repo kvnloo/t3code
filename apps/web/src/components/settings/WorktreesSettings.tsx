@@ -51,6 +51,37 @@ function StartFromRemoteRow() {
   );
 }
 
+function TemplateClonesRow() {
+  const settings = useScopedSettings();
+  const updateSettings = useUpdateScopedSettings();
+  return (
+    <SettingsRow
+      serverScoped
+      settingKeys={["enableWorktreeTemplates"]}
+      {...searchableSetting("worktree-templates")}
+      description="After a worktree's setup succeeds, keeps a copy-on-write copy of its files and node_modules. New worktrees with the same lockfiles clone it, so setup has little left to install. Needs a filesystem with clones (APFS, Btrfs, XFS); elsewhere worktrees are created as usual."
+      resetAction={
+        settings.enableWorktreeTemplates ? (
+          <SettingResetButton
+            label="worktree templates"
+            onClick={() => updateSettings({ enableWorktreeTemplates: false })}
+          />
+        ) : null
+      }
+      control={
+        <ScopedSwitch
+          settingKeys={["enableWorktreeTemplates"]}
+          checked={settings.enableWorktreeTemplates}
+          onCheckedChange={(checked) =>
+            updateSettings({ enableWorktreeTemplates: Boolean(checked) })
+          }
+          aria-label="Clone new worktrees from templates"
+        />
+      }
+    />
+  );
+}
+
 export function WorktreesSettingsPanel() {
   const { scope } = useSettingsScope();
   const isProjectScope = scope.kind === "project" || scope.kind === "checkout";
@@ -60,8 +91,14 @@ export function WorktreesSettingsPanel() {
       <SettingsSection id="worktree-creation" title="Creation">
         {!isProjectScope && <WorktreesDirectoryRow />}
         <StartFromRemoteRow />
-        <AdvancedSettings targetIds={[searchableSetting("worktree-submodules").id]}>
+        <AdvancedSettings
+          targetIds={[
+            searchableSetting("worktree-submodules").id,
+            searchableSetting("worktree-templates").id,
+          ]}
+        >
           <WorktreeSubmodulesRow />
+          {!isProjectScope && <TemplateClonesRow />}
         </AdvancedSettings>
       </SettingsSection>
       <SettingsSection id="worktree-branches" title="Branches">
