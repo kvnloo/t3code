@@ -3,7 +3,8 @@ import type { ExpoConfig } from "expo/config";
 import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 
-type AppVariant = "development" | "preview" | "production";
+// `nightly` is a fork-only dogfood channel that installs beside preview and production.
+type AppVariant = "development" | "nightly" | "preview" | "production";
 
 const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
@@ -84,6 +85,14 @@ const VARIANT_CONFIG = {
     relyingParty: "clerk.t3.codes",
     assets: DEVELOPMENT_ASSETS,
   },
+  nightly: {
+    appName: "T3 Code Nightly",
+    scheme: "t3code-nightly",
+    iosBundleIdentifier: "com.t3tools.t3code.nightly",
+    androidPackage: "com.t3tools.t3code.nightly",
+    relyingParty: "clerk.t3.codes",
+    assets: DEVELOPMENT_ASSETS,
+  },
   preview: {
     appName: "T3 Code Preview",
     scheme: "t3code-preview",
@@ -105,13 +114,14 @@ const VARIANT_CONFIG = {
 function resolveAppVariant(value: string | undefined): AppVariant {
   switch (value) {
     case "development":
+    case "nightly":
     case "preview":
     case "production":
       return value;
     case undefined:
       return "production";
     default:
-      throw new Error("APP_VARIANT must be development, preview, or production.");
+      throw new Error("APP_VARIANT must be development, nightly, preview, or production.");
   }
 }
 

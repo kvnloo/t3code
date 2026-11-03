@@ -21,13 +21,14 @@ async function loadConfig(variant: string | undefined) {
 
 it.each(["prod", ""])("rejects APP_VARIANT=%j before selecting production IDs", async (value) => {
   await expect(loadConfig(value)).rejects.toThrow(
-    "APP_VARIANT must be development, preview, or production.",
+    "APP_VARIANT must be development, nightly, preview, or production.",
   );
 });
 
 it.each([
   [undefined, "com.t3tools.t3code"],
   ["development", "com.t3tools.t3code.dev"],
+  ["nightly", "com.t3tools.t3code.nightly"],
   ["preview", "com.t3tools.t3code.preview"],
   ["production", "com.t3tools.t3code"],
 ])("keeps the iOS and Android identifiers for APP_VARIANT=%j", async (value, identifier) => {
