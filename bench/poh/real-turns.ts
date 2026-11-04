@@ -41,6 +41,8 @@ const { values: args } = NodeUtil.parseArgs({
     "batch-offset": { type: "string", default: "0" },
     "turn-timeout": { type: "string", default: "600" },
     "server-env": { type: "string", multiple: true, default: [] },
+    // Bench-home settings.json, e.g. '{"providerInstances":{"grok":{"driver":"grok","enabled":true}}}'.
+    settings: { type: "string" },
     probe: { type: "boolean", default: false },
     "keep-home": { type: "boolean", default: false },
   },
@@ -168,7 +170,8 @@ const serverEnv: Record<string, string> = Object.fromEntries(
     return [entry.slice(0, at), entry.slice(at + 1)];
   }),
 );
-if (args.seed === undefined || args.out === undefined) throw new Error("--seed and --out are required");
+if (args.seed === undefined || args.out === undefined)
+  throw new Error("--seed and --out are required");
 const out = NodePath.resolve(args.out);
 NodeFS.mkdirSync(out, { recursive: true });
 let ioTapDir: string | undefined;
@@ -207,7 +210,7 @@ function log(message: string) {
 function providerPath(): string {
   const wrappers = NodePath.join(t3Home, "provider-bin");
   NodeFS.mkdirSync(wrappers, { recursive: true });
-  for (const name of ["claude", "codex"]) {
+  for (const name of ["claude", "codex", "grok", "hermes"]) {
     const resolved = NodeChildProcess.spawnSync("sh", ["-c", `command -v ${name}`], {
       encoding: "utf8",
     }).stdout.trim();
@@ -225,7 +228,13 @@ function providerPath(): string {
 function cliVersions() {
   const version = (name: string) =>
     NodeChildProcess.spawnSync(name, ["--version"], { encoding: "utf8" }).stdout?.trim() || null;
-  return { claude: version("claude"), codex: version("codex"), node: process.version };
+  return {
+    claude: version("claude"),
+    codex: version("codex"),
+    grok: version("grok"),
+    hermes: version("hermes")?.split("\n")[0] ?? null,
+    node: process.version,
+  };
 }
 
 interface Session {
@@ -286,14 +295,24 @@ function describeProviders(providers: ReadonlyArray<Record<string, any>>) {
   }));
 }
 
-/** Waits until the provider probe for `instanceId` has finished (ready, or a settled failure). */
-async function providerSnapshot(rpc: WsRpc, instanceId: string | undefined, timeoutMs = 120_000) {
+/** Waits until the provider `instanceId` is ready and, when given, offers `model`. */
+async function providerSnapshot(
+  rpc: WsRpc,
+  instanceId: string | undefined,
+  timeoutMs = 120_000,
+  model?: string,
+) {
   const started = performance.now();
   for (;;) {
     const config = (await rpc.call<Record<string, any>>("server.getConfig", {})).value;
     const providers = (config.providers ?? []) as Array<Record<string, any>>;
     const target = providers.find((p) => p.instanceId === instanceId);
-    if (instanceId === undefined || target?.status === "ready") return { providers, target };
+    const offered =
+      model === undefined ||
+      (target?.models ?? []).some((m: Record<string, any>) => m.slug === model);
+    if (instanceId === undefined || (target?.status === "ready" && offered)) {
+      return { providers, target };
+    }
     if (performance.now() - started > timeoutMs) {
       throw new Error(
         `provider ${instanceId} not ready: ${JSON.stringify(describeProviders(providers).find((p) => p.instanceId === instanceId) ?? null)}`,
@@ -358,49 +377,76 @@ function summarizeArrivals(all: ReadonlyArray<LiveArrival>, dispatchedAt: number
  */
 function watchThread(rpc: WsRpc, threadId: string) {
   const runs = new Map<string, string>();
+  // The last run payload, kept so a failed turn records why it failed.
+  let lastRun: Record<string, unknown> | undefined;
   const arrivals: Array<LiveArrival> = [];
   const ready = Promise.withResolvers<void>();
   let settledAt = 0;
-  const { done } = rpc.stream("orchestration.subscribeThread", { threadId, requestCompletionMarker: true }, (values) => {
-    const at = Date.now();
-    for (const value of values as Array<Record<string, any>>) {
-      if (value.kind === "synchronized") ready.resolve();
-      if (value.kind === "event" && value.event !== undefined) {
-        const event = value.event;
-        const occurredAt = Date.parse(String(event.occurredAt));
-        arrivals.push({
-          at,
-          lagMs: Number.isFinite(occurredAt) ? at - occurredAt : NaN,
-          assistant:
-            (event.type === "message.updated" && event.payload?.role === "assistant") ||
-            (event.type === "turn-item.updated" &&
-              (event.payload?.type === "assistant_message" || event.payload?.type === "reasoning")),
-        });
-        if (event.type === "run.updated") runs.set(event.payload.id, event.payload.status);
-      } else if (value.kind === "snapshot") {
-        for (const run of value.projection.runs ?? []) runs.set(run.id, run.status);
+  const { done } = rpc.stream(
+    "orchestration.subscribeThread",
+    { threadId, requestCompletionMarker: true },
+    (values) => {
+      const at = Date.now();
+      for (const value of values as Array<Record<string, any>>) {
+        if (value.kind === "synchronized") ready.resolve();
+        if (value.kind === "event" && value.event !== undefined) {
+          const event = value.event;
+          const occurredAt = Date.parse(String(event.occurredAt));
+          arrivals.push({
+            at,
+            lagMs: Number.isFinite(occurredAt) ? at - occurredAt : NaN,
+            assistant:
+              (event.type === "message.updated" && event.payload?.role === "assistant") ||
+              (event.type === "turn-item.updated" &&
+                (event.payload?.type === "assistant_message" ||
+                  event.payload?.type === "reasoning")),
+          });
+          if (event.type === "run.updated") {
+            runs.set(event.payload.id, event.payload.status);
+            lastRun = event.payload;
+          }
+        } else if (value.kind === "snapshot") {
+          for (const run of value.projection.runs ?? []) runs.set(run.id, run.status);
+        }
       }
-    }
-    const settled = runs.size >= 1 && [...runs.values()].every((status) => TERMINAL_RUN.has(status));
-    if (settled) settledAt = Date.now();
-    return settled;
-  });
+      const settled =
+        runs.size >= 1 && [...runs.values()].every((status) => TERMINAL_RUN.has(status));
+      if (settled) settledAt = Date.now();
+      return settled;
+    },
+  );
   done.catch((error: unknown) => ready.reject(error));
   let timer: NodeJS.Timeout | undefined;
   const settled = Promise.race([
     done,
     new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`${threadId} did not settle in ${TURN_TIMEOUT_MS}ms`)), TURN_TIMEOUT_MS);
+      timer = setTimeout(
+        () => reject(new Error(`${threadId} did not settle in ${TURN_TIMEOUT_MS}ms`)),
+        TURN_TIMEOUT_MS,
+      );
     }),
   ]).finally(() => clearTimeout(timer));
   settled.catch(() => {});
-  return { ready: ready.promise, settled, runs, arrivals, settledAt: () => settledAt };
+  return {
+    ready: ready.promise,
+    settled,
+    runs,
+    arrivals,
+    settledAt: () => settledAt,
+    lastRun: () => lastRun,
+  };
 }
 
 function maxSequence(db: string) {
   const sql = new NodeSqlite.DatabaseSync(db, { readOnly: true });
   try {
-    return Number((sql.prepare("SELECT COALESCE(MAX(sequence), 0) AS n FROM orchestration_events").get() as { n: number }).n);
+    return Number(
+      (
+        sql.prepare("SELECT COALESCE(MAX(sequence), 0) AS n FROM orchestration_events").get() as {
+          n: number;
+        }
+      ).n,
+    );
   } finally {
     sql.close();
   }
@@ -411,7 +457,9 @@ function eventsSince(db: string, sequence: number, threadIds: ReadonlyArray<stri
   const sql = new NodeSqlite.DatabaseSync(db, { readOnly: true });
   try {
     const rows = sql
-      .prepare("SELECT stream_id, event_type, COUNT(*) AS n, SUM(LENGTH(payload_json)) AS bytes FROM orchestration_events WHERE sequence > ? GROUP BY stream_id, event_type")
+      .prepare(
+        "SELECT stream_id, event_type, COUNT(*) AS n, SUM(LENGTH(payload_json)) AS bytes FROM orchestration_events WHERE sequence > ? GROUP BY stream_id, event_type",
+      )
       .all(sequence) as Array<{ stream_id: string; event_type: string; n: number; bytes: number }>;
     const byType: Record<string, number> = {};
     const byThread: Record<string, number> = Object.fromEntries(threadIds.map((id) => [id, 0]));
@@ -451,12 +499,16 @@ async function drain(pid: number, db: string, quietMs = 1500, maxMs = 30_000) {
 }
 
 async function itemCounts(rpc: WsRpc, threadId: string) {
-  const projection = (await rpc.call<Record<string, any>>("orchestration.getThreadProjection", { threadId })).value;
+  const projection = (
+    await rpc.call<Record<string, any>>("orchestration.getThreadProjection", { threadId })
+  ).value;
   const view = projection.projection ?? projection;
   const counts: Record<string, number> = {};
   for (const item of view.turnItems ?? view.items ?? []) {
     const type = String(item.type ?? item.kind ?? "unknown");
     counts[type] = (counts[type] ?? 0) + 1;
+    // A failed turn's error item says why; keep it next to the counts.
+    if (type === "error") counts[`error: ${JSON.stringify(item).slice(-800)}`] = 1;
   }
   return counts;
 }
@@ -476,7 +528,8 @@ async function createThread(session: Session, rpc: WsRpc, label: string) {
       workspaceRoot: root,
     }),
   });
-  if (!created.ok) throw new Error(`project create failed: ${created.status} ${await created.text()}`);
+  if (!created.ok)
+    throw new Error(`project create failed: ${created.status} ${await created.text()}`);
   const threadId = NodeCrypto.randomUUID();
   const options = (args.option ?? []).map((entry) => {
     const at = entry.indexOf("=");
@@ -529,23 +582,24 @@ async function measureUnit(
   const dispatchedAt = Date.now();
   const failures: Array<string> = [];
   await Promise.all(
-      threads.map((thread) =>
-        thread.rpc.call("orchestration.dispatchCommand", {
-          type: "message.dispatch",
-          commandId: NodeCrypto.randomUUID(),
-          threadId: thread.threadId,
-          messageId: NodeCrypto.randomUUID(),
-          text: thread.task.text,
-          attachments: [],
-          createdBy: "user",
-          creationSource: "web",
-          dispatchMode: { type: "start_immediately" },
-        }),
-      ),
+    threads.map((thread) =>
+      thread.rpc.call("orchestration.dispatchCommand", {
+        type: "message.dispatch",
+        commandId: NodeCrypto.randomUUID(),
+        threadId: thread.threadId,
+        messageId: NodeCrypto.randomUUID(),
+        text: thread.task.text,
+        attachments: [],
+        createdBy: "user",
+        creationSource: "web",
+        dispatchMode: { type: "start_immediately" },
+      }),
+    ),
   );
   const settledResults = await Promise.allSettled(watches.map((watch) => watch.settled));
   for (const [index, result] of settledResults.entries()) {
-    if (result.status === "rejected") failures.push(`${threads[index]!.task.id}: ${String(result.reason)}`);
+    if (result.status === "rejected")
+      failures.push(`${threads[index]!.task.id}: ${String(result.reason)}`);
   }
   // RSS sampling continues through the drain: trailing writes belong to this unit.
   const settledAt = Date.now();
@@ -571,6 +625,9 @@ async function measureUnit(
       eventsStored: events.byThread[thread.threadId] ?? 0,
       items: await itemCounts(setup, thread.threadId).catch(() => null),
       live: summarizeArrivals(watch.arrivals, dispatchedAt),
+      ...(watch.lastRun()?.status === "completed"
+        ? {}
+        : { lastRun: JSON.stringify(watch.lastRun() ?? null).slice(0, 4000) }),
     });
   }
   // Archive detaches each thread's provider session, so finished CLIs do not pile up in memory.
@@ -621,6 +678,7 @@ const results: Record<string, unknown> = {
   instance: args.instance,
   model: args.model,
   options: args.option,
+  settings: args.settings,
   startedAt: new Date().toISOString(),
   cli: cliVersions(),
   host: {
@@ -629,9 +687,18 @@ const results: Record<string, unknown> = {
     hostname: (await import("node:os")).hostname(),
   },
 };
-log(`sha ${sha}; out ${out}; ${args.instance}/${args.model} ${args.shape} env ${JSON.stringify(results.serverEnv)}`);
+log(
+  `sha ${sha}; out ${out}; ${args.instance}/${args.model} ${args.shape} env ${JSON.stringify(results.serverEnv)}`,
+);
 const prepared = prepareHome({ seed: args.seed, t3Home });
 log(`bench home ${t3Home} (disabled scheduled tasks: ${prepared.disabledScheduledTasks})`);
+if (args.settings !== undefined) {
+  // $PROVIDER_BIN names the wrapper directory, for ACP instances that need an absolute command.
+  NodeFS.writeFileSync(
+    NodePath.join(t3Home, "userdata", "settings.json"),
+    args.settings.replaceAll("$PROVIDER_BIN", NodePath.join(t3Home, "provider-bin")),
+  );
+}
 let server: RunningServer | undefined;
 try {
   server = await startServer({
@@ -642,11 +709,18 @@ try {
   });
   const session = await authenticate(server);
   const rpc = await connect(session);
-  const { providers, target } = await providerSnapshot(rpc, args.probe ? undefined : args.instance);
+  const { providers, target } = await providerSnapshot(
+    rpc,
+    args.probe ? undefined : args.instance,
+    120_000,
+    args.probe ? undefined : args.model,
+  );
   if (args.probe) {
     // Give the probes time to finish before describing them.
     await providerSnapshot(rpc, "claudeAgent").catch((error: unknown) => log(String(error)));
     await providerSnapshot(rpc, "codex").catch((error: unknown) => log(String(error)));
+    await providerSnapshot(rpc, "grok", 30_000).catch((error: unknown) => log(String(error)));
+    await providerSnapshot(rpc, "hermes", 90_000).catch((error: unknown) => log(String(error)));
     const settled = (await rpc.call<Record<string, any>>("server.getConfig", {})).value;
     NodeFS.writeFileSync(
       NodePath.join(out, "providers.json"),
@@ -661,7 +735,8 @@ try {
     await rpc.close();
     const offset = Number(args["batch-offset"]);
     if (args.shape === "s1") {
-      for (const [index, task] of TASKS.entries()) await measureUnit(session, prepared.db, index, [task]);
+      for (const [index, task] of TASKS.entries())
+        await measureUnit(session, prepared.db, index, [task]);
     } else if (args.shape === "s4") {
       for (let b = 0; b < Number(args.batches); b++) {
         const g = offset + b;

@@ -6,7 +6,9 @@
 # Resumable: an arm whose run.json exists is skipped. A failed arm is retried once.
 #
 # usage: p04c-ab.sh <seed.sqlite> <out dir> <slot>...
-# env:   PROVIDERS   space-separated <label>:<instanceId>:<model>[:<opt=v,opt=v>]
+# env:   PROVIDERS   space-separated <label>|<instanceId>|<model>[|<opt=v,opt=v>]
+#        ENV_<label>       extra server env for that provider in both arms (KEY=VALUE)
+#        SETTINGS_<label>  bench-home settings.json for that provider (real-turns.ts --settings)
 #        S4_BATCHES  s4 batches per arm (default 2); slot s runs batches s*S4_BATCHES onwards
 #        SHAPES      default "s1 s4"
 set -uo pipefail
@@ -18,11 +20,14 @@ mkdir -p "$out"
 iotap=$out/iotap.so
 [ -f "$iotap" ] || cc -O2 -shared -fPIC -o "$iotap" "$here/bench/poh/iotap.c" -ldl
 run_arm() { # <slot> <provider spec> <shape> <arm>
-  local slot=$1 label instance model opts shape=$3 arm=$4 env=() options=()
-  IFS=: read -r label instance model opts <<< "$2"
+  local slot=$1 label instance model opts shape=$3 arm=$4 env=() options=() extra settings
+  IFS='|' read -r label instance model opts <<< "$2"
+  extra=ENV_$label settings=SETTINGS_$label
   local dir=$out/$label-$shape-$slot-$arm
   [ -f "$dir/run.json" ] && { echo "[$(date -Is)] $label $shape slot $slot $arm done already"; return 0; }
   [ "$arm" = w25 ] && env=(--server-env T3CODE_EXPERIMENTAL_COMMIT_WINDOW_MS=25)
+  [ -n "${!extra:-}" ] && env+=(--server-env "${!extra}")
+  [ -n "${!settings:-}" ] && env+=(--settings "${!settings}")
   if [ -n "$opts" ]; then
     IFS=, read -ra pairs <<< "$opts"
     for pair in "${pairs[@]}"; do options+=(--option "$pair"); done
