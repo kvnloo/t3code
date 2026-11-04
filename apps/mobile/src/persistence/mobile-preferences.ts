@@ -116,6 +116,8 @@ export interface Preferences {
   readonly projectGroupingMode?: SidebarProjectGroupingMode;
   readonly planModeEnabled?: boolean;
   readonly workingShelfEnabled?: boolean;
+  /** Orders active threads by attention priority instead of the saved order. */
+  readonly threadListPriorityOrder?: boolean;
   readonly useLastProjectForNewThreads?: boolean;
   readonly lastThreadProject?: typeof ThreadProject.Type;
   readonly modelFavorites?: ReadonlyArray<{
@@ -196,6 +198,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     projectGroupingMode?: SidebarProjectGroupingMode;
     planModeEnabled?: boolean;
     workingShelfEnabled?: boolean;
+    threadListPriorityOrder?: boolean;
     useLastProjectForNewThreads?: boolean;
     lastThreadProject?: typeof ThreadProject.Type;
     modelFavorites?: Preferences["modelFavorites"];
@@ -323,6 +326,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (typeof parsed.workingShelfEnabled === "boolean") {
     preferences.workingShelfEnabled = parsed.workingShelfEnabled;
+  }
+  if (typeof parsed.threadListPriorityOrder === "boolean") {
+    preferences.threadListPriorityOrder = parsed.threadListPriorityOrder;
   }
   if (typeof parsed.useLastProjectForNewThreads === "boolean") {
     preferences.useLastProjectForNewThreads = parsed.useLastProjectForNewThreads;

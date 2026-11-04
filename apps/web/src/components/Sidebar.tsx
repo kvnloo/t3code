@@ -34,6 +34,13 @@ import {
   createInboxReturnTracker,
   isThreadWorking,
 } from "@t3tools/client-runtime/state/thread-inbox";
+import {
+  compareGroupPriority,
+  scoreThreadPriority,
+  summarizeGroupPriority,
+  THREAD_PRIORITY_TIER_LABELS,
+  type ThreadPriority,
+} from "@t3tools/client-runtime/state/thread-priority";
 import { sortSettledThreads } from "@t3tools/client-runtime/state/thread-sort";
 import {
   nextShownOrder,
@@ -356,6 +363,8 @@ interface SidebarThreadPartitionInput {
   readonly workingShelfEnabled: boolean;
   /** Boring mode: folders list active threads by the user's latest message. */
   readonly sortActiveBySend: boolean;
+  /** Orders active threads (and boring-mode folders) by attention priority. */
+  readonly prioritySort: boolean;
   readonly disconnectedEnvironmentIds: ReadonlySet<EnvironmentId>;
   // Snooze wakes, the queued-turn grace and the Working shelf's exit grace depend
   // on the clock, so the minute tick, the precise snooze-wake tick and the inbox
@@ -383,8 +392,10 @@ function resolveDraggedOrders(input: {
   readonly settledThreads: readonly EnvironmentThreadShell[];
   readonly activeThreads: readonly EnvironmentThreadShell[];
   readonly workingShelfEnabled: boolean;
+  readonly prioritySort: boolean;
 }): typeof NO_DRAGGED_ORDERS {
-  const { drag, threadByKey, settledThreads, activeThreads, workingShelfEnabled } = input;
+  const { drag, threadByKey, settledThreads, activeThreads, workingShelfEnabled, prioritySort } =
+    input;
   const thread = threadByKey.get(drag.activeKey);
   if (thread === undefined) return NO_DRAGGED_ORDERS;
   const others = (list: readonly EnvironmentThreadShell[]) =>
@@ -394,13 +405,72 @@ function resolveDraggedOrders(input: {
       ...others(settledThreads),
       applySidebarThreadDrop(thread, "settled", drag.occurredAt),
     ]).map(threadShellKey),
-    activeOrder: workingShelfEnabled
-      ? sortInboxThreadsByReturn(
+    activeOrder: prioritySort
+      ? sortByPriority(
           [...others(activeThreads), applySidebarThreadDrop(thread, "active", drag.occurredAt)],
-          inboxReturns.returnedAt,
-        ).map(threadShellKey)
-      : undefined,
+          Date.parse(drag.occurredAt),
+        ).threads.map(threadShellKey)
+      : workingShelfEnabled
+        ? sortInboxThreadsByReturn(
+            [...others(activeThreads), applySidebarThreadDrop(thread, "active", drag.occurredAt)],
+            inboxReturns.returnedAt,
+          ).map(threadShellKey)
+        : undefined,
   };
+}
+
+const NO_PRIORITIES: ReadonlyMap<string, ThreadPriority> = new Map();
+
+/** Scores once and sorts on the scores; ties fall back to thread identity like every list. */
+function sortByPriority(threads: readonly EnvironmentThreadShell[], nowMs: number) {
+  const priorityByKey = new Map(
+    threads.map((thread) => [threadShellKey(thread), scoreThreadPriority(thread, nowMs)] as const),
+  );
+  const sorted = [...threads].sort(
+    (left, right) =>
+      priorityByKey.get(threadShellKey(right))!.score -
+        priorityByKey.get(threadShellKey(left))!.score ||
+      left.id.localeCompare(right.id) ||
+      left.environmentId.localeCompare(right.environmentId),
+  );
+  return { threads: sorted, priorityByKey };
+}
+
+/** One line for a tooltip or screen reader: "412 · Needs you: Pending approval, Waiting 2h". */
+function describePriority(priority: ThreadPriority): string {
+  const tier = THREAD_PRIORITY_TIER_LABELS[priority.tier];
+  return priority.reasons.length === 0
+    ? `${priority.score} · ${tier}`
+    : `${priority.score} · ${tier}: ${priority.reasons.join(", ")}`;
+}
+
+/**
+ * With priority on, folders follow their most urgent thread. Pinned projects stay on top and
+ * archived ones at the bottom, as in the default order; without priority the order is unchanged.
+ */
+function orderFoldersByPriority<
+  TFolder extends {
+    readonly group: Pick<SidebarProjectSnapshot, "pinned" | "archived">;
+    readonly threads: readonly EnvironmentThreadShell[];
+  },
+>(folders: readonly TFolder[], priorityByKey: ReadonlyMap<string, ThreadPriority> | null) {
+  if (priorityByKey === null) {
+    return folders.map((folder) => ({ ...folder, priority: null }));
+  }
+  const scored = folders.map((folder) => ({
+    ...folder,
+    priority: summarizeGroupPriority(
+      folder.threads.flatMap((thread) => {
+        const priority = priorityByKey.get(threadShellKey(thread));
+        return priority === undefined ? [] : [priority];
+      }),
+    ),
+  }));
+  const band = (folder: TFolder) => (folder.group.pinned ? 0 : folder.group.archived ? 2 : 1);
+  return scored.toSorted(
+    (left, right) =>
+      band(left) - band(right) || compareGroupPriority(left.priority, right.priority),
+  );
 }
 
 function routeThreadOnly(
@@ -442,6 +512,7 @@ function useSidebarThreads(input: {
   // Folders already separate the work, so boring mode has no Working shelf.
   const workingShelfEnabled =
     useClientSettings((s) => s.sidebarWorkingShelfEnabled) && folderGroups === null;
+  const prioritySort = useClientSettings((s) => s.sidebarActiveSortOrder) === "priority";
   const environmentConnections = useEnvironmentConnectionSummaries();
   const liveShellEnvironmentIds = useAtomValue(liveShellEnvironmentIdsAtom);
   const disconnectedEnvironmentIds = new Set(
@@ -498,6 +569,7 @@ function useSidebarThreads(input: {
     optimisticDrop,
     workingShelfEnabled,
     sortActiveBySend: folderGroups !== null,
+    prioritySort,
     disconnectedEnvironmentIds,
     clockKey: `${nowMinute}:${snoozeWakeClock}:${inboxReturnsVersion}`,
   });
@@ -539,13 +611,26 @@ function useSidebarThreads(input: {
   const projectFolders =
     folderGroups === null
       ? null
-      : groupSidebarThreadsByProject(folderGroups, activeThreads, keepEmpty).map((folder) => {
+      : orderFoldersByPriority(
+          groupSidebarThreadsByProject(folderGroups, activeThreads, keepEmpty),
+          prioritySort ? partition.priorityByThreadKey : null,
+        ).map((folder) => {
           const collapsed = !resolveProjectExpanded(
             projectExpandedById,
             sidebarFolderExpansionKeys(folder.group),
           );
           return {
             group: folder.group,
+            priorityScore: folder.priority?.score ?? null,
+            priorityLabel:
+              folder.priority === null
+                ? null
+                : `${folder.priority.score} · ${THREAD_PRIORITY_TIER_LABELS[folder.priority.tier]}${
+                    folder.priority.attentionCount > 0
+                      ? `, ${folder.priority.attentionCount} want you`
+                      : ""
+                  }`,
+            priorityTier: folder.priority?.tier ?? null,
             collapsed,
             // A closed folder still shows the open thread, and hints at the rest.
             threads: collapsed
@@ -579,6 +664,7 @@ function useSidebarThreads(input: {
     ...partition,
     threads,
     workingShelfEnabled,
+    prioritySort,
     searchableThreads: [
       ...pinnedThreads,
       ...activeThreads,
@@ -634,6 +720,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
     optimisticDrop,
     workingShelfEnabled,
     sortActiveBySend,
+    prioritySort,
     disconnectedEnvironmentIds,
   } = input;
   const preciseNow = new Date().toISOString();
@@ -695,11 +782,15 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
   }
   // Availability gates dragging only; sorting must stay consistent across clients.
   const sortedPinned = sortPinnedThreadsForSidebar(pinned);
-  const sortedActive = sortActiveBySend
-    ? sortWorkingThreadsBySend(active)
-    : workingShelfEnabled
-      ? sortInboxThreadsByReturn(active, inboxObservation.returnedAt)
-      : sortThreadsForSidebar(active);
+  const prioritized = prioritySort ? sortByPriority(active, Date.parse(preciseNow)) : null;
+  const sortedActive =
+    prioritized !== null
+      ? prioritized.threads
+      : sortActiveBySend
+        ? sortWorkingThreadsBySend(active)
+        : workingShelfEnabled
+          ? sortInboxThreadsByReturn(active, inboxObservation.returnedAt)
+          : sortThreadsForSidebar(active);
   return {
     pinnedThreads:
       optimisticDrop?.section !== "pinned" || optimisticDrop.order === null
@@ -711,6 +802,7 @@ function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
           }),
     draggableThreadKeys,
     activeReorderableThreadKeys,
+    priorityByThreadKey: prioritized?.priorityByKey ?? NO_PRIORITIES,
     activeThreads:
       optimisticDrop?.section !== "active" || optimisticDrop.order === null
         ? sortedActive
@@ -1309,6 +1401,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
 
   const {
     workingShelfEnabled,
+    prioritySort,
+    priorityByThreadKey,
     pinnedThreads,
     draggableThreadKeys,
     activeReorderableThreadKeys,
@@ -2030,6 +2124,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           settledThreads,
           activeThreads,
           workingShelfEnabled,
+          prioritySort,
         });
   const sidebarSortingStrategy = createSidebarSortingStrategy({
     items: sidebarListItems,
@@ -2068,7 +2163,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
             activeOrder: activeKeys,
             activeKeysById,
             activeReorderableKeys: activeReorderableThreadKeys,
-            activeTimeOrdered: workingShelfEnabled,
+            activeTimeOrdered: workingShelfEnabled || prioritySort,
           }).kind !== "none"
         );
       },
@@ -2101,7 +2196,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
       activeOrder: activeKeys,
       activeKeysById,
       activeReorderableKeys: activeReorderableThreadKeys,
-      activeTimeOrdered: workingShelfEnabled,
+      activeTimeOrdered: workingShelfEnabled || prioritySort,
     });
     if (plan.kind === "none") return;
     if (plan.kind === "settle" && settlingThreadKeysRef.current.has(activeKey)) return;
@@ -3323,6 +3418,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                           : isCard
                             ? "card"
                             : "slim";
+                        const priority =
+                          section === "active" ? priorityByThreadKey.get(threadKey) : undefined;
                         return (
                           <SortableThreadRow
                             key={threadKey}
@@ -3374,6 +3471,11 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 : null
                             }
                             wokeAt={threadWokeAt(thread, { now: snoozeNow })}
+                            priorityScore={priority?.score ?? null}
+                            priorityTier={priority?.tier ?? null}
+                            priorityLabel={
+                              priority === undefined ? null : describePriority(priority)
+                            }
                             isActive={routeRowThreadKey === threadKey}
                             revealRef={
                               routeRowThreadKey === threadKey ? revealActiveRow : undefined
@@ -3451,6 +3553,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                                 key={`project-folder:${folder.group.projectKey}`}
                                 group={folder.group}
                                 collapsed={folder.collapsed}
+                                priorityScore={folder.priorityScore}
+                                priorityLabel={folder.priorityLabel}
+                                priorityTier={folder.priorityTier}
                                 hiddenThreads={folder.hiddenThreads}
                                 onToggle={toggleProjectFolder}
                                 onNewThread={startThreadInProjectFolder}

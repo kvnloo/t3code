@@ -148,6 +148,31 @@ choice.
 While this is on, the active list is ordered by when each thread last came back to you, so you
 cannot drag or move threads within it. Your saved order returns when you turn it off.
 
+### Order threads by priority
+
+To see what needs you first, set **Settings → General → Thread order** to **Priority** on web and
+desktop, or turn on **Settings → General → Order by priority** on iOS and Android. Each device keeps
+its own choice. Active threads then sort into four tiers:
+
+1. **Needs you**: an approval, a question, or a guest request is waiting.
+2. **Review**: the latest turn failed, a linked pull request has failing checks, requested
+   changes, or conflicts, a plan is ready, or a result has not been read yet.
+3. **In progress**: the agent is working or waiting on background work.
+4. **Quiet**: nothing is waiting on you.
+
+Within a tier, a thread rises the longer a request has waited, the more recently you wrote in it,
+the more often you open it, and when it has an open pull request or an active goal. On web and
+desktop each active thread shows its score. The first digit is its tier: 4xx needs you, 3xx review,
+2xx in progress, 1xx quiet. Hover the score to see the tier and what raised it. Pinned threads keep
+your order above the list, and the Working section still folds threads that are working.
+
+With **Boring sidebar (group by project)** on, project folders also sort by their most urgent
+thread, then by how many threads want you. Pinned projects stay first and archived ones last. Each
+folder shows its best score.
+
+While priority order is on, you cannot drag or move threads within the active list. Your saved
+order returns when you switch back to **Your order**.
+
 ### Group threads by project (beta)
 
 Turn on **Settings → Labs → Boring sidebar (group by project)** on web and desktop to put active

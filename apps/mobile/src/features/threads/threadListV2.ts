@@ -11,6 +11,7 @@ import {
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { resolveThreadProviderStack } from "@t3tools/client-runtime/state/models";
+import { sortThreadsByPriority } from "@t3tools/client-runtime/state/thread-priority";
 import {
   threadSearchMatchKey,
   threadSearchSubject,
@@ -626,6 +627,8 @@ export function buildThreadListV2Items(input: {
   readonly settledLimit?: number;
   readonly now: string;
   readonly workingShelfEnabled?: boolean;
+  /** Orders active threads by attention priority, ahead of the inbox and saved orders. */
+  readonly priorityOrderEnabled?: boolean;
   readonly workingShelfExpanded?: boolean;
   readonly isWorking?: (thread: EnvironmentThreadShell) => boolean;
   readonly inboxReturnAt?: (thread: EnvironmentThreadShell) => number | undefined;
@@ -761,9 +764,12 @@ export function buildThreadListV2Items(input: {
     };
   }
 
-  const orderedActive = workingShelfEnabled
-    ? sortInboxThreadsByReturn(active, input.inboxReturnAt)
-    : applyPendingThreadOrder(sortThreadsForListV2(active), "active", pending);
+  const orderedActive =
+    input.priorityOrderEnabled === true
+      ? sortThreadsByPriority(active, nowMs)
+      : workingShelfEnabled
+        ? sortInboxThreadsByReturn(active, input.inboxReturnAt)
+        : applyPendingThreadOrder(sortThreadsForListV2(active), "active", pending);
   const orderedWorking = sortWorkingThreadsBySend(working);
   const orderedSnoozed = [...snoozed].sort(
     (left, right) =>

@@ -276,6 +276,7 @@ function ThreadNavigationSidebarPane(
     snoozedShelfExpanded,
     workingShelfEnabled,
     workingShelfExpanded,
+    priorityOrderEnabled,
     toggleSettledShelf,
     toggleSnoozedShelf,
     toggleWorkingShelf,
@@ -318,6 +319,7 @@ function ThreadNavigationSidebarPane(
     pendingOrder,
     shelfPreferencesLoaded,
     workingShelfEnabled,
+    priorityOrderEnabled,
     workingShelfExpanded,
     snoozedShelfExpanded,
     settledShelfExpanded,
@@ -596,7 +598,9 @@ function ThreadNavigationSidebarPane(
             reorderSupported={
               item.item.pinned
                 ? pinReorderEnvironmentIds.has(thread.environmentId)
-                : !workingShelfEnabled && activeReorderEnvironmentIds.has(thread.environmentId)
+                : !workingShelfEnabled &&
+                  !priorityOrderEnabled &&
+                  activeReorderEnvironmentIds.has(thread.environmentId)
             }
             canMoveUp={item.canMoveUp}
             canMoveDown={item.canMoveDown}

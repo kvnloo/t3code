@@ -186,6 +186,8 @@ export function WorkingSectionSettings() {
   const preferences = useAtomValue(mobilePreferencesAtom);
   const workingShelfEnabled =
     AsyncResult.isSuccess(preferences) && preferences.value.workingShelfEnabled !== false;
+  const priorityOrderEnabled =
+    AsyncResult.isSuccess(preferences) && preferences.value.threadListPriorityOrder === true;
 
   return (
     <View className="gap-3">
@@ -196,11 +198,23 @@ export function WorkingSectionSettings() {
           value={workingShelfEnabled}
           onValueChange={(value) => savePreferences({ workingShelfEnabled: value })}
         />
+        <SettingsSwitchRow
+          icon="exclamationmark.circle"
+          label="Order by priority"
+          value={priorityOrderEnabled}
+          onValueChange={(value) => savePreferences({ threadListPriorityOrder: value })}
+        />
       </SettingsSection>
       <Text className="px-2 text-sm text-foreground-muted">
         Fold working and monitoring threads into a Working section. They return to the top of the
         list when they need you. While this is on, active threads are ordered by time and cannot be
         moved.
+      </Text>
+      <Text className="px-2 text-sm text-foreground-muted">
+        Order by priority puts threads that need you first: approvals and questions, then failures,
+        pull request trouble and unread results, then work in progress. Longer waits, recent use,
+        frequent opens, open pull requests and goals raise a thread within its tier. Active threads
+        cannot be moved while this is on.
       </Text>
     </View>
   );

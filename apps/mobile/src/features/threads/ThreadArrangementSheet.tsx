@@ -4,6 +4,7 @@ import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import { sortInboxThreadsByReturn } from "@t3tools/client-runtime/state/thread-inbox";
+import { sortThreadsByPriority } from "@t3tools/client-runtime/state/thread-priority";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Animated, FlatList, Modal, Pressable, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
@@ -176,7 +177,7 @@ function ThreadArrangementSheet(props: { onClose: () => void }) {
   const pendingOrder = useAtomValue(pendingThreadOrderAtom);
   const dropBusy = useAtomValue(threadDropBusyAtom);
   const { moveThread } = useThreadListActions();
-  const { workingShelfEnabled } = useThreadListV2ShelfPreferences();
+  const { workingShelfEnabled, priorityOrderEnabled } = useThreadListV2ShelfPreferences();
   const now = useThreadListNow(threads);
   const [expanded, setExpanded] = useState({ snoozed: false, settled: false });
   const [settledVisibleCount, setSettledVisibleCount] = useState(
@@ -205,13 +206,23 @@ function ThreadArrangementSheet(props: { onClose: () => void }) {
     );
     return {
       pinned,
-      active: workingShelfEnabled
-        ? sortInboxThreadsByReturn(active, threadListInboxReturns.returnedAt)
-        : active,
+      active: priorityOrderEnabled
+        ? sortThreadsByPriority(active, Date.parse(now))
+        : workingShelfEnabled
+          ? sortInboxThreadsByReturn(active, threadListInboxReturns.returnedAt)
+          : active,
       snoozed: parked.filter((thread) => effectiveSnoozed(thread, { now })),
       settled: sortSettledThreads(parked.filter((thread) => !effectiveSnoozed(thread, { now }))),
     };
-  }, [threads, configs, now, queuedThreadKeys, pendingOrder, workingShelfEnabled]);
+  }, [
+    threads,
+    configs,
+    now,
+    queuedThreadKeys,
+    pendingOrder,
+    workingShelfEnabled,
+    priorityOrderEnabled,
+  ]);
   const listedSettled = sections.settled.filter(olderSettledShelf.isListed);
   useOlderSettledShelfGrowth(olderSettledShelf, listedSettled);
   const visibleSettled = listedSettled.slice(0, settledVisibleCount);
@@ -225,12 +236,12 @@ function ThreadArrangementSheet(props: { onClose: () => void }) {
         reorderableEnvironmentIds:
           section === "pinned"
             ? listEnvironments.pinReorderEnvironmentIds
-            : workingShelfEnabled
+            : workingShelfEnabled || priorityOrderEnabled
               ? new Set()
               : listEnvironments.activeReorderEnvironmentIds,
       });
     return { pinned: planner("pinned"), active: planner("active") };
-  }, [sections, threads, listEnvironments, workingShelfEnabled]);
+  }, [sections, threads, listEnvironments, workingShelfEnabled, priorityOrderEnabled]);
   const rows = useMemo(() => {
     const result: Row[] = [];
     let offset = 0;

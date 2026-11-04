@@ -61,12 +61,15 @@ export function useThreadListV2(input: {
   readonly pendingOrder: LayoutInput["pendingOrder"];
   readonly shelfPreferencesLoaded: boolean;
   readonly workingShelfEnabled: boolean;
+  /** Active threads follow attention priority, so they cannot be moved by hand. */
+  readonly priorityOrderEnabled?: boolean;
   readonly workingShelfExpanded: boolean;
   readonly snoozedShelfExpanded: boolean;
   readonly settledShelfExpanded: boolean;
   readonly selectedThreadKey: string | null;
 }) {
   const { threads, workingShelfEnabled } = input;
+  const priorityOrderEnabled = input.priorityOrderEnabled === true;
   const layoutTime = useMemo(
     () => threadListV2LayoutTime({ threads, now: input.now, searchQuery: input.searchQuery }),
     [threads, input.now, input.searchQuery],
@@ -101,7 +104,7 @@ export function useThreadListV2(input: {
       });
     return new Map([
       ...sectionAvailability("pinned"),
-      ...(workingShelfEnabled ? [] : sectionAvailability("active")),
+      ...(workingShelfEnabled || priorityOrderEnabled ? [] : sectionAvailability("active")),
     ]);
   }, [
     threads,
@@ -113,6 +116,7 @@ export function useThreadListV2(input: {
     input.snoozeEnvironmentIds,
     input.queuedThreadKeys,
     workingShelfEnabled,
+    priorityOrderEnabled,
   ]);
   // Older settled threads load in pages; the shelf lists them only as far as they are loaded.
   const scopes = useMemo(
@@ -146,6 +150,7 @@ export function useThreadListV2(input: {
         settledLimit: input.settledLimit,
         now: layoutTime,
         workingShelfEnabled,
+        priorityOrderEnabled,
         workingShelfExpanded: input.workingShelfExpanded,
         inboxReturnAt: inbox.returnedAt,
         isWorking: inbox.isWorking,
@@ -178,6 +183,7 @@ export function useThreadListV2(input: {
       input.settledLimit,
       layoutTime,
       workingShelfEnabled,
+      priorityOrderEnabled,
       input.workingShelfExpanded,
       inbox.returnedAt,
       inbox.isWorking,

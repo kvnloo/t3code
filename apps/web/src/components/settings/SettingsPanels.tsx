@@ -21,6 +21,7 @@ import {
   MIN_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
   type ResponseStreamingMode,
   type QuitConfirmationMode,
+  SidebarActiveSortOrder,
   SidebarProjectSortOrder,
 } from "@t3tools/contracts/settings";
 import { desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
@@ -126,6 +127,12 @@ const SIDEBAR_PROJECT_SORT_ORDER_LABELS: Record<SidebarProjectSortOrder, string>
   manual: "Manual",
 };
 const isSidebarProjectSortOrder = Schema.is(SidebarProjectSortOrder);
+
+const SIDEBAR_ACTIVE_SORT_ORDER_LABELS: Record<SidebarActiveSortOrder, string> = {
+  manual: "Your order",
+  priority: "Priority",
+};
+const isSidebarActiveSortOrder = Schema.is(SidebarActiveSortOrder);
 
 const TIMESTAMP_FORMAT_LABELS = {
   locale: "System default",
@@ -480,6 +487,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.sidebarProjectSortOrder !== DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder
       ? ["Project order"]
       : []),
+    ...(settings.sidebarActiveSortOrder !== DEFAULT_UNIFIED_SETTINGS.sidebarActiveSortOrder
+      ? ["Thread order"]
+      : []),
     ...(settings.sidebarWorkingShelfEnabled !== DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled
       ? ["Working section"]
       : []),
@@ -648,6 +658,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       panelAnimationDurationMs: DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs,
       sidebarProjectGroupingMode: DEFAULT_UNIFIED_SETTINGS.sidebarProjectGroupingMode,
       sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,
+      sidebarActiveSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarActiveSortOrder,
       sidebarWorkingShelfEnabled: DEFAULT_UNIFIED_SETTINGS.sidebarWorkingShelfEnabled,
       sidebarAutoSettleAfterDays: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleAfterDays,
       sidebarAutoSettleKeepPullRequests: DEFAULT_UNIFIED_SETTINGS.sidebarAutoSettleKeepPullRequests,
@@ -872,6 +883,45 @@ export function GeneralSettingsPanel() {
                 {SidebarProjectSortOrder.literals.map((sortOrder) => (
                   <SelectItem hideIndicator key={sortOrder} value={sortOrder}>
                     {SIDEBAR_PROJECT_SORT_ORDER_LABELS[sortOrder]}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
+        <SettingsRow
+          {...searchableSetting("thread-order")}
+          description="Order of active threads in the sidebar. Priority puts threads that need you first: approvals and questions, then failures, PR trouble and unread results, then work in progress. Longer waits, recent use, frequent opens, open PRs and goals raise a thread within its tier. Grouped projects follow their most urgent thread."
+          resetAction={
+            settings.sidebarActiveSortOrder !== DEFAULT_UNIFIED_SETTINGS.sidebarActiveSortOrder ? (
+              <SettingResetButton
+                label="thread order"
+                onClick={() =>
+                  updateSettings({
+                    sidebarActiveSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarActiveSortOrder,
+                  })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.sidebarActiveSortOrder}
+              onValueChange={(value) => {
+                if (isSidebarActiveSortOrder(value)) {
+                  updateSettings({ sidebarActiveSortOrder: value });
+                }
+              }}
+            >
+              <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Thread order">
+                <SelectValue>
+                  {SIDEBAR_ACTIVE_SORT_ORDER_LABELS[settings.sidebarActiveSortOrder]}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {SidebarActiveSortOrder.literals.map((sortOrder) => (
+                  <SelectItem hideIndicator key={sortOrder} value={sortOrder}>
+                    {SIDEBAR_ACTIVE_SORT_ORDER_LABELS[sortOrder]}
                   </SelectItem>
                 ))}
               </SelectPopup>
