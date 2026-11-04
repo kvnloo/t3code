@@ -1,4 +1,7 @@
-import { Platform } from "react-native";
+import { useMemo } from "react";
+import { Platform, View } from "react-native";
+import { splitOpenUiMarkdown } from "../lib/openUiMarkdown";
+import { MarkdownOpenUiReport } from "./MarkdownOpenUiReport";
 import type { SelectableMarkdownTextProps } from "./SelectableMarkdownText.types";
 
 import { MobileEnrichedMarkdownText } from "./EnrichedMarkdownText";
@@ -24,5 +27,13 @@ export function SelectableMarkdownText(props: SelectableMarkdownTextProps) {
     Platform.OS === "android"
       ? { selectionColor, selectionHandleColor, ...props.textStyle }
       : props.textStyle;
-  return <MobileEnrichedMarkdownText {...props} textStyle={textStyle} />;
+  const parts = useMemo(() => splitOpenUiMarkdown(props.markdown), [props.markdown]);
+  if (!parts.some((part) => part.kind === "report")) {
+    return <MobileEnrichedMarkdownText {...props} textStyle={textStyle} />;
+  }
+  return <View>
+    {parts.map((part, index) => part.kind === "report"
+      ? <MarkdownOpenUiReport key={index} code={part.code} version={part.version} />
+      : <MobileEnrichedMarkdownText key={index} {...props} markdown={part.text} textStyle={textStyle} />)}
+  </View>;
 }

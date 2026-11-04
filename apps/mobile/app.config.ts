@@ -245,10 +245,10 @@ const sharingPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
 // Match iOS PostScript names on Android so RN and the native composer share fonts before runtime loading.
 
 const config: ExpoConfig = {
-  name: variant.appName,
+  name: process.env.T3_OPENUI_LAB_BUILD === "1" ? "T3 Code OpenUI" : variant.appName,
   slug: "t3-code",
   platforms: ["ios", "android"],
-  scheme: variant.scheme,
+  scheme: process.env.T3_OPENUI_LAB_BUILD === "1" ? "t3code-openui" : variant.scheme,
   version: repoEnv.T3CODE_MOBILE_VERSION ?? "2.2.0",
   runtimeVersion: {
     // Skip costly fingerprinting on dev launches; preview and production OTAs require matching native projects.
@@ -308,7 +308,7 @@ const config: ExpoConfig = {
   },
   android: {
     icon: variant.assets.appIcon,
-    package: variant.androidPackage,
+    package: process.env.T3_OPENUI_LAB_BUILD === "1" ? "com.t3tools.t3code.openui" : variant.androidPackage,
     ...(repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE
       ? { googleServicesFile: repoEnv.T3CODE_ANDROID_GOOGLE_SERVICES_FILE }
       : {}),
