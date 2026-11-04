@@ -23,6 +23,9 @@ it("refuses a t3_thread_update whose fields do not fit its action", () => {
   );
   expect(Exit.isFailure(decode({ action: "rename" }))).toBe(true);
   expect(Exit.isFailure(decode({ action: "regenerate_title", title: "New" }))).toBe(true);
+  expect(Exit.isFailure(decode({ action: "tag" }))).toBe(true);
+  expect(Exit.isFailure(decode({ action: "rename", title: "New", tag: "focus" }))).toBe(true);
+  expect(Exit.isSuccess(decode({ action: "untag", tag: "focus" }))).toBe(true);
   expect(Exit.isSuccess(decode({ action: "rename", title: "New", environmentId: undefined }))).toBe(
     true,
   );

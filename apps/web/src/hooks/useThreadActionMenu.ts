@@ -21,6 +21,9 @@ import {
   threadActionRequiresOperate,
   type ThreadActionMenuId,
 } from "../components/threadActionMenu.logic";
+import { threadMenuTags } from "@t3tools/client-runtime/state/thread-tag-badges";
+import { appAtomRegistry } from "../rpc/atomRegistry";
+import { serverEnvironment } from "../state/server";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { copyThreadReference } from "../lib/copyThreadReference";
 import { threadChipCopyTarget } from "@t3tools/client-runtime/thread-reference";
@@ -91,6 +94,9 @@ export function useThreadActionMenu(input: {
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
+  const setThreadTag = useOrchestrationCommand(threadEnvironment.setTag, {
+    reportFailure: false,
+  });
   const handleNewThread = useNewThreadHandler();
   const confirmThreadDelete = useClientSettings((s) => s.confirmThreadDelete);
   const confirmThreadArchive = useClientSettings((s) => s.confirmThreadArchive);
@@ -149,6 +155,14 @@ export function useThreadActionMenu(input: {
         snoozePresets,
         canShareWithGuest,
         canTurnIntoProject: canTurnThreadIntoProject(threadRef),
+        ...(configLoaded
+          ? {
+              tags: threadMenuTags(
+                thread.source.tags,
+                appAtomRegistry.get(serverEnvironment.threadTagStylesAtom(threadRef.environmentId)),
+              ),
+            }
+          : {}),
       });
       const clicked = await settlePromise(() => api.contextMenu.show(items, position));
       if (clicked._tag === "Failure" || clicked.value === null) return;
@@ -189,9 +203,23 @@ export function useThreadActionMenu(input: {
           failureToast(title, squashAtomCommandFailure(result));
         }
       };
+      if (action.startsWith("tag:")) {
+        const tag = action.slice("tag:".length);
+        const tagged = !(thread.source.tags ?? []).includes(tag);
+        await reportFailure(tagged ? "Failed to tag thread" : "Failed to remove tag", () =>
+          setThreadTag({
+            environmentId: threadRef.environmentId,
+            input: { threadId: threadRef.threadId, tag, tagged },
+          }),
+        );
+        return;
+      }
       switch (action) {
         case "find":
           onFind?.(threadRef);
+          return;
+        case "tags:manage":
+          void router.navigate({ to: "/settings/threads", hash: "thread-tag-styles" });
           return;
         case "project-settings": {
           const project = projects.find(

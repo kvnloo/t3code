@@ -11,9 +11,13 @@ import {
 import { RowPressable } from "../../components/ui/RowPressable";
 import { CustomSnoozeSheet } from "./CustomSnoozeSheet";
 import { appAtomRegistry } from "../../state/atom-registry";
+import { serverEnvironment } from "../../state/server";
 import { threadArrangementOpenAtom } from "../../state/thread-order";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { useAtomValue } from "@effect/atom-react";
+import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
+import { threadMenuTags } from "@t3tools/client-runtime/state/thread-tag-badges";
 import { useVisibleSecondClock } from "./use-visible-second-clock";
 import type { ThreadMoveDestination } from "./threadOrder";
 import type {
@@ -62,6 +66,7 @@ import { useThreadPr } from "../../state/use-thread-pr";
 import { useSwipeRowDormant } from "../home/swipe-row-activation";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import { buildThreadTitleRegenerationMenuItems } from "./thread-title-regeneration-menu";
+import { ThreadTagChipRow, ThreadTagLeadingSymbol, useThreadTagBadges } from "./thread-tag-badges";
 import { canTurnThreadIntoProject, turnThreadIntoProject } from "./turnThreadIntoProject";
 import { threadCanArchive } from "../home/threadArchive";
 import {
@@ -745,7 +750,11 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       : workingLabel) ?? (isUnread ? DONE_STATUS_LABEL : undefined);
   const recede = shouldRecedeThreadRow({ status, selected });
   const isRegeneratingTitle = thread.titleRegeneration != null;
-  const rowAccessibilityLabel = `${thread.title}${props.hasQueuedMessages ? ", messages queued to send" : ""}${isRegeneratingTitle ? ", regenerating title" : ""}`;
+  const tagBadges = useThreadTagBadges(thread);
+  const tagLabel = [tagBadges.leading, ...tagBadges.chips]
+    .flatMap((badge) => (badge === null ? [] : [badge.tag]))
+    .join(", ");
+  const rowAccessibilityLabel = `${thread.title}${tagLabel ? `, tagged ${tagLabel}` : ""}${props.hasQueuedMessages ? ", messages queued to send" : ""}${isRegeneratingTitle ? ", regenerating title" : ""}`;
   const timeLabel = props.timeLabel;
 
   const visitThread = useAtomCommand(threadEnvironment.visit, { reportFailure: false });
@@ -891,6 +900,26 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     [props.autoSettleOptOutSupported, thread.autoSettleDisabledAt],
   );
   const canTurnIntoProject = canTurnThreadIntoProject(thread);
+  const tagStyles = useAtomValue(serverEnvironment.threadTagStylesAtom(thread.environmentId));
+  const menuTags = useMemo(
+    () => threadMenuTags(thread.source.tags, tagStyles),
+    [thread.source.tags, tagStyles],
+  );
+  const setThreadTag = useAtomCommand(threadEnvironment.setTag, { reportFailure: false });
+  const handleToggleTag = useCallback(
+    (tag: string) => {
+      const tagged = !(thread.source.tags ?? []).includes(tag);
+      void setThreadTag({
+        environmentId: thread.environmentId,
+        input: { threadId: thread.id, tag, tagged },
+      }).then((result) => {
+        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+          Dialog.alert(tagged ? "Could not tag thread" : "Could not remove tag", "Try again.");
+        }
+      });
+    },
+    [setThreadTag, thread.environmentId, thread.id, thread.source.tags],
+  );
   const titleMenuItems = useMemo<MenuAction[]>(
     () => [
       { id: "rename", title: "Rename", image: "square.and.pencil" },
@@ -898,6 +927,20 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         supported: props.titleRegenerationSupported,
         isRegenerating: isRegeneratingTitle,
       }),
+      ...(menuTags.length > 0
+        ? [
+            {
+              id: "tags",
+              title: "Tags",
+              image: "tag",
+              subactions: menuTags.map((entry) => ({
+                id: `tag:${entry.tag}`,
+                title: entry.tag,
+                state: entry.checked ? ("on" as const) : ("off" as const),
+              })),
+            } satisfies MenuAction,
+          ]
+        : []),
       ...(canTurnIntoProject
         ? [
             {
@@ -909,7 +952,13 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
           ]
         : []),
     ],
-    [canTurnIntoProject, props.titleRegenerationSupported, thread.runtime, isRegeneratingTitle],
+    [
+      canTurnIntoProject,
+      menuTags,
+      props.titleRegenerationSupported,
+      thread.runtime,
+      isRegeneratingTitle,
+    ],
   );
   const snoozableCardMenuActions = useMemo<MenuAction[]>(
     () => [
@@ -988,6 +1037,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       if (nativeEvent.event === "rename") handleRename();
       if (nativeEvent.event === "regenerate-title") handleRegenerateTitle();
       if (nativeEvent.event === "turn-into-project") void turnThreadIntoProject(thread);
+      if (nativeEvent.event.startsWith("tag:")) {
+        handleToggleTag(nativeEvent.event.slice("tag:".length));
+        return;
+      }
       if (nativeEvent.event === "copy-thread") {
         const target = threadChipCopyTarget(
           { environmentId: thread.environmentId, threadId: thread.id },
@@ -1033,6 +1086,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       handleSettle,
       handleSnooze,
       handleSetAutoSettle,
+      handleToggleTag,
       handleUnpin,
       handleUnsettle,
       handleUnsnooze,
@@ -1102,11 +1156,15 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       ? `Opens the thread. Swipe left to ${primaryAction.label.toLowerCase()}.`
       : `Opens the thread. Swipe left for ${primaryAction.label.toLowerCase()} and snooze actions.`;
 
-  const titleTextInset = props.project ? projectIconSize + 8 : 0;
+  const titleTextInset = props.project || tagBadges.leading ? projectIconSize + 8 : 0;
   const cardContent = (
     <>
       <View className="flex-row items-start gap-2">
-        {props.project ? (
+        {tagBadges.leading ? (
+          <View className="justify-center" style={{ height: titleLineHeight }}>
+            <ThreadTagLeadingSymbol badge={tagBadges.leading} size={projectIconSize} />
+          </View>
+        ) : props.project ? (
           <View className="justify-center" style={{ height: titleLineHeight }}>
             <ProjectFavicon
               environmentId={thread.environmentId}
@@ -1233,6 +1291,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         </View>
       ) : null}
       <View className="mt-1 flex-row items-center gap-2" style={{ paddingLeft: titleTextInset }}>
+        <ThreadTagChipRow badges={tagBadges} />
         {(status === "failed" || status === "limited") && thread.runtime?.lastError ? (
           <Text
             className={cn(
@@ -1404,7 +1463,9 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
             sidebarPane && "px-3",
           )}
         >
-          {props.project ? (
+          {tagBadges.leading ? (
+            <ThreadTagLeadingSymbol badge={tagBadges.leading} size={projectIconSize} />
+          ) : props.project ? (
             <View className="opacity-40">
               <ProjectFavicon
                 environmentId={thread.environmentId}
@@ -1438,6 +1499,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
               />
             ) : null}
           </View>
+          <ThreadTagChipRow badges={tagBadges} />
           {props.hasQueuedMessages ? <QueuedMessageIcon selected={selected} /> : null}
           <Text
             className={cn(
