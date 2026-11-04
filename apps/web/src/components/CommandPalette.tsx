@@ -1495,6 +1495,17 @@ function OpenCommandPaletteDialog(props: {
 
   actionItems.push({
     kind: "action",
+    value: "action:needs-you",
+    searchTerms: ["inbox", "attention", "approval", "blocked", "review", "needs you"],
+    title: "Open Needs you",
+    icon: <MessageSquareDashedIcon className={ITEM_ICON_CLASS} />,
+    run: async () => {
+      await navigate({ to: "/needs-you" });
+    },
+  });
+
+  actionItems.push({
+    kind: "action",
     value: "action:usage",
     searchTerms: ["usage", "use", "tokens", "cost", "spend", "limits", "stats", "analytics"],
     title: "Open usage",
