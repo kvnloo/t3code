@@ -16,7 +16,9 @@ jobs:
         run: |
           export T3_CHANNEL="${GITHUB_REF_NAME#apk/channel-}" HUSKY=0
           bash .github/scripts/channel-apk.sh
-      - uses: actions/upload-artifact@v7
+      - if: always()
+        uses: actions/upload-artifact@v7
         with:
           name: channel-apk
           path: android-result/
+          if-no-files-found: ignore
