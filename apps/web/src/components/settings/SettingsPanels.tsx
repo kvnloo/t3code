@@ -60,6 +60,7 @@ import { useOptionalSettingsScope, useSettingsScope } from "./SettingsScopeConte
 import { scopedIdleCompaction } from "./scopedSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { ThreadTitleInstructionsSettings } from "./ThreadTitleInstructionsSettings";
+import { ThreadTagStylesRow } from "./ThreadTagStylesSettings";
 import { SnoozePresetsRow } from "./SnoozePresetsSettings";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import { managedTelemetryOffMessage, usePrimaryManagedPolicy } from "../../state/managedPolicy";
@@ -1592,6 +1593,12 @@ export function ThreadsSettingsPanel() {
       {!isProjectScope ? (
         <SettingsSection id="snooze" title="Snooze">
           <SnoozePresetsRow />
+        </SettingsSection>
+      ) : null}
+
+      {!isProjectScope ? (
+        <SettingsSection id="thread-tags" title="Tags">
+          <ThreadTagStylesRow />
         </SettingsSection>
       ) : null}
 

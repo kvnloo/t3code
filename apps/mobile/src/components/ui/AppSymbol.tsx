@@ -26,6 +26,14 @@ import IconBellRinging from "@tabler/icons-react-native/IconBellRinging";
 import IconBolt from "@tabler/icons-react-native/IconBolt";
 import IconBox from "@tabler/icons-react-native/IconBox";
 import IconBrain from "@tabler/icons-react-native/IconBrain";
+import IconBook from "@tabler/icons-react-native/IconBook";
+import IconBug from "@tabler/icons-react-native/IconBug";
+import IconFlame from "@tabler/icons-react-native/IconFlame";
+import IconFlask from "@tabler/icons-react-native/IconFlask";
+import IconHandStop from "@tabler/icons-react-native/IconHandStop";
+import IconHeart from "@tabler/icons-react-native/IconHeart";
+import IconMovie from "@tabler/icons-react-native/IconMovie";
+import IconRocket from "@tabler/icons-react-native/IconRocket";
 import IconCamera from "@tabler/icons-react-native/IconCamera";
 import IconCar from "@tabler/icons-react-native/IconCar";
 import IconChartBar from "@tabler/icons-react-native/IconChartBar";
@@ -168,6 +176,8 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "bell.badge": IconBellRinging,
   "bolt.circle": IconBolt,
   "bolt.horizontal.circle": IconBolt,
+  bolt: IconBolt,
+  book: IconBook,
   brain: IconBrain,
   "cable.connector": IconPlug,
   camera: IconCamera,
@@ -206,20 +216,26 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "exclamationmark.circle": IconAlertCircle,
   eye: IconEye,
   "eye.slash": IconEyeOff,
+  film: IconMovie,
+  flame: IconFlame,
   folder: IconFolder,
   "folder.badge.plus": IconFolderPlus,
   "folder.fill": IconFolder,
   gearshape: IconSettings,
   globe: IconWorld,
   hammer: IconHammer,
+  "hand.raised": IconHandStop,
   headphones: IconHeadphones,
+  heart: IconHeart,
   house: IconHome,
   "info.circle": IconInfoCircle,
   internaldrive: IconDatabase,
   iphone: IconDeviceMobile,
   keyboard: IconKeyboard,
+  ladybug: IconBug,
   laptopcomputer: IconDeviceLaptop,
   link: IconLink,
+  lock: IconLock,
   "list.number": IconListNumbers,
   "line.3.horizontal": IconMenu2,
   "line.3.horizontal.decrease": IconFilter,
@@ -230,6 +246,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   magnifyingglass: IconSearch,
   mic: IconMicrophone,
   paintbrush: IconPalette,
+  paperplane: IconRocket,
   pencil: IconPencil,
   "person.crop.circle": IconUserCircle,
   "person.2": IconUsers,
@@ -265,6 +282,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   "stop.fill": IconPlayerStopFilled,
   target: IconTarget,
   terminal: IconTerminal2,
+  "testtube.2": IconFlask,
   "text.alignleft": IconAlignLeft,
   "text.bubble": IconMessage,
   "questionmark.bubble": IconMessageCircleQuestion,

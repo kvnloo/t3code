@@ -436,6 +436,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     scope: "environment-defaults",
   },
   {
+    id: "thread-tag-styles",
+    title: "Thread tags",
+    to: "/settings/threads",
+    searchTerms: ["tags labels badges icons colors priority emoji sidebar thread list chips"],
+    environmentOnly: true,
+    scope: "environment-defaults",
+  },
+  {
     id: "snooze-limited-threads",
     title: "Snooze until limits reset",
     to: "/settings/threads",

@@ -383,6 +383,32 @@ it.layer(Layer.provideMerge(layerTools, layerOrchestration))("work a link starts
     }),
   );
 
+  it.effect("tags and untags through t3_thread_update, and refuses a fenced link", () =>
+    Effect.gen(function* () {
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const thread = yield* launch(claudeCode, "Tagged by an agent");
+      const setTag = (scope: McpInvocationContext.McpInvocationScope, action: "tag" | "untag") =>
+        call(scope, "t3_thread_update", { threadId: thread, action, tag: "needs-you" });
+      const tagsOf = (result: McpSchema.CallToolResult) =>
+        (result.structuredContent as { tags: ReadonlyArray<string> }).tags;
+
+      const tagged = yield* setTag(claudeCode, "tag");
+      assert.equal(tagged.isError, false, JSON.stringify(tagged.content));
+      assert.deepEqual(tagsOf(tagged), ["needs-you"]);
+      assert.deepEqual((yield* projections.getThreadShell(thread))?.tags, ["needs-you"]);
+      // Tagging twice keeps one tag.
+      assert.deepEqual(tagsOf(yield* setTag(claudeCode, "tag")), ["needs-you"]);
+      // A link below full access cannot tag a full-access thread it did not start.
+      assert.equal((yield* setTag(laptop, "untag")).isError, true);
+      assert.deepEqual((yield* projections.getThreadShell(thread))?.tags, ["needs-you"]);
+
+      const untagged = yield* setTag(claudeCode, "untag");
+      assert.equal(untagged.isError, false, JSON.stringify(untagged.content));
+      assert.deepEqual(tagsOf(untagged), []);
+      assert.deepEqual((yield* projections.getThreadShell(thread))?.tags ?? [], []);
+    }),
+  );
+
   it.effect("is not fenced when the link has full access, but still says where it came from", () =>
     Effect.gen(function* () {
       const projections = yield* ProjectionStore.ProjectionStoreV2;

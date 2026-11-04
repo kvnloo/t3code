@@ -148,6 +148,24 @@ it("drops a hand-edited non-string hidden tag and keeps the rest of the settings
   expect(settings.hideTaggedThreads).toBe(true);
 });
 
+it("drops an unknown icon or repeated tag style alone and keeps the rest", () => {
+  const settings = decodeServerSettings({
+    threadTagStyles: [
+      { tag: "focus", icon: "flame", color: "red" },
+      { tag: "later", icon: "not-an-icon" },
+      { tag: "focus", color: "blue" },
+      { tag: "restart", color: "amber" },
+    ],
+    hideTaggedThreads: true,
+  });
+  expect(settings.threadTagStyles).toEqual([
+    { tag: "focus", icon: "flame", color: "red" },
+    { tag: "restart", color: "amber" },
+  ]);
+  expect(settings.hideTaggedThreads).toBe(true);
+  expect(decodeServerSettings({}).threadTagStyles).toEqual([]);
+});
+
 describe("ServerSettings secret providers", () => {
   const onePassword = (account: string) => ({
     kind: "one_password",

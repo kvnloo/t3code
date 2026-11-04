@@ -127,9 +127,25 @@ Text generation**, under Advanced, such as a length limit or an identifier to pu
 regenerated titles. Select a project to give it its own instructions.
 
 Agents connected through T3 Code can use the same server-owned metadata workflow to
-rename a thread, regenerate its title, or link and unlink a pull request. These changes
-appear on web, desktop, and mobile without requiring the originating browser to remain
-open.
+rename a thread, regenerate its title, add or remove a tag, or link and unlink a pull request.
+These changes appear on web, desktop, and mobile without requiring the originating browser to
+remain open.
+
+### Tags
+
+Tags give threads their own look in thread lists. In **Settings → Threads → Tags** on web and
+desktop, add a tag and pick an icon and a color for it. A thread with a styled tag shows that tag's
+icon in place of its project icon, so threads in the same project no longer look alike. Its other
+styled tags show as small colored chips after the title. Tags higher in the list win the icon
+spot; use the arrow to move a tag up. Tags without a style stay invisible in thread lists.
+
+To tag a thread, open its menu and choose **Tags**, then pick a tag to add or remove it. On iOS
+and Android the **Tags** submenu appears once the environment has styled tags. Agents can tag
+threads for you too, for example to mark which threads need you or which are your current focus.
+To remove a tag everywhere, delete its style and untag the threads that still carry it.
+
+Styles belong to each environment, so threads from another machine use that machine's tags. Tag
+styles are edited on web and desktop; mobile shows them and toggles tags.
 
 ### Fold working threads (beta)
 

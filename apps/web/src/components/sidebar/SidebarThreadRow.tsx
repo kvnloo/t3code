@@ -102,6 +102,12 @@ import {
 import { pickSnoozePreset, resolveSnoozePresets, type SnoozePreset } from "../Sidebar.snooze";
 import { useThreadShell } from "../../state/entities";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
+import {
+  ThreadTagChips,
+  ThreadTagLeadingIcon,
+  threadTagAccessibleTitle,
+  useThreadTagBadges,
+} from "./ThreadTagBadges";
 import { ThreadSearchMatchExcerpt } from "../ThreadSearchMatch";
 import { makeWorkspaceFileDropHandlers } from "../chat/workspaceFileDrop";
 import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
@@ -663,6 +669,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     return leaseRowRef(row);
   };
   const isRegeneratingTitle = thread.titleRegeneration != null;
+  const tagBadges = useThreadTagBadges(thread);
   const localLastVisitedAt = useUiStateStore((state) => state.threadLastVisitedAtById[threadKey]);
   const lastVisitedAt = resolveThreadLastVisitedAt(thread.lastVisitedAt, localLastVisitedAt);
   const isSelected = useThreadSelectionStore((state) => state.selectedThreadKeys.has(threadKey));
@@ -998,7 +1005,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     ) : null;
 
   const accessibility = resolveSidebarRowAccessibility({
-    title: thread.title,
+    title: threadTagAccessibleTitle(thread.title, tagBadges),
     statusLabel: topStatus?.label ?? null,
     projectDisplayName: props.projectDisplayName,
     isActive: props.isActive,
@@ -1234,21 +1241,30 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             {/* `contents` keeps one-line rows a single flex row. */}
             <div className={multiline ? "flex h-6 min-w-0 items-center gap-2.5" : "contents"}>
               {accessibleTitle}
-              {inFolder ? null : (
+              {inFolder ? (
+                tagBadges.leading ? (
+                  <ThreadTagLeadingIcon badge={tagBadges.leading} className="size-3.5" />
+                ) : null
+              ) : (
                 <span
                   className={cn(
                     "flex shrink-0 items-center transition-opacity",
-                    (!props.isActive || variantAction === "unsettle") &&
+                    // Tag icons carry meaning in their color, so only project icons recede.
+                    tagBadges.leading === null &&
+                      (!props.isActive || variantAction === "unsettle") &&
                       "opacity-40 grayscale group-focus-within/sidebar-row:opacity-100 group-focus-within/sidebar-row:grayscale-0 group-hover/sidebar-row:opacity-100 group-hover/sidebar-row:grayscale-0",
                   )}
                 >
-                  {props.project ? (
+                  {tagBadges.leading ? (
+                    <ThreadTagLeadingIcon badge={tagBadges.leading} className="size-4" />
+                  ) : props.project ? (
                     <ProjectFavicon project={props.project} className="size-4" />
                   ) : null}
                 </span>
               )}
               {draftIndicator}
               {title}
+              <ThreadTagChips badges={tagBadges} />
               {multiline ? titleLineIcons : null}
               {pinIndicator}
               {multiline ? null : terminalStatusIcon}
@@ -1573,7 +1589,11 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               {props.sweepAction !== null ? dragDestination : null}
             </div>
             <div className="mt-1 flex min-w-0 items-center gap-1.5">
+              {tagBadges.leading ? (
+                <ThreadTagLeadingIcon badge={tagBadges.leading} className="size-3.5" />
+              ) : null}
               {title}
+              <ThreadTagChips badges={tagBadges} />
               {isRegeneratingTitle ? (
                 <span role="status" className="sr-only">
                   Regenerating title
@@ -1625,8 +1645,9 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
 }) {
   const thread =
     useThreadShell(scopeThreadRef(props.thread.environmentId, props.thread.id)) ?? props.thread;
+  const tagBadges = useThreadTagBadges(thread);
   const accessibility = resolveSidebarRowAccessibility({
-    title: thread.title,
+    title: threadTagAccessibleTitle(thread.title, tagBadges),
     statusLabel: null,
     projectDisplayName: props.projectDisplayName,
     isActive: props.isRouteActive,
@@ -1712,7 +1733,9 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
             />
           }
         >
-          {props.project ? (
+          {tagBadges.leading ? (
+            <ThreadTagLeadingIcon badge={tagBadges.leading} className="size-4" />
+          ) : props.project ? (
             <ProjectFavicon
               project={props.project}
               className={cn(
@@ -1738,6 +1761,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
               >
                 {thread.title}
               </span>
+              <ThreadTagChips badges={tagBadges} />
               <span id={`${props.resultId}-pr`} className="contents">
                 <ThreadSearchPullRequestNumber
                   thread={thread}

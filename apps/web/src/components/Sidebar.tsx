@@ -153,7 +153,7 @@ import {
   useQuietThreadShells,
 } from "../state/entities";
 import { environmentPresentations } from "../state/presentation";
-import { primaryServerKeybindingsAtom } from "../state/server";
+import { primaryServerKeybindingsAtom, serverEnvironment } from "../state/server";
 import { environmentProjects } from "../state/projects";
 import { threadEnvironment } from "../state/threads";
 import { useOlderSettledShelf, useOlderSettledShelfGrowth } from "../state/olderSettledShelf";
@@ -177,6 +177,7 @@ import {
   buildThreadActionMenuItems,
   threadActionRequiresOperate,
 } from "./threadActionMenu.logic";
+import { threadMenuTags } from "@t3tools/client-runtime/state/thread-tag-badges";
 import {
   applySidebarThreadDrop,
   filterSidebarV2VisibleThreads,
@@ -949,6 +950,9 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     deleteThread,
   } = useThreadActions();
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
+    reportFailure: false,
+  });
+  const setThreadTag = useOrchestrationCommand(threadEnvironment.setTag, {
     reportFailure: false,
   });
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
@@ -2654,12 +2658,45 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
                 titleRegeneration: configLoaded,
               },
               snoozePresets,
+              ...(configLoaded
+                ? {
+                    tags: threadMenuTags(
+                      thread.source.tags,
+                      appAtomRegistry.get(
+                        serverEnvironment.threadTagStylesAtom(threadRef.environmentId),
+                      ),
+                    ),
+                  }
+                : {}),
             }),
             position,
           ),
         );
         if (clicked._tag === "Failure" || clicked.value === null) return;
         if (threadActionRequiresOperate(clicked.value) && !checkThreadOperations([thread])) return;
+        if (clicked.value.startsWith("tag:")) {
+          const tag = clicked.value.slice("tag:".length);
+          const tagged = !(thread.source.tags ?? []).includes(tag);
+          const result = await setThreadTag({
+            environmentId: threadRef.environmentId,
+            input: { threadId: threadRef.threadId, tag, tagged },
+          });
+          if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+            const error = squashAtomCommandFailure(result);
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: tagged ? "Failed to tag thread" : "Failed to remove tag",
+                description: error instanceof Error ? error.message : "An error occurred.",
+              }),
+            );
+          }
+          return;
+        }
+        if (clicked.value === "tags:manage") {
+          void router.navigate({ to: "/settings/threads", hash: "thread-tag-styles" });
+          return;
+        }
         if (clicked.value?.startsWith("snooze:")) {
           const preset =
             clicked.value === "snooze:custom"

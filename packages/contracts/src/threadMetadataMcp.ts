@@ -8,6 +8,7 @@ import {
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 import { ThreadLinkedPullRequest } from "./threadPullRequest.ts";
+import { ThreadTag } from "./threadTags.ts";
 import { ThreadTitleRegeneration } from "./threadTitle.ts";
 
 export function hasOnlyPairedSurrogates(value: string): boolean {
@@ -40,19 +41,35 @@ const ThreadMetadataClientRequestId = TrimmedNonEmptyString.check(Schema.isMaxLe
   )
   .annotate({ description: "Stable idempotency key to reuse when retrying this mutation." });
 
-export const ThreadMetadataMcpAction = Schema.Literals(["rename", "regenerate_title"]);
+export const ThreadMetadataMcpAction = Schema.Literals([
+  "rename",
+  "regenerate_title",
+  "tag",
+  "untag",
+]);
 export type ThreadMetadataMcpAction = typeof ThreadMetadataMcpAction.Type;
+
+const ThreadMetadataTag = ThreadTag.annotate({
+  description:
+    "Tag to add or remove. Required only when action is tag or untag. Tags with a style in settings show as an icon or chip in thread lists.",
+});
 
 export const ThreadMetadataMcpUpdateInput = Schema.Struct({
   threadId: Schema.optional(ThreadId),
   action: ThreadMetadataMcpAction,
   title: Schema.optional(ThreadMetadataTitle),
+  tag: Schema.optional(ThreadMetadataTag),
   clientRequestId: Schema.optional(ThreadMetadataClientRequestId),
 }).check(
   Schema.makeFilter((input) =>
     (input.action === "rename") === (input.title !== undefined)
       ? true
-      : "rename requires title; regenerate_title does not accept one.",
+      : "rename requires title; other actions do not accept one.",
+  ),
+  Schema.makeFilter((input) =>
+    (input.action === "tag" || input.action === "untag") === (input.tag !== undefined)
+      ? true
+      : "tag and untag require tag; other actions do not accept one.",
   ),
 );
 export type ThreadMetadataMcpUpdateInput = typeof ThreadMetadataMcpUpdateInput.Type;
@@ -63,6 +80,7 @@ export const ThreadMetadataMcpUpdateResult = Schema.Struct({
   commandId: CommandId,
   sequence: NonNegativeInt,
   title: Schema.String,
+  tags: Schema.Array(Schema.String),
   titleRegeneration: Schema.NullOr(ThreadTitleRegeneration),
   linkedPullRequest: Schema.NullOr(ThreadLinkedPullRequest),
   updatedAt: IsoDateTime,
