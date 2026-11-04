@@ -23,7 +23,8 @@ tests="app.config.test.ts"
 for t in src/lib/desktopColors.test.ts src/lib/windowGlass.test.ts src/lib/mobileTheme.test.ts src/lib/nativeTheme.test.ts; do
   test -f "apps/mobile/$t" && tests="$tests $t"
 done
-(cd apps/mobile && ../../node_modules/.bin/vp test run $tests) > android-result/mobile-unit.log 2>&1 || { cat android-result/mobile-unit.log; exit 1; }
+# The fork's nightly variant is not in app.t3.codes' universal-link list, so skip that one upstream check.
+(cd apps/mobile && ../../node_modules/.bin/vp test run $tests -t '^(?!.*APP_VARIANT="nightly").*$') > android-result/mobile-unit.log 2>&1 || { cat android-result/mobile-unit.log; exit 1; }
 for t in apps/mobile/src/lib/openUiMarkdown.node-test.ts packages/client-runtime/src/openUiCharts.node-test.ts; do
   test -f "$t" && { node --test "$t" >> android-result/mobile-unit.log 2>&1 || { cat android-result/mobile-unit.log; exit 1; }; }
 done
