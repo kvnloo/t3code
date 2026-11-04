@@ -3,6 +3,7 @@ import {
   DEFAULT_MOBILE_THEME_ID,
   flattenThemeColor,
   getMobileThemeVariables,
+  isMobilePaletteThemeId,
   themeColorWithAlpha,
   themeColorWithContrast,
   type MobileThemeAppearance,
@@ -55,7 +56,7 @@ function platformThemeVariables(
   appearance: MobileThemeAppearance,
   platform: string,
 ): MobileThemeVariables {
-  const usesDefaultPalette = themeId === DEFAULT_MOBILE_THEME_ID || themeId === "material-you";
+  const usesDefaultPalette = themeId === DEFAULT_MOBILE_THEME_ID || isMobilePaletteThemeId(themeId);
   const variables = usesDefaultPalette
     ? defaults[appearance]
     : getMobileThemeVariables(themeId, appearance);

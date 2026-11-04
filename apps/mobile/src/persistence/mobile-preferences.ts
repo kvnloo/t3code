@@ -15,6 +15,7 @@ import {
   type SidebarProjectGroupingMode,
 } from "@t3tools/contracts";
 import type { AndroidNavigationStyle } from "../lib/androidNavigationStyle";
+import type { WindowGlassMode } from "../lib/windowGlass";
 import type { ComposerEnterBehavior } from "../lib/composerEnterBehavior";
 import type { FollowUpBehavior } from "../lib/followUpBehavior";
 import { isMicrophoneKind, type MicrophoneEntry } from "../lib/microphonePriority";
@@ -97,6 +98,8 @@ export interface Preferences {
   readonly darkThemeId?: MobileThemeId;
   readonly themeMode?: MobileThemeMode;
   readonly androidNavigationStyle?: AndroidNavigationStyle;
+  /** Android only: see-through window over the wallpaper. Unset means off. */
+  readonly windowGlass?: WindowGlassMode;
   readonly baseFontSize?: number;
   readonly terminalFontSize?: number | null;
   readonly markdownFontSize?: number;
@@ -179,6 +182,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     darkThemeId?: MobileThemeId;
     themeMode?: MobileThemeMode;
     androidNavigationStyle?: AndroidNavigationStyle;
+    windowGlass?: WindowGlassMode;
     baseFontSize?: number;
     terminalFontSize?: number | null;
     markdownFontSize?: number;
@@ -261,6 +265,13 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (parsed.androidNavigationStyle === "one-ui" || parsed.androidNavigationStyle === "material") {
     preferences.androidNavigationStyle = parsed.androidNavigationStyle;
+  }
+  if (
+    parsed.windowGlass === "off" ||
+    parsed.windowGlass === "clear" ||
+    parsed.windowGlass === "frosted"
+  ) {
+    preferences.windowGlass = parsed.windowGlass;
   }
   if (typeof parsed.baseFontSize === "number") preferences.baseFontSize = parsed.baseFontSize;
   if (typeof parsed.terminalFontSize === "number" || parsed.terminalFontSize === null) {

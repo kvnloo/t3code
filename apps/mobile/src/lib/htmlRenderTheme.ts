@@ -3,6 +3,7 @@ import { HTML_RENDER_DEFAULT_FONTS, htmlRenderTheme } from "@t3tools/shared/html
 import {
   DEFAULT_MOBILE_THEME_ID,
   getMobileThemeColors,
+  isMobilePaletteThemeId,
   nativeColors,
   type MobileThemeAppearance,
   type MobileThemeId,
@@ -19,7 +20,7 @@ export function mobileHtmlRenderTheme(input: {
 }) {
   const { variables: v } = input;
   const palette = getMobileThemeColors(
-    input.themeId === "material-you" ? DEFAULT_MOBILE_THEME_ID : input.themeId,
+    isMobilePaletteThemeId(input.themeId) ? DEFAULT_MOBILE_THEME_ID : input.themeId,
     input.appearance,
   );
   const colors = nativeColors(

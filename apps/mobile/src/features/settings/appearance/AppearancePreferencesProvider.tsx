@@ -1,5 +1,5 @@
 import { createContext, startTransition, use, useMemo, type ReactNode } from "react";
-import { AppState, Appearance, Platform, useColorScheme } from "react-native";
+import { AppState, Appearance, Platform, View, useColorScheme } from "react-native";
 
 import { manufacturer } from "expo-device";
 import {
@@ -26,6 +26,25 @@ import {
   type MaterialYouPalettes,
 } from "../../../lib/materialYouPalette";
 import { materialYouPaletteToMobileThemeVariables } from "../../../lib/materialYouTheme";
+import {
+  desktopColorsToPalettes,
+  paletteAppearance,
+  parseDesktopColors,
+} from "../../../lib/desktopColors";
+import {
+  normalizeWindowGlassMode,
+  resolveReadableTheme,
+  resolveWindowGlassPlan,
+  type ReadableTheme,
+  type WindowGlassMode,
+  type WindowGlassPlan,
+} from "../../../lib/windowGlass";
+import {
+  isWindowGlassAvailable,
+  readDesktopColorsJson,
+  setWindowGlass as applyNativeWindowGlass,
+  subscribeDesktopColors,
+} from "../../../native/windowGlass";
 import { getMobileThemeRuntimeVariables } from "../../../lib/mobileThemeVariables";
 import type { MobileThemeVariables } from "../../../lib/mobileTheme";
 import {
@@ -33,6 +52,7 @@ import {
   createMobileThemeSelectionPatch,
   normalizeMobileThemeMode,
   resolveMobileThemeIds,
+  isMobilePaletteThemeId,
   type MobileThemeAppearance,
   type MobileThemeId,
   type MobileThemeIds,
@@ -59,6 +79,14 @@ interface AppearancePreferencesContextValue {
     Record<MobileThemeAppearance, MobileThemeVariables>
   >;
   readonly systemColorPalettes: ReturnType<typeof readSystemColorPalettes>;
+  /** Palette pushed from the desktop's dotfiles; null until one arrives. */
+  readonly desktopColorPalettes: MaterialYouPalettes | null;
+  /** A runtime palette (Material You or Desktop) is painting the app. */
+  readonly paletteThemeActive: boolean;
+  readonly windowGlassAvailable: boolean;
+  readonly windowGlass: WindowGlassMode;
+  readonly windowGlassBlurSupported: boolean;
+  readonly setWindowGlass: (value: WindowGlassMode) => void;
   readonly isReady: boolean;
   readonly setThemeIdForAppearance: (
     appearance: MobileThemeAppearance,
@@ -105,15 +133,50 @@ const systemColorPalettesAtom = Atom.make((get): MaterialYouPalettes | null => {
   return initial;
 }).pipe(Atom.withLabel("mobile:system-color-palettes"));
 
+/** Desktop colors arrive by broadcast from the computer and persist natively across restarts. */
+const desktopColorPalettesAtom = Atom.make((get): MaterialYouPalettes | null => {
+  const read = (json: string | null) => {
+    if (!json) return null;
+    try {
+      return desktopColorsToPalettes(parseDesktopColors(JSON.parse(json)));
+    } catch {
+      return null;
+    }
+  };
+  const unsubscribe = subscribeDesktopColors((json) => get.setSelf(read(json)));
+  get.addFinalizer(unsubscribe);
+  return read(readDesktopColorsJson());
+}).pipe(Atom.withLabel("mobile:desktop-color-palettes"));
+
+/** Whether the window can blur the wallpaper; known after the first native apply. */
+const windowGlassBlurSupportedAtom = Atom.make(false).pipe(
+  Atom.withLabel("mobile:window-glass-blur-supported"),
+);
+
+const windowGlassModeAtom = Atom.make((get) =>
+  isWindowGlassAvailable
+    ? normalizeWindowGlassMode(storedPreferencesOf(get(mobilePreferencesAtom))?.windowGlass)
+    : "off",
+);
+
 function resolveThemeVariablesByAppearance(
   themeIds: MobileThemeIds,
-  palettes: MaterialYouPalettes | null,
-): Readonly<Record<MobileThemeAppearance, MobileThemeVariables>> {
+  palettes: Readonly<Record<"material-you" | "desktop", MaterialYouPalettes | null>>,
+  glass: WindowGlassPlan | null,
+): Readonly<Record<MobileThemeAppearance, ReadableTheme>> {
   const resolve = (appearance: MobileThemeAppearance) => {
-    const base = getMobileThemeRuntimeVariables(themeIds[appearance], appearance, Platform.OS);
-    return themeIds[appearance] === "material-you" && palettes
-      ? materialYouPaletteToMobileThemeVariables(palettes[appearance], appearance, base)
+    const themeId = themeIds[appearance];
+    const palette = isMobilePaletteThemeId(themeId) ? palettes[themeId] : null;
+    // A desktop palette is one fixed scheme (pywal/Noctalia), light or dark on its own terms;
+    // map it with the tones of the scheme it is, not the phone's, or dark text lands on a dark
+    // surface.
+    const toneAppearance =
+      themeId === "desktop" && palette ? paletteAppearance(palette[appearance]) : appearance;
+    const base = getMobileThemeRuntimeVariables(themeId, toneAppearance, Platform.OS);
+    const variables = palette
+      ? materialYouPaletteToMobileThemeVariables(palette[appearance], toneAppearance, base)
       : base;
+    return resolveReadableTheme(variables, glass);
   };
   return { light: resolve("light"), dark: resolve("dark") };
 }
@@ -169,6 +232,19 @@ function currentRuntimeState() {
   return appliedRuntimeState ?? appAtomRegistry.get(themeRuntimeStateAtom);
 }
 
+let windowGlassRequest = 0;
+
+// The blur radius depends on what the device supports, which only the native side knows, so the
+// first apply asks for blur and later applies reuse the answer.
+function applyWindowGlassMode(mode: WindowGlassMode) {
+  const request = ++windowGlassRequest;
+  const plan = resolveWindowGlassPlan(mode, true);
+  void applyNativeWindowGlass(plan !== null, plan?.blurDp ?? 0).then((state) => {
+    if (request !== windowGlassRequest) return;
+    appAtomRegistry.set(windowGlassBlurSupportedAtom, state.blurSupported);
+  });
+}
+
 /**
  * App-lifetime: applies theme preferences to the native runtime and holds the
  * system palette listeners. Holding them here instead of `keepAlive` lets the
@@ -179,9 +255,15 @@ export function installAppearanceRuntime(): () => void {
     immediate: true,
   });
   const releasePalettes = appAtomRegistry.mount(systemColorPalettesAtom);
+  const releaseDesktopPalettes = appAtomRegistry.mount(desktopColorPalettesAtom);
+  const unsubscribeGlass = isWindowGlassAvailable
+    ? appAtomRegistry.subscribe(windowGlassModeAtom, applyWindowGlassMode, { immediate: true })
+    : () => {};
   return () => {
     unsubscribeRuntime();
     releasePalettes();
+    releaseDesktopPalettes();
+    unsubscribeGlass();
   };
 }
 
@@ -211,11 +293,23 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
   const themeId = themeIds[themeAppearance];
   const systemColorsActive = themeId === "material-you" && isSystemColorsAvailable;
   const systemColorPalettes = useAtomValue(systemColorPalettesAtom);
-  const themeVariablesByAppearance = resolveThemeVariablesByAppearance(
+  const desktopColorPalettes = useAtomValue(desktopColorPalettesAtom);
+  const paletteThemeActive =
+    systemColorsActive || (themeId === "desktop" && desktopColorPalettes !== null);
+  const windowGlass = useAtomValue(windowGlassModeAtom);
+  const windowGlassBlurSupported = useAtomValue(windowGlassBlurSupportedAtom);
+  const windowGlassPlan = resolveWindowGlassPlan(windowGlass, windowGlassBlurSupported);
+  const readableThemes = resolveThemeVariablesByAppearance(
     themeIds,
-    systemColorPalettes,
+    { "material-you": systemColorPalettes, desktop: desktopColorPalettes },
+    windowGlassPlan,
   );
+  const themeVariablesByAppearance = {
+    light: readableThemes.light.variables,
+    dark: readableThemes.dark.variables,
+  };
   const themeVariables = themeVariablesByAppearance[themeAppearance];
+  const glassRootColor = readableThemes[themeAppearance].glassRootColor;
   const activeThemeName = getMobileUniwindThemeName(themeId, themeAppearance);
   const { baseFontSize, codeFontSize, codeWordBreak, terminalFontSize } = preferences;
   const appearance = useMemo(
@@ -289,6 +383,8 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
     updatePreferences({ codeWordBreak: value });
   };
 
+  const setWindowGlass = (value: WindowGlassMode) => updateThemePreferences({ windowGlass: value });
+
   const mathRenderingEnabled = storedPreferences?.mathRenderingEnabled === true;
   const setMathRenderingEnabled = (value: boolean) =>
     updatePreferences({ mathRenderingEnabled: value });
@@ -307,6 +403,12 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       themeVariables,
       themeVariablesByAppearance,
       systemColorPalettes,
+      desktopColorPalettes,
+      paletteThemeActive,
+      windowGlassAvailable: isWindowGlassAvailable,
+      windowGlass,
+      windowGlassBlurSupported,
+      setWindowGlass,
       isReady,
       setThemeIdForAppearance,
       setThemeIdForBothAppearances,
@@ -330,6 +432,11 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       themeVariables,
       themeVariablesByAppearance,
       systemColorPalettes,
+      desktopColorPalettes,
+      paletteThemeActive,
+      windowGlass,
+      windowGlassBlurSupported,
+      setWindowGlass,
       isReady,
       setThemeIdForAppearance,
       setThemeIdForBothAppearances,
@@ -346,7 +453,10 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
   return (
     <AppearancePreferencesContext.Provider value={value}>
       <ScopedTheme theme={activeThemeName}>
-        <ScopedVariables variables={themeVariables}>{props.children}</ScopedVariables>
+        <ScopedVariables variables={themeVariables}>
+          {/* The one tint layer over the wallpaper in glass mode; transparent otherwise. */}
+          <View style={{ flex: 1, backgroundColor: glassRootColor }}>{props.children}</View>
+        </ScopedVariables>
       </ScopedTheme>
     </AppearancePreferencesContext.Provider>
   );

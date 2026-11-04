@@ -1,1 +1,12 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <!-- Desktop colors from a dotfiles hook (adb broadcast). Cosmetic only; the app validates every value. -->
+    <receiver
+      android:name="expo.modules.t3nativecontrols.T3DesktopColorsReceiver"
+      android:exported="true">
+      <intent-filter>
+        <action android:name="com.t3tools.t3code.SET_COLORS" />
+      </intent-filter>
+    </receiver>
+  </application>
+</manifest>

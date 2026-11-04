@@ -69,7 +69,9 @@ export function ComponentCatalogScreen() {
           <AppText className="text-sm text-foreground-muted">Theme preview</AppText>
           <View className="flex-row flex-wrap gap-2">
             {MOBILE_THEME_IDS.filter(
-              (id) => id !== "material-you" || appearance.systemColorsAvailable,
+              (id) =>
+                (id !== "material-you" || appearance.systemColorsAvailable) &&
+                (id !== "desktop" || appearance.desktopColorPalettes !== null),
             ).map((id) => (
               <Chip
                 key={id}
