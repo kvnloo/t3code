@@ -2569,3 +2569,53 @@ code {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
+
+/* App cards: type scale, easing and elevation copied from each app's design system. Colours come
+   from appCardThemes.ts as --ac-* variables on the card root. */
+@utility ac-t8 {
+  font-size: 8px;
+  line-height: 16px;
+}
+@utility ac-t11 {
+  font-size: 11px;
+  line-height: 16px;
+}
+@utility ac-t13 {
+  font-size: 13px;
+  line-height: 18px;
+}
+@utility ac-t15 {
+  font-size: 15px;
+  line-height: 21px;
+}
+@utility ac-t17 {
+  font-size: 17px;
+  line-height: 22px;
+  letter-spacing: -0.02em;
+}
+@utility ac-tight {
+  letter-spacing: -0.01em;
+}
+/* Material 3 emphasized easing. */
+@utility ac-ease-emphasized {
+  transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+/* Gmail's row hover lift. */
+@utility ac-lift {
+  &:hover {
+    z-index: 1;
+    box-shadow:
+      0 1px 2px 0 rgb(60 64 67 / 0.3),
+      0 1px 3px 1px rgb(60 64 67 / 0.15);
+  }
+}
+/* The maps route draws itself once along its real geometry. */
+@utility ac-route-draw {
+  stroke-dashoffset: 0;
+  @media (prefers-reduced-motion: no-preference) {
+    transition: stroke-dashoffset 1s cubic-bezier(0.65, 0, 0.35, 1);
+    @starting-style {
+      stroke-dashoffset: 1;
+    }
+  }
+}

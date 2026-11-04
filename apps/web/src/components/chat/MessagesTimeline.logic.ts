@@ -23,6 +23,7 @@ import {
   liveActivityToolStatus,
   normalizeCompactToolLabel,
   resolveWorkEntryToolPresentation,
+  workEntryAppActivityLabel,
   summarizeToolGroup,
   toolGroupAction,
   toolGroupSummaryKind,
@@ -96,6 +97,8 @@ function workEntryIsActiveTurnActivity(entry: WorkLogEntry): boolean {
 
 function singleToolCallLabel(entry: WorkLogEntry): string {
   if (entry.itemType === "reasoning") return entry.detail?.trim().replace(/\s+/g, " ") || "Thought";
+  const appLabel = workEntryAppActivityLabel(entry, entry.toolLifecycleStatus ?? "completed");
+  if (appLabel) return appLabel;
   const toolPresentation = resolveWorkEntryToolPresentation(entry, "completed");
   if (toolPresentation) return toolPresentation.displayName;
   const item = entry.structuredPayload;
@@ -137,6 +140,8 @@ export function workEntryDisplayLabel(entry: WorkLogEntry, workspaceRoot: string
     const thought = entry.detail?.trim().replace(/\s+/g, " ");
     return thought || entry.label;
   }
+  const appLabel = workEntryAppActivityLabel(entry);
+  if (appLabel) return appLabel;
   const toolPresentation = resolveWorkEntryToolPresentation(entry);
   if (toolPresentation) return toolPresentation.displayName;
   if (entry.command?.trim()) return commandDisplayText(entry.command);
@@ -243,6 +248,8 @@ export function liveWorkEntryLabel(
       (status === "inProgress" ? "Thinking" : "Thought")
     );
   }
+  const appLabel = workEntryAppActivityLabel(entry, status);
+  if (appLabel) return appLabel;
   const toolPresentation = resolveWorkEntryToolPresentation({
     ...entry,
     toolLifecycleStatus: status,

@@ -44,6 +44,8 @@ const FIXTURES = "../src/orchestration-v2/testkit/fixtures";
 // Use acpRegistry transcripts: vendor transcripts carry state in frames this agent drops.
 export const SCENARIOS = [
   { id: "showcase", name: "Showcase", file: "./dev-replay/showcase_transcript.ndjson" },
+  // Four demo connector calls, then an OpenUI board of app cards (experiments/openui-lab).
+  { id: "app-cards", name: "App cards", file: "./dev-replay/app_cards_transcript.ndjson" },
   {
     id: "todo-list",
     name: "Plan and reads",

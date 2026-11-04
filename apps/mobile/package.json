@@ -55,6 +55,9 @@
     "@clerk/expo-native-components": "0.4.0",
     "@effect/atom-react": "catalog:",
     "@expo-google-fonts/dm-sans": "^0.4.2",
+    "@expo-google-fonts/google-sans": "^0.4.4",
+    "@expo-google-fonts/inter-tight": "^0.4.2",
+    "@expo-google-fonts/mona-sans": "^0.4.1",
     "@expo/metro-runtime": "~58.0.14",
     "@expo/ui": "58.0.20",
     "@legendapp/list": "catalog:",
@@ -62,7 +65,6 @@
     "@noble/curves": "catalog:",
     "@openuidev/lang-core": "1.0.2",
     "@openuidev/react-lang": "1.0.2",
-    "zod": "^4.6.5",
     "@pierre/diffs": "catalog:",
     "@pierre/highlights": "catalog:",
     "@react-native-ai/apple": "0.12.0",
@@ -140,7 +142,8 @@
     "remark-parse": "catalog:",
     "tailwind-merge": "^3.5.0",
     "unified": "catalog:",
-    "uniwind": "1.13.0"
+    "uniwind": "1.13.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@babel/core": "^7.29.7",

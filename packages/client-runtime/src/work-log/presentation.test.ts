@@ -4,7 +4,10 @@ import { ThreadId, TurnItemId, type OrchestrationV2TurnItem } from "@t3tools/con
 import * as DateTime from "effect/DateTime";
 
 import {
+  resolveWorkEntryAppActivity,
   resolveWorkEntryToolPresentation,
+  summarizeToolGroup,
+  workEntryAppActivityLabel,
   toolItemForDisplay,
   type WorkLogPresentationEntry,
   workEntryIndicatesToolFailure,
@@ -202,5 +205,96 @@ describe("resolveWorkEntryToolPresentation", () => {
         toolData: { server: "another-server", tool: "preview_click" },
       }),
     ).toBeNull();
+  });
+});
+
+describe("resolveWorkEntryAppActivity", () => {
+  it.each([
+    [{ label: "mcp__editor_gmail_3f2a9c0d__search_threads" }, "Searching Gmail"],
+    [
+      {
+        label: "Gmail search",
+        toolData: { server: "gmail", tool: "search_threads", arguments: { query: "invoices" } },
+      },
+      "Searching Gmail",
+    ],
+    [
+      { label: "uber.request_ride", toolLifecycleStatus: "completed" as const },
+      "Requested an Uber",
+    ],
+  ])("brands connector tools across providers: %o", (fields, label) => {
+    expect(resolveWorkEntryAppActivity({ ...fields })?.label).toBe(label);
+  });
+
+  it("reads the detail from structured arguments and leaves other tools alone", () => {
+    expect(
+      resolveWorkEntryAppActivity({
+        label: "Gmail search",
+        toolData: { server: "gmail", tool: "search_threads", arguments: { query: "invoices" } },
+      })?.detail,
+    ).toBe("invoices");
+    expect(resolveWorkEntryAppActivity({ label: "T3-code.preview_click" })).toBeNull();
+    expect(resolveWorkEntryAppActivity({ label: "Ran command" })).toBeNull();
+  });
+
+  it("reads Hermes connector calls, whose tool name carries the detail after a colon", () => {
+    const activity = resolveWorkEntryAppActivity({
+      label: "search messages",
+      structuredPayload: {
+        type: "dynamic_tool",
+        toolName: "editor_gmail_63ea3519.search_messages: invoices from Acme",
+        input: { query: "invoices from Acme" },
+      } as never,
+      toolLifecycleStatus: "completed",
+    });
+    expect(activity && [activity.brand.name, activity.label, activity.detail]).toEqual([
+      "Gmail",
+      "Searched Gmail",
+      "invoices from Acme",
+    ]);
+  });
+});
+
+describe("workEntryAppActivityLabel", () => {
+  it("joins the sentence and detail, with the live status taking precedence", () => {
+    const entry = {
+      label: "get pull request",
+      structuredPayload: {
+        type: "dynamic_tool",
+        toolName: "editor_github_2f7f86e1.get_pull_request",
+        input: { number: 128 },
+      } as never,
+      toolLifecycleStatus: "completed" as const,
+    };
+    expect(workEntryAppActivityLabel(entry)).toBe("Read from GitHub · #128");
+    expect(workEntryAppActivityLabel(entry, "inProgress")).toBe("Reading from GitHub · #128");
+    expect(workEntryAppActivityLabel({ label: "Ran command" })).toBeNull();
+  });
+});
+
+describe("summarizeToolGroup", () => {
+  const sourced = (key: string, name: string) =>
+    ({
+      id: key,
+      createdAt: "2026-11-03T00:00:00.000Z",
+      label: name,
+      tone: "tool",
+      itemType: "dynamic_tool",
+      toolSource: { key: `mcp:${key}`, name, kind: "integration" },
+    }) as unknown as WorkLogPresentationEntry;
+
+  it("names connector apps by brand instead of their renamed MCP servers", () => {
+    const summary = summarizeToolGroup([
+      sourced("editor_gmail_63ea3519", "editor gmail 63ea3519"),
+      sourced("editor_uber_46f286a1", "editor uber 46f286a1"),
+      sourced("editor_google_maps_0e4b678a", "editor google maps 0e4b678a"),
+    ]).summary;
+    expect(summary).toBe("Used Gmail, Uber, and Google Maps");
+  });
+
+  it("keeps the integration wording for servers that are not known apps", () => {
+    expect(summarizeToolGroup([sourced("linear", "Linear")]).summary).toBe(
+      "Used Linear integration",
+    );
   });
 });

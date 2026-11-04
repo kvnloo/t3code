@@ -1,0 +1,109 @@
+import * as NodeAssert from "node:assert/strict";
+import { it as test } from "vite-plus/test";
+
+import {
+  appCardProblem,
+  avatarColor,
+  carClass,
+  checkTimeline,
+  formatSeconds,
+  cheapestRide,
+  checkCounts,
+  rideReadout,
+  type PullRequestCheck,
+} from "./openUiAppCards.ts";
+import { chartPanelProblem, streamingChartBoard } from "./openUiCharts.ts";
+
+const options = [
+  { name: "UberX", minutes: 4, price: "$31.20", seats: 4 },
+  { name: "Comfort", minutes: 6, price: "$38.90", seats: 4 },
+  { name: "UberXL", minutes: 9, price: "$52.10", seats: 6 },
+];
+
+test("ride options read out and tag the cheapest", () => {
+  NodeAssert.equal(rideReadout(options[0]!), "UberX · pickup in 4 min · $31.20 · 4 seats");
+  NodeAssert.equal(cheapestRide(options), "UberX");
+  NodeAssert.equal(
+    cheapestRide([{ name: "Wait & Save", minutes: 12, price: "Price on request", seats: 4 }]),
+    null,
+  );
+  NodeAssert.match(
+    appCardProblem({
+      typeName: "RideOptions",
+      props: { app: "uber", options: [...options, options[0]!] },
+    })!,
+    /same option twice/,
+  );
+});
+
+test("pull request states must agree with checks and conflicts", () => {
+  const checks: ReadonlyArray<PullRequestCheck> = [
+    { name: "Tests", status: "pass", detail: "42 passed" },
+    { name: "Lint", status: "pass", detail: "" },
+  ];
+  const pr = (
+    state: "open" | "conflict" | "ready" | "merged" | "closed",
+    conflicts: number,
+    list = checks,
+  ) => ({ typeName: "PullRequest" as const, props: { state, checks: list, conflicts } });
+  NodeAssert.equal(appCardProblem(pr("ready", 0)), null);
+  NodeAssert.equal(appCardProblem(pr("conflict", 3)), null);
+  NodeAssert.match(appCardProblem(pr("conflict", 0))!, /conflict count/);
+  NodeAssert.match(appCardProblem(pr("merged", 2))!, /cannot have conflicts/);
+  NodeAssert.match(
+    appCardProblem(pr("ready", 0, [{ name: "Tests", status: "running", detail: "" }]))!,
+    /every check/,
+  );
+  NodeAssert.equal(
+    chartPanelProblem(pr("merged", 0)),
+    null,
+    "the chart board inspector delegates to app cards",
+  );
+  NodeAssert.deepEqual(checkCounts([...checks, { name: "Types", status: "fail", detail: "" }]), {
+    pass: 2,
+    fail: 1,
+    running: 0,
+    skip: 0,
+  });
+});
+
+test("a sender keeps one avatar color regardless of case or spacing", () => {
+  NodeAssert.equal(avatarColor("Acme Billing"), avatarColor(" acme billing "));
+  NodeAssert.match(avatarColor("Dana Ruiz"), /^#[0-9a-f]{6}$/);
+});
+
+test("ride names map to a vehicle glyph", () => {
+  NodeAssert.deepEqual(
+    ["UberX", "Comfort", "UberXL", "Black", "Black SUV", "Lyft XL", "Wait & Save"].map(carClass),
+    ["x", "comfort", "xl", "black", "xl", "xl", "x"],
+  );
+});
+
+test("checks with timing become gantt spans; any untimed check falls back", () => {
+  const timeline = checkTimeline([
+    { started: 0, seconds: 11 },
+    { started: 41, seconds: 33 },
+  ]);
+  NodeAssert.equal(timeline?.total, 74);
+  NodeAssert.deepEqual(timeline?.spans[1], { start: 41 / 74, length: 33 / 74 });
+  NodeAssert.equal(checkTimeline([{ started: 0, seconds: 3 }, {}]), null);
+  NodeAssert.equal(formatSeconds(64), "1m 4s");
+  NodeAssert.equal(formatSeconds(38), "38s");
+});
+
+test("a streaming board shows the panels whose statements are complete", () => {
+  const root = 'root = Board("Trip", "Demo.", [mail, ride, route])\n';
+  const mail = 'mail = MailList("q", [])\n';
+  NodeAssert.equal(streamingChartBoard(root), null);
+  NodeAssert.equal(
+    streamingChartBoard(root + mail + 'ride = RideOptions("ub'),
+    root.replace("[mail, ride, route]", "[mail]") + mail.trimEnd(),
+  );
+  NodeAssert.equal(streamingChartBoard('root = Board("Trip", "Demo.", [mail'), null);
+  NodeAssert.equal(streamingChartBoard(mail), null);
+  // An open fence arrives with a newline after the partial line.
+  NodeAssert.equal(
+    streamingChartBoard(`${root}${mail}ride = Ride\n`),
+    root.replace("[mail, ride, route]", "[mail]") + mail.trimEnd(),
+  );
+});
