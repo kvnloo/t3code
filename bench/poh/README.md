@@ -147,3 +147,24 @@ node bench/poh/synth-seed.ts doctor --seed seed.sqlite --out seed-post.sqlite
 `exp/poh/04b-post29806`: it installs both bases, runs the commit-window tests on each, builds the
 seed, runs `p04b-ab.sh` (pre/post × window off/25 ms, interleaved per slot) and pools the result
 with `p04b-ab.py` into `bench-out/<label>/`.
+
+## Real provider turns (04c)
+
+`real-turns.ts` replaces devReplay with real provider CLIs driven through T3's real adapters. One
+invocation is one arm: a fresh copy of the seed, one server boot, then a fixed task block (read,
+run a command, edit, explain, a long answer with no tools), one thread and one fresh scratch git
+repo per turn. `--shape s1` runs the tasks one thread at a time; `--shape s4` dispatches 4 threads
+together. The tap, the stored-event count, CPU and RSS cover each turn (s1) or batch (s4) until
+the server's writes go quiet, so `p04c-ab.py` reports them per turn and per stored event.
+
+```bash
+# On a host where the provider CLIs are logged in; the harness never touches their credentials.
+PROVIDERS='codex|codex|gpt-5.6-luna|reasoningEffort=low' \
+  bench/poh/p04c-ab.sh seed-post.sqlite raw 0 1 2 3 4 5   # ABBA: off w25 / w25 off per slot
+python3 bench/poh/p04c-ab.py raw --json ab.json
+```
+
+The bench server's `PATH` still omits provider CLIs; it gets wrappers for exactly `claude`,
+`codex`, `grok` and `hermes` that drop the tap from the CLI's environment, so only the server's
+own writes are counted. `ENV_<label>` and `SETTINGS_<label>` pass per-provider server env (for
+example `T3CODE_CODEX_LAUNCH_ARGS`) and a bench-home `settings.json`.
