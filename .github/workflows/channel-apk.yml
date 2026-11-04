@@ -1,0 +1,22 @@
+name: Channel APK (fork)
+
+# Fork-only: builds the side-by-side channel app (nightly/preview) on a free runner.
+# Same script t3-channel used on fleet-runner; the APK is re-signed locally.
+on:
+  push:
+    branches: ["apk/channel-*"]
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build
+        run: |
+          export T3_CHANNEL="${GITHUB_REF_NAME#apk/channel-}" HUSKY=0
+          bash .github/scripts/channel-apk.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: channel-apk
+          path: android-result/
