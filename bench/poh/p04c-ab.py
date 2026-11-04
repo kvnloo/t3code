@@ -8,7 +8,7 @@ first assistant delta, frame gap, turn wall) are per turn. Units with a failed o
 turn are excluded and counted. Prints p50/p95 per arm and the w25 - off median shift with a
 4000-iteration bootstrap 95% CI, per provider x shape.
 
-usage: p04c-ab.py <raw dir>[,<raw dir>...] [--json out.json] [--ledger rows.jsonl --raw-ref PATH]
+usage: p04c-ab.py <raw dir>[,<raw dir>...] [--json out.json] [--ledger rows.jsonl --raw-ref PATH --status final]
 --ledger appends one row per provider x shape x arm x metric (04b row shape, exp "04c").
 """
 import glob, json, os, random, re, statistics, sys
@@ -17,6 +17,7 @@ raws = sys.argv[1].split(",")
 json_out = sys.argv[sys.argv.index("--json") + 1] if "--json" in sys.argv else None
 ledger_out = sys.argv[sys.argv.index("--ledger") + 1] if "--ledger" in sys.argv else None
 raw_ref = sys.argv[sys.argv.index("--raw-ref") + 1] if "--raw-ref" in sys.argv else None
+status = sys.argv[sys.argv.index("--status") + 1] if "--status" in sys.argv else "final"
 
 units, turns, slots, excluded, shas, cli = {}, {}, {}, {}, {}, {}
 for d in sorted(d for raw in raws for d in glob.glob(os.path.join(raw, "*-s[14]-*-*/"))):
@@ -181,7 +182,7 @@ if ledger_out:
                                    f"slots={len(g['slots'][arm])}, units={g['units'][arm]}, turns={g['turns'][arm]}",
                         "provider": provider, "shape": shape, "flag": f"{name}-{arm}", "metric": key,
                         "label": m["label"], "n": m[arm]["n"], "p50": m[arm]["p50"], "p95": m[arm]["p95"],
-                        "status": "final", "raw": raw_ref, "at": at,
+                        "status": status, "raw": raw_ref, "at": at,
                     }
                     if arm == "w25":
                         row.update({"deltaP50VsOff": m["deltaP50"],
