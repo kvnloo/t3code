@@ -5,6 +5,8 @@ import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +48,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalDensity
@@ -110,7 +114,10 @@ class T3WorkspaceNavigationModule : Module() {
       Prop("actionContentColor") { view: T3WorkspaceNavigationView, value: Int ->
         view.actionContentColor = value
       }
-      Events("onTabSelected", "onNewThread", "onOverlayChange")
+      Prop("searchSwipeEnabled") { view: T3WorkspaceNavigationView, value: Boolean ->
+        view.searchSwipeEnabled = value
+      }
+      Events("onTabSelected", "onNewThread", "onOverlayChange", "onSearchSwipe")
     }
   }
 }
@@ -126,6 +133,7 @@ class T3WorkspaceNavigationView(
   private val onTabSelected by EventDispatcher()
   private val onNewThread by EventDispatcher()
   private val onOverlayChange by EventDispatcher()
+  private val onSearchSwipe by EventDispatcher()
   var tabs by mutableStateOf(listOf("threads", "pullRequests", "usage", "settings"))
   var selectedTab by mutableStateOf("threads")
   var rail by mutableStateOf(false)
@@ -133,6 +141,7 @@ class T3WorkspaceNavigationView(
   var dark by mutableStateOf(false)
   var textScale by mutableStateOf(1f)
   var newEnabled by mutableStateOf(false)
+  var searchSwipeEnabled by mutableStateOf(false)
   var safeAreaTop by mutableStateOf(0f)
   var safeAreaBottom by mutableStateOf(0f)
   var headerHeight by mutableStateOf(56f)
@@ -180,7 +189,7 @@ class T3WorkspaceNavigationView(
               floatingTabs()
             } else {
               NavigationBar(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().bottomSearchSwipe(),
                 containerColor = Color(containerColor),
                 tonalElevation = androidx.compose.ui.unit.Dp(0f),
                 windowInsets = WindowInsets(0),
@@ -209,10 +218,29 @@ class T3WorkspaceNavigationView(
     )
   }
 
+  private fun Modifier.bottomSearchSwipe(): Modifier =
+    if (!searchSwipeEnabled) this else pointerInput(searchSwipeEnabled) {
+      awaitEachGesture {
+        val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        while (true) {
+          val event = awaitPointerEvent(PointerEventPass.Initial)
+          val change = event.changes.firstOrNull { it.id == down.id } ?: break
+          if (!change.pressed) {
+            val rise = down.position.y - change.position.y
+            val drift = kotlin.math.abs(down.position.x - change.position.x)
+            if (rise >= 48.dp.toPx() && rise > drift) {
+              onSearchSwipe(emptyMap<String, Any>())
+            }
+            break
+          }
+        }
+      }
+    }
+
   @Composable
   private fun floatingTabs() {
     Surface(
-      modifier = Modifier.fillMaxSize().padding(8.dp),
+      modifier = Modifier.fillMaxSize().padding(8.dp).bottomSearchSwipe(),
       shape = CircleShape,
       color = Color(containerColor),
       shadowElevation = 6.dp,

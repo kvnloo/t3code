@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigation, useNavigationState } from "@react-navigation/native";
 import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
+import { useAdaptiveWorkspaceLayout } from "../layout/adaptive-workspace-context";
+import { useBottomSearchPrototypeB } from "./useBottomSearchPrototypeB";
 import { BackHandler, Keyboard } from "react-native";
 
 import { AppBar } from "../../components/ui/AppBar";
@@ -13,6 +15,8 @@ import type { ThreadListToolbarProps } from "./ThreadListToolbar.types";
 export function ThreadListToolbar(props: ThreadListToolbarProps) {
   const navigation = useNavigation();
   const workspace = useWorkspaceTabs();
+  const { layout } = useAdaptiveWorkspaceLayout();
+  const bottomSearch = useBottomSearchPrototypeB() && !layout.usesSplitView;
   const isTabActive = workspace?.isTabActive;
   const homeFocused = useNavigationState((state) => state.routes[state.index]?.name === "Home");
   const listFocused =
@@ -20,8 +24,9 @@ export function ThreadListToolbar(props: ThreadListToolbarProps) {
   const connectionState = useWorkspaceConnectionState();
   const { onRequestVisibility, onSearchQueryChange } = props;
   const [searchOpen, setSearchOpen] = useState(false);
-  const searching = searchOpen || props.searchQuery.length > 0;
+  const searching = !bottomSearch && (searchOpen || props.searchQuery.length > 0);
   const openSearch = () => {
+    if (bottomSearch) return false;
     onRequestVisibility?.();
     setSearchOpen(true);
     return true;
@@ -62,15 +67,19 @@ export function ThreadListToolbar(props: ThreadListToolbarProps) {
           onOpenEnvironments={props.onOpenEnvironments}
         />
       }
-      search={{
-        value: props.searchQuery,
-        onChangeText: onSearchQueryChange,
-        placeholder: "Search",
-        accessibilityLabel: "Search threads",
-        active: searching,
-        onOpen: openSearch,
-        onClose: closeSearch,
-      }}
+      search={
+        bottomSearch
+          ? undefined
+          : {
+              value: props.searchQuery,
+              onChangeText: onSearchQueryChange,
+              placeholder: "Search",
+              accessibilityLabel: "Search threads",
+              active: searching,
+              onOpen: openSearch,
+              onClose: closeSearch,
+            }
+      }
       menus={
         connectionState.hasConnections
           ? [
