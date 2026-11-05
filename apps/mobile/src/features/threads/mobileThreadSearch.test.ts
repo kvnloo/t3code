@@ -17,7 +17,7 @@ function rankedIds(items: ReadonlyArray<Candidate>, query: string): string[] {
 }
 
 describe("mobile thread fuzzy search", () => {
-  it("tolerates a substitution, insertion, deletion, or adjacent swap in words of 4+ characters", () => {
+  it("tolerates one insertion, deletion, substitution, or adjacent swap", () => {
     const items = [
       { id: "search", title: "Search" },
       { id: "unrelated", title: "Compile" },
