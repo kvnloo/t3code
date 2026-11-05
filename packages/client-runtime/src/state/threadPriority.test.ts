@@ -135,6 +135,35 @@ describe("sortThreadsByPriority", () => {
   });
 });
 
+describe("priority ordering determinism", () => {
+  it("breaks equal-score ties by thread identity regardless of input order", () => {
+    const a = thread("alpha");
+    const b = thread("beta");
+    const c = thread("gamma");
+    expect(sortThreadsByPriority([c, a, b], NOW).map((entry) => entry.id)).toEqual([
+      "alpha",
+      "beta",
+      "gamma",
+    ]);
+    expect(sortThreadsByPriority([b, c, a], NOW).map((entry) => entry.id)).toEqual([
+      "alpha",
+      "beta",
+      "gamma",
+    ]);
+  });
+
+  it("uses the injected clock and caps waiting bonuses without crossing tiers", () => {
+    const review = thread("review", { latestRun: completedRun(60) });
+    const early = scoreThreadPriority(review, NOW);
+    const late = scoreThreadPriority(review, NOW + 24 * 60 * 60_000);
+    const later = scoreThreadPriority(review, NOW + 48 * 60 * 60_000);
+    expect(late.score).toBeGreaterThan(early.score);
+    expect(later.score).toBe(late.score);
+    expect(later.tier).toBe(2);
+    expect(later.score).toBeLessThan(400);
+  });
+});
+
 describe("group priority", () => {
   it("orders groups by urgent tier, then by how many threads want the user", () => {
     const score = (input: Partial<ThreadPriorityInput>) =>
