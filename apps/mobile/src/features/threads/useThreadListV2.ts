@@ -13,6 +13,7 @@ import {
   threadListV2LayoutTime,
 } from "./threadListV2";
 import { computeThreadMoveAvailability } from "./threadOrder";
+import { rankMobileThreadMatches } from "./mobileThreadSearch";
 
 /**
  * Screens' select handlers read the content-only key set; a fresh one per list rebuild gave
@@ -49,6 +50,7 @@ export function useThreadListV2(input: {
   readonly environmentId: EnvironmentId | null;
   readonly projectRefs: LayoutInput["projectRefs"];
   readonly searchQuery: string;
+  readonly projectTitles?: LayoutInput["projectTitles"];
   /** Threads that match the search by content, keyed like `threadSearchMatchKey`. */
   readonly searchMatches: ReadonlyMap<string, unknown>;
   readonly settlementEnvironmentIds: ReadonlySet<EnvironmentId>;
@@ -139,6 +141,7 @@ export function useThreadListV2(input: {
         environmentId: input.environmentId,
         projectRefs: input.projectRefs,
         searchQuery: input.searchQuery,
+        projectTitles: input.projectTitles,
         matchedThreadKeys: new Set(input.searchMatches.keys()),
         settlementEnvironmentIds: input.settlementEnvironmentIds,
         snoozeEnvironmentIds: input.snoozeEnvironmentIds,
@@ -171,6 +174,7 @@ export function useThreadListV2(input: {
       input.environmentId,
       input.projectRefs,
       input.searchQuery,
+      input.projectTitles,
       input.searchMatches,
       input.settlementEnvironmentIds,
       input.snoozeEnvironmentIds,
@@ -198,17 +202,28 @@ export function useThreadListV2(input: {
         : new Set(
             input.projectRefs.map((ref) => scopedProjectKey(ref.environmentId, ref.projectId)),
           );
-    const searchQuery = input.searchQuery.trim().toLocaleLowerCase();
-    return input.pendingTasks.filter(
+    const inScope = input.pendingTasks.filter(
       (pendingTask) =>
         (input.environmentId === null || pendingTask.environmentId === input.environmentId) &&
         (scopedProjectKeys === null ||
           scopedProjectKeys.has(
             scopedProjectKey(pendingTask.environmentId, pendingTask.projectId),
-          )) &&
-        (searchQuery.length === 0 || pendingTask.title.toLocaleLowerCase().includes(searchQuery)),
+          )),
     );
-  }, [input.projectRefs, input.searchQuery, input.pendingTasks, input.environmentId]);
+    return rankMobileThreadMatches(inScope, input.searchQuery, (pendingTask) => ({
+      title: pendingTask.title,
+      project: input.projectTitles?.get(
+        scopedProjectKey(pendingTask.environmentId, pendingTask.projectId),
+      ),
+      activityAt: pendingTask.createdAt,
+    })).map(({ item }) => item);
+  }, [
+    input.projectRefs,
+    input.searchQuery,
+    input.pendingTasks,
+    input.environmentId,
+    input.projectTitles,
+  ]);
   const items = useMemo(
     () =>
       buildThreadListV2ListItems({
