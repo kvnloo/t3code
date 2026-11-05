@@ -2,7 +2,11 @@
  * Builds the sandboxed document that draws ephemeral-ui cards. Kept apart from openUiKitCards.ts
  * because the generated kit is large: clients load this module only when a board has kit cards.
  */
-import { EPHEMERAL_UI_KIT_HEAD, EPHEMERAL_UI_KIT_REVISION, EPHEMERAL_UI_KIT_TAIL } from "./ephemeralUiKitDocument.generated.ts";
+import {
+  EPHEMERAL_UI_KIT_HEAD,
+  EPHEMERAL_UI_KIT_REVISION,
+  EPHEMERAL_UI_KIT_TAIL,
+} from "./ephemeralUiKitDocument.generated.ts";
 import type { KitCard } from "./openUiKitCards.ts";
 
 export const KIT_REVISION = EPHEMERAL_UI_KIT_REVISION;

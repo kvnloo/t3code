@@ -23,9 +23,16 @@ export const kitCardsProps = z.object({
     .array(
       z.object({
         kind: z.enum(KIT_CARD_KINDS),
-        app: z.string().min(1).max(LIMITS.app).regex(/^[a-z0-9-]+$/).optional(),
+        app: z
+          .string()
+          .min(1)
+          .max(LIMITS.app)
+          .regex(/^[a-z0-9-]+$/)
+          .optional(),
         input: z.unknown().optional(),
-        options: z.partialRecord(z.enum(KIT_CARD_OPTION_KEYS), z.string().max(LIMITS.app)).optional(),
+        options: z
+          .partialRecord(z.enum(KIT_CARD_OPTION_KEYS), z.string().max(LIMITS.app))
+          .optional(),
       }),
     )
     .min(1)
@@ -46,15 +53,20 @@ const KitCardsPanel = memo(function KitCardsPanel({ props }: { props: KitCardsPr
     const message = parseKitCardMessage(event.nativeEvent.data);
     if (message?.type === "height") setHeight(message.value);
     else if (message?.type === "intent") setIntent(message.intent);
-    else if (message?.type === "error") setErrors((current) => [...current, `${message.kind}: ${message.reason}`].slice(-4));
+    else if (message?.type === "error")
+      setErrors((current) => [...current, `${message.kind}: ${message.reason}`].slice(-4));
   };
   return (
     <View accessibilityLabel={props.title} style={{ gap: 8 }}>
-      <AppText accessibilityRole="header" className="text-base font-semibold">{props.title}</AppText>
+      <AppText accessibilityRole="header" className="text-base font-semibold">
+        {props.title}
+      </AppText>
       <WebView
         source={{ html }}
         originWhitelist={["*"]}
-        onShouldStartLoadWithRequest={(request) => request.url.startsWith("about:") || request.url.startsWith("data:")}
+        onShouldStartLoadWithRequest={(request) =>
+          request.url.startsWith("about:") || request.url.startsWith("data:")
+        }
         onMessage={onMessage}
         javaScriptEnabled
         domStorageEnabled={false}
@@ -70,14 +82,33 @@ const KitCardsPanel = memo(function KitCardsPanel({ props }: { props: KitCardsPr
         style={{ height, backgroundColor: "transparent" }}
         containerStyle={{ backgroundColor: "transparent" }}
       />
-      <View accessibilityLiveRegion="polite" className="rounded-md bg-secondary" style={{ padding: 10 }}>
-        <AppText selectable className="text-xs">{kitIntentReadout(intent)}</AppText>
-        {errors.map((error) => <AppText key={error} selectable className="text-xs text-foreground-muted">{error}</AppText>)}
-        <AppText className="text-xs text-foreground-muted">ephemeral-ui {KIT_REVISION.slice(0, 7)}</AppText>
+      <View
+        accessibilityLiveRegion="polite"
+        className="rounded-md bg-secondary"
+        style={{ padding: 10 }}
+      >
+        <AppText selectable className="text-xs">
+          {kitIntentReadout(intent)}
+        </AppText>
+        {errors.map((error) => (
+          <AppText key={error} selectable className="text-xs text-foreground-muted">
+            {error}
+          </AppText>
+        ))}
+        <AppText className="text-xs text-foreground-muted">
+          ephemeral-ui {KIT_REVISION.slice(0, 7)}
+        </AppText>
       </View>
     </View>
   );
 });
 
-export const EphemeralCards = defineComponent({ name: "EphemeralCards", description: KIT_CARDS_DESCRIPTION, props: kitCardsProps, component: KitCardsPanel });
-export const kitCardsSchema = { EphemeralCards: (value: unknown) => kitCardsProps.safeParse(value) };
+export const EphemeralCards = defineComponent({
+  name: "EphemeralCards",
+  description: KIT_CARDS_DESCRIPTION,
+  props: kitCardsProps,
+  component: KitCardsPanel,
+});
+export const kitCardsSchema = {
+  EphemeralCards: (value: unknown) => kitCardsProps.safeParse(value),
+};

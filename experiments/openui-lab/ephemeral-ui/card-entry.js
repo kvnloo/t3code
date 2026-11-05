@@ -19,7 +19,11 @@ const DATA = JSON.parse(document.getElementById("t3-kit-data").textContent);
 window.fetch = (url) => {
   const key = String(url).replace(/^\.?\//, "");
   return key in DATA
-    ? Promise.resolve(new Response(JSON.stringify(DATA[key]), { headers: { "content-type": "application/json" } }))
+    ? Promise.resolve(
+        new Response(JSON.stringify(DATA[key]), {
+          headers: { "content-type": "application/json" },
+        }),
+      )
     : Promise.reject(new TypeError(`Offline card document has no ${key}`));
 };
 
@@ -30,11 +34,15 @@ function post(message) {
 }
 
 const defaultApp = (kind) =>
-  kind.startsWith("trace") ? "omp-stats"
-  : kind.startsWith("intel") ? "z0intelligence"
-  : kind === "intent-declare" ? "ripple"
-  : kind.startsWith("intent") ? "aodl"
-  : catalog.apps.find((app) => app.kinds?.includes(kind))?.id;
+  kind.startsWith("trace")
+    ? "omp-stats"
+    : kind.startsWith("intel")
+      ? "z0intelligence"
+      : kind === "intent-declare"
+        ? "ripple"
+        : kind.startsWith("intent")
+          ? "aodl"
+          : catalog.apps.find((app) => app.kinds?.includes(kind))?.id;
 
 function failTile(kind, reason) {
   const tile = document.createElement("div");
@@ -48,28 +56,58 @@ function failTile(kind, reason) {
 async function boot() {
   const config = window.__T3_KIT_CARDS ?? { scheme: "dark", cards: [] };
   await Promise.all([loadApps(), loadThemes()]);
-  state.base = state.themes.find((theme) => theme.id === (config.scheme === "light" ? "t3-light" : "t3-dark")) ?? state.base;
+  state.base =
+    state.themes.find(
+      (theme) => theme.id === (config.scheme === "light" ? "t3-light" : "t3-dark"),
+    ) ?? state.base;
   apply(false);
   const root = document.getElementById("t3-kit-root");
-  const intentInput = config.cards.some((card) => card.kind.startsWith("intent") || card.kind.startsWith("intel")) ? await intentReady() : null;
+  const intentInput = config.cards.some(
+    (card) => card.kind.startsWith("intent") || card.kind.startsWith("intel"),
+  )
+    ? await intentReady()
+    : null;
   for (const card of config.cards) {
     const cell = document.createElement("section");
     cell.className = "t3-kit-cell";
     cell.dataset.kind = card.kind;
     root.append(cell);
     const K = KINDS[card.kind];
-    if (!K) { cell.append(failTile(card.kind, "not in this kit build")); continue; }
+    if (!K) {
+      cell.append(failTile(card.kind, "not in this kit build"));
+      continue;
+    }
     const id = card.app ?? defaultApp(card.kind);
     const app = catalog.byId[id] ?? { id: id ?? card.kind, name: id ?? card.kind, hex: null };
     const intent = card.kind.startsWith("intent") || card.kind.startsWith("intel");
     const options = {
       ...(card.options ?? {}),
-      onReview: (request) => post({ type: "intent", detail: { v: 0, kind: card.kind, app: app.id, action: "request_review", label: "Review requested (not approved)", ids: [`card:${card.kind}`], entities: { card: card.kind }, request } }),
+      onReview: (request) =>
+        post({
+          type: "intent",
+          detail: {
+            v: 0,
+            kind: card.kind,
+            app: app.id,
+            action: "request_review",
+            label: "Review requested (not approved)",
+            ids: [`card:${card.kind}`],
+            entities: { card: card.kind },
+            request,
+          },
+        }),
     };
     try {
-      const made = K.make(app, rng(app.id + card.kind), card.input ?? (intent ? intentInput : undefined), options);
+      const made = K.make(
+        app,
+        rng(app.id + card.kind),
+        card.input ?? (intent ? intentInput : undefined),
+        options,
+      );
       cell.append(made.el);
-      made.done?.catch?.((error) => cell.replaceChildren(failTile(card.kind, error?.message ?? String(error))));
+      made.done?.catch?.((error) =>
+        cell.replaceChildren(failTile(card.kind, error?.message ?? String(error))),
+      );
       if (made.play) quiet(Promise.resolve(made.play(new Run())));
     } catch (error) {
       cell.append(failTile(card.kind, error?.message ?? String(error)));
@@ -81,7 +119,12 @@ async function boot() {
 document.addEventListener("eui:intent", (event) => post({ type: "intent", detail: event.detail }));
 let lastHeight = 0;
 new ResizeObserver(() => {
-  const height = Math.ceil(document.getElementById("t3-kit-root").getBoundingClientRect().height) + 16;
+  const height =
+    Math.ceil(document.getElementById("t3-kit-root").getBoundingClientRect().height) + 16;
   if (height !== lastHeight) post({ type: "height", value: (lastHeight = height) });
 }).observe(document.getElementById("t3-kit-root"));
-boot().catch((error) => document.getElementById("t3-kit-root").append(failTile("document", error?.message ?? String(error))));
+boot().catch((error) =>
+  document
+    .getElementById("t3-kit-root")
+    .append(failTile("document", error?.message ?? String(error))),
+);

@@ -86,7 +86,9 @@ describe("T3 device instructions", () => {
 
 describe("T3 visual instructions", () => {
   it("name every ephemeral-ui card kind and say the cards show sample data", () => {
-    const line = T3_CODE_ORCHESTRATION_INSTRUCTIONS.split("\n").find((entry) => entry.includes("EphemeralCards("));
+    const line = T3_CODE_ORCHESTRATION_INSTRUCTIONS.split("\n").find((entry) =>
+      entry.includes("EphemeralCards("),
+    );
     assert.isDefined(line);
     const kinds = /Kinds: ([a-z\- ]+)\./.exec(line ?? "")?.[1]?.split(" ") ?? [];
     assert.equal(kinds.length, 50);

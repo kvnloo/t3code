@@ -8,21 +8,63 @@
 
 /** card.v0.json `properties.kind.enum`, in order. A lab test keeps this equal to the generated kit. */
 export const KIT_CARD_KINDS = [
-  "inbox", "thread", "approve", "chat", "notify", "slots", "kanban", "triage", "file", "graph",
-  "search", "feed", "frames", "sign", "context", "receipt", "metric", "track", "crm", "ride",
-  "route", "boarding", "player", "workout", "home", "merge", "ci", "deploy", "incident", "migrate",
-  "trace", "trace-span", "trace-summary", "trace-usage", "trace-tools", "trace-errors",
-  "trace-compare", "trace-frustration", "intent-declare", "intent-contract", "intent-work",
-  "intent-proof", "intel-decisions", "intel-value", "intel-context", "intel-health",
-  "infra-architecture", "infra-cluster", "infra-iac", "infra-models",
+  "inbox",
+  "thread",
+  "approve",
+  "chat",
+  "notify",
+  "slots",
+  "kanban",
+  "triage",
+  "file",
+  "graph",
+  "search",
+  "feed",
+  "frames",
+  "sign",
+  "context",
+  "receipt",
+  "metric",
+  "track",
+  "crm",
+  "ride",
+  "route",
+  "boarding",
+  "player",
+  "workout",
+  "home",
+  "merge",
+  "ci",
+  "deploy",
+  "incident",
+  "migrate",
+  "trace",
+  "trace-span",
+  "trace-summary",
+  "trace-usage",
+  "trace-tools",
+  "trace-errors",
+  "trace-compare",
+  "trace-frustration",
+  "intent-declare",
+  "intent-contract",
+  "intent-work",
+  "intent-proof",
+  "intel-decisions",
+  "intel-value",
+  "intel-context",
+  "intel-health",
+  "infra-architecture",
+  "infra-cluster",
+  "infra-iac",
+  "infra-models",
 ] as const;
 export type KitCardKind = (typeof KIT_CARD_KINDS)[number];
 
 export const KIT_CARD_LIMITS = { cards: 12, title: 200, app: 60, inputBytes: 32_768 } as const;
 export const KIT_CARD_OPTION_KEYS = ["range", "view", "sort", "tab", "focusTool", "scope"] as const;
 
-export const KIT_CARDS_DESCRIPTION =
-  `Cards from the ephemeral-ui kit, drawn by the kit itself: a title, then up to ${KIT_CARD_LIMITS.cards} cards in order. Each card has a kind (one of ${KIT_CARD_KINDS.join(", ")}) and optionally an app id (gmail, github, uber, stripe, google-calendar…; omit it for the kind's default app). Trace kinds may take input: omp-stats JSON for that kind, unchanged, and options {range, view, sort, tab, focusTool, scope}. Every other kind shows the kit's sample data, never the user's.`;
+export const KIT_CARDS_DESCRIPTION = `Cards from the ephemeral-ui kit, drawn by the kit itself: a title, then up to ${KIT_CARD_LIMITS.cards} cards in order. Each card has a kind (one of ${KIT_CARD_KINDS.join(", ")}) and optionally an app id (gmail, github, uber, stripe, google-calendar…; omit it for the kind's default app). Trace kinds may take input: omp-stats JSON for that kind, unchanged, and options {range, view, sort, tab, focusTool, scope}. Every other kind shows the kit's sample data, never the user's.`;
 
 export const KIT_CARDS_PROMPT_RULE =
   "EphemeralCards show the ephemeral-ui kit's own cards with its sample data: use them when the user asks to see or try those cards, and say the data is sample data. Real data belongs in the other panels.";
@@ -48,8 +90,10 @@ export const isTraceKind = (kind: string) => kind.startsWith("trace");
 export function kitCardsProblem(panel: KitCardsPanel): string | null {
   for (const card of panel.props.cards) {
     if (card.input === undefined) continue;
-    if (!isTraceKind(card.kind)) return `EphemeralCards ${card.kind} draws sample data and takes no input.`;
-    if (JSON.stringify(card.input).length > KIT_CARD_LIMITS.inputBytes) return `EphemeralCards ${card.kind} input exceeds ${KIT_CARD_LIMITS.inputBytes / 1024} KiB.`;
+    if (!isTraceKind(card.kind))
+      return `EphemeralCards ${card.kind} draws sample data and takes no input.`;
+    if (JSON.stringify(card.input).length > KIT_CARD_LIMITS.inputBytes)
+      return `EphemeralCards ${card.kind} input exceeds ${KIT_CARD_LIMITS.inputBytes / 1024} KiB.`;
   }
   return null;
 }
@@ -67,7 +111,8 @@ export type KitCardMessage =
   | { readonly type: "intent"; readonly intent: KitCardIntent }
   | { readonly type: "error"; readonly kind: string; readonly reason: string };
 
-const text = (value: unknown, max: number) => (typeof value === "string" ? value.slice(0, max) : "");
+const text = (value: unknown, max: number) =>
+  typeof value === "string" ? value.slice(0, max) : "";
 
 /** Parse a message posted by the kit document; anything else returns null. */
 export function parseKitCardMessage(raw: unknown): KitCardMessage | null {
@@ -82,14 +127,32 @@ export function parseKitCardMessage(raw: unknown): KitCardMessage | null {
   if (typeof data !== "object" || data === null) return null;
   const message = data as Record<string, unknown>;
   if (message.source !== "t3-kit") return null;
-  if (message.type === "height" && typeof message.value === "number" && Number.isFinite(message.value)) {
+  if (
+    message.type === "height" &&
+    typeof message.value === "number" &&
+    Number.isFinite(message.value)
+  ) {
     return { type: "height", value: Math.max(0, Math.min(20_000, Math.round(message.value))) };
   }
-  if (message.type === "error") return { type: "error", kind: text(message.kind, 60), reason: text(message.reason, 300) };
+  if (message.type === "error")
+    return { type: "error", kind: text(message.kind, 60), reason: text(message.reason, 300) };
   if (message.type === "intent" && typeof message.detail === "object" && message.detail !== null) {
     const detail = message.detail as Record<string, unknown>;
-    const ids = Array.isArray(detail.ids) ? detail.ids.filter((id): id is string => typeof id === "string").slice(0, 24).map((id) => id.slice(0, 120)) : [];
-    return { type: "intent", intent: { kind: text(detail.kind, 60), action: text(detail.action, 60), label: text(detail.label, 200), ids } };
+    const ids = Array.isArray(detail.ids)
+      ? detail.ids
+          .filter((id): id is string => typeof id === "string")
+          .slice(0, 24)
+          .map((id) => id.slice(0, 120))
+      : [];
+    return {
+      type: "intent",
+      intent: {
+        kind: text(detail.kind, 60),
+        action: text(detail.action, 60),
+        label: text(detail.label, 200),
+        ids,
+      },
+    };
   }
   return null;
 }

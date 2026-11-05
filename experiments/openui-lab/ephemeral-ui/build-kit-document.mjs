@@ -14,18 +14,30 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const kit = resolve(process.argv[2] ?? "");
 const esbuild = process.env.ESBUILD ?? "esbuild";
-const out = resolve(here, "../../../packages/client-runtime/src/ephemeralUiKitDocument.generated.ts");
+const out = resolve(
+  here,
+  "../../../packages/client-runtime/src/ephemeralUiKitDocument.generated.ts",
+);
 
 const revision = execFileSync("git", ["-C", kit, "rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-const dirty = execFileSync("git", ["-C", kit, "status", "--porcelain", "--untracked-files=no"], { encoding: "utf8" }).trim();
+const dirty = execFileSync("git", ["-C", kit, "status", "--porcelain", "--untracked-files=no"], {
+  encoding: "utf8",
+}).trim();
 if (dirty) throw new Error(`ephemeral-ui checkout has local changes:\n${dirty}`);
 
 const read = (path) => readFileSync(join(kit, path), "utf8");
 const json = (path) => JSON.parse(read(path));
-const run = (args, input) => execFileSync(esbuild, args, { cwd: kit, input, encoding: "utf8", maxBuffer: 1 << 28 });
+const run = (args, input) =>
+  execFileSync(esbuild, args, { cwd: kit, input, encoding: "utf8", maxBuffer: 1 << 28 });
 
-const script = run(["--bundle", "--format=iife", "--minify", "--target=es2020", "--log-level=warning"], readFileSync(join(here, "card-entry.js"), "utf8"));
-const css = run(["--loader=css", "--minify", "--log-level=warning"], ["styles.css", "trace.css", "intent.css", "infra.css"].map(read).join("\n"));
+const script = run(
+  ["--bundle", "--format=iife", "--minify", "--target=es2020", "--log-level=warning"],
+  readFileSync(join(here, "card-entry.js"), "utf8"),
+);
+const css = run(
+  ["--loader=css", "--minify", "--log-level=warning"],
+  ["styles.css", "trace.css", "intent.css", "infra.css"].map(read).join("\n"),
+);
 
 // App icons stay monograms (the kit's default in T3 Code), so the SVG paths are not shipped.
 const apps = json("data/apps.json");
@@ -60,4 +72,6 @@ writeFileSync(
     `export const EPHEMERAL_UI_KIT_HEAD = ${JSON.stringify(head)};\n` +
     `export const EPHEMERAL_UI_KIT_TAIL = ${JSON.stringify(tail)};\n`,
 );
-console.log(`wrote ${out} from ${revision}: ${kinds.length} kinds, ${(head.length + tail.length) >> 10} KiB`);
+console.log(
+  `wrote ${out} from ${revision}: ${kinds.length} kinds, ${(head.length + tail.length) >> 10} KiB`,
+);
