@@ -1,16 +1,16 @@
-import { useEffect, useState } from "react";
 import { useNavigation, useNavigationState } from "@react-navigation/native";
-import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
-import { useAdaptiveWorkspaceLayout } from "../layout/adaptive-workspace-context";
-import { useBottomSearchPrototypeB } from "./useBottomSearchPrototypeB";
+import { useEffect, useState } from "react";
 import { BackHandler, Keyboard } from "react-native";
 
 import { AppBar } from "../../components/ui/AppBar";
 import { appBarMenuItemsFromActions } from "../../components/ui/menuActionItems";
-import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands";
-import { WorkspaceBrandTitle } from "../workspace/WorkspaceBrandTitle";
 import { useWorkspaceConnectionState } from "../../state/workspace";
+import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands";
+import { useAdaptiveWorkspaceLayout } from "../layout/adaptive-workspace-context";
+import { WorkspaceBrandTitle } from "../workspace/WorkspaceBrandTitle";
+import { useWorkspaceTabs } from "../workspace/WorkspaceTabsContext";
 import type { ThreadListToolbarProps } from "./ThreadListToolbar.types";
+import { useBottomSearchPrototypeB } from "./useBottomSearchPrototypeB";
 
 export function ThreadListToolbar(props: ThreadListToolbarProps) {
   const navigation = useNavigation();

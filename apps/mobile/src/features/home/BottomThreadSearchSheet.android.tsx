@@ -1,9 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
-import { pickableProjectGroups } from "@t3tools/client-runtime/state/project-grouping";
 import {
-  threadSearchMatchKey,
-} from "@t3tools/client-runtime/state/thread-search";
+  pickableProjectGroups,
+  resolveScratchProjectScopeKey,
+} from "@t3tools/client-runtime/state/project-grouping";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
 import { useRef, useState } from "react";
 import { FlatList, Keyboard, Pressable, View, type TextInputInstance } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,7 +25,6 @@ import { useThreadListSearchMatches } from "../threads/useThreadListSearchMatche
 import { useSelectWorkspaceDetail } from "../workspace/useSelectWorkspaceDetail";
 import { useHomeListOptions } from "./home-list-options";
 import { buildHomeProjectScopes, findHomeProjectScope } from "./homeThreadList";
-import { resolveScratchProjectScopeKey } from "@t3tools/client-runtime/state/project-grouping";
 
 export function BottomThreadSearchSheet(props: {
   readonly query: string;
@@ -132,7 +132,11 @@ export function BottomThreadSearchSheet(props: {
                 variant="plain"
               />
             ) : search.isPending ? (
-              <EmptyState title="Searching messages" detail="Checking environments." variant="plain" />
+              <EmptyState
+                title="Searching messages"
+                detail="Checking environments."
+                variant="plain"
+              />
             ) : (
               <EmptyState
                 title="No results"
