@@ -1625,6 +1625,12 @@ describe("Working section beta", () => {
     expect(off.workingCount).toBe(0);
   });
 
+  it("orders active threads by attention priority when asked", () => {
+    const layout = build({ priorityOrderEnabled: true });
+    // The approval outranks finished work; pinned rows keep their own order above.
+    expect(ids(layout).slice(0, 2)).toEqual(["pinned-working", "asks-approval"]);
+  });
+
   it("keeps an inactive row in Working during the shared grace and returns it on expiry", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(NOW));

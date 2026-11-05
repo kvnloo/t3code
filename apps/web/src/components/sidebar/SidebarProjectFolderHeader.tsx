@@ -1,4 +1,5 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import type { ThreadPriorityTier } from "@t3tools/client-runtime/state/thread-priority";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { ChevronDownIcon, SquarePenIcon } from "lucide-react";
 import { memo } from "react";
@@ -9,6 +10,7 @@ import { useUiStateStore } from "../../uiStateStore";
 import { resolveSidebarFolderDot, resolveThreadLastVisitedAt } from "../Sidebar.logic";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { Button } from "../ui/button";
+import { SidebarPriorityBadge } from "./SidebarPriorityBadge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 const FOLDER_DOT_CLASS_NAME = {
@@ -38,6 +40,10 @@ export function sidebarFolderRowId(projectKey: string) {
 export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHeader(props: {
   group: SidebarProjectSnapshot;
   collapsed: boolean;
+  /** Set while the sidebar orders by priority: the folder's most urgent thread. */
+  priorityScore?: number | null;
+  priorityTier?: ThreadPriorityTier | null;
+  priorityLabel?: string | null;
   hiddenThreads: readonly EnvironmentThreadShell[];
   onToggle: (group: SidebarProjectSnapshot) => void;
   onNewThread: (group: SidebarProjectSnapshot) => void;
@@ -79,6 +85,13 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
         <span className="min-w-0 flex-1 truncate text-sm font-medium text-sidebar-foreground/90">
           {group.displayName}
         </span>
+        {props.priorityScore != null && props.priorityTier != null && props.priorityLabel ? (
+          <SidebarPriorityBadge
+            score={props.priorityScore}
+            tier={props.priorityTier}
+            label={props.priorityLabel}
+          />
+        ) : null}
         {dot ? (
           <span className={cn("size-1.5 shrink-0 rounded-full", FOLDER_DOT_CLASS_NAME[dot])}>
             <span className="sr-only">{FOLDER_DOT_LABEL[dot]}</span>
