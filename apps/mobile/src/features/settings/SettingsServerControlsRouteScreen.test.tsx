@@ -64,6 +64,7 @@ vi.mock("../../state/environments", () => ({ useEnvironments: () => ({ environme
 vi.mock("../../state/use-atom-command", () => ({
   useAtomCommand: () => mocks.updateSettings,
 }));
+vi.mock("../threads/ThreadTagsEditor", () => ({ ThreadTagsEditor: () => null }));
 vi.mock("../threads/thread-settings-options", () => ({
   RUNTIME_MODE_CHOICES: [],
   withManagedRuntimeModeLimits: (choices: readonly unknown[]) => choices,

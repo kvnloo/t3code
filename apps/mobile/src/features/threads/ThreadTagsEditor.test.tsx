@@ -2,6 +2,7 @@ import { EnvironmentId, type ThreadTagStyle } from "@t3tools/contracts";
 import { threadMenuTags } from "@t3tools/client-runtime/state/thread-tag-badges";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
+import * as Schema from "effect/Schema";
 import { AsyncResult } from "effect/reactivity";
 import { act, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
@@ -93,7 +94,7 @@ vi.mock("../../state/use-atom-command", () => ({ useAtomCommand: () => mocks.upd
 
 import { ThreadTagsEditor } from "./ThreadTagsEditor";
 
-const environmentId = EnvironmentId.makeUnsafe("env-tags");
+const environmentId = Schema.decodeUnknownSync(EnvironmentId)("env-tags");
 const original: ThreadTagStyle = {
   tag: "Focus",
   displayName: "Focus time",
