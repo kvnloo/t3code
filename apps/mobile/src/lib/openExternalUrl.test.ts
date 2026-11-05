@@ -70,6 +70,34 @@ describe("Android email drafts", () => {
     expect(openURL).not.toHaveBeenCalled();
   });
 
+  it("decodes unicode, plus signs, ampersands and line breaks from mailto fields", () => {
+    expect(parseMailtoDraftUrl("mailto:alice%2Balerts%40example.com?cc=team%2Bops%40example.com&subject=R%C3%A9sum%C3%A9%20%2B%20Roadmap%20%26%20Notes&body=Line%201%0ALine%202%20%2B%20caf%C3%A9%20%26%20tea")).toEqual({
+      to: ["alice+alerts@example.com"],
+      cc: ["team+ops@example.com"],
+      bcc: [],
+      subject: "Résumé + Roadmap & Notes",
+      body: "Line 1\\nLine 2 + café & tea",
+    });
+  });
+
+  it.each(["markdown-link", "pull-request", "file-preview", "html-render", "mcp-app"] as const)(
+    "opens %s mailto links in the Android email composer",
+    async (target) => {
+      openEmail.mockResolvedValue(undefined);
+
+      await expect(tryOpenExternalUrl("mailto:alice%2Balerts%40example.com?cc=team%2Bops%40example.com&subject=R%C3%A9sum%C3%A9%20%2B%20Roadmap%20%26%20Notes&body=Line%201%0ALine%202%20%2B%20caf%C3%A9%20%26%20tea", target)).resolves.toBe(true);
+
+      expect(openEmail).toHaveBeenCalledWith({
+        to: ["alice+alerts@example.com"],
+        cc: ["team+ops@example.com"],
+        bcc: [],
+        subject: "Résumé + Roadmap & Notes",
+        body: "Line 1\\nLine 2 + café & tea",
+      });
+      expect(openURL).not.toHaveBeenCalled();
+    },
+  );
+
   it("accepts a mailto link without recipients for a blank draft", () => {
     expect(parseMailtoDraftUrl("mailto:?subject=Follow%20up")).toEqual({
       to: [],

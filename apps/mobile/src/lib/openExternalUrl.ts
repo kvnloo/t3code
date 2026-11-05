@@ -81,7 +81,10 @@ export async function tryOpenExternalUrl(url: string, target: ExternalUrlTarget)
   const chatLink = target === "markdown-link" || target === "pull-request";
   if (chatLink && /^(?:javascript|file|data|content|intent):/i.test(url.trim())) return false;
   try {
-    const draft = chatLink && Platform.OS === "android" ? parseMailtoDraftUrl(url) : null;
+    const draft =
+      Platform.OS === "android" && target !== "provider-auth"
+        ? parseMailtoDraftUrl(url)
+        : null;
     if (draft) await openEmailDraft(draft);
     else await Linking.openURL(url);
     return true;

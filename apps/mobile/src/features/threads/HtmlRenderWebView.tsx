@@ -133,13 +133,19 @@ export function HtmlRenderWebView(props: {
         // Patched Android WebView hands vertical drags to the feed at its edges; horizontal-only overflow leaves them to the feed.
         nestedScrollEnabled={props.nested && overflow.y}
         overScrollMode={props.nested ? "never" : "always"}
-        onShouldStartLoadWithRequest={(request) =>
-          request.isTopFrame === false ||
-          withoutFragment(request.url) === withoutFragment(props.uri)
-        }
+        onShouldStartLoadWithRequest={(request) => {
+          if (/^mailto:/i.test(request.url)) {
+            void tryOpenExternalUrl(request.url, "html-render");
+            return false;
+          }
+          return (
+            request.isTopFrame === false ||
+            withoutFragment(request.url) === withoutFragment(props.uri)
+          );
+        }}
         onOpenWindow={(event) => {
           const url = event.nativeEvent.targetUrl;
-          if (/^https?:/i.test(url)) void tryOpenExternalUrl(url, "html-render");
+          if (/^(?:https?|mailto):/i.test(url)) void tryOpenExternalUrl(url, "html-render");
         }}
         onLoadEnd={() => {
           setLoaded(true);

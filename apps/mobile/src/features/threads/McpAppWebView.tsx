@@ -534,11 +534,21 @@ export function ThreadMcpApp(props: {
           nestedScrollEnabled
           originWhitelist={["*"]}
           // Android misreports nested frames as top-level; rely on iframe sandboxing there and gate navigation elsewhere.
-          onShouldStartLoadWithRequest={(request) =>
-            Platform.OS === "android" ||
-            request.isTopFrame === false ||
-            request.url === "about:blank"
-          }
+          onShouldStartLoadWithRequest={(request) => {
+            if (/^mailto:/i.test(request.url)) {
+              void (async () => {
+                if (await confirm(`Open a link from ${app.server}?`, request.url, "Open")) {
+                  await tryOpenExternalUrl(request.url, "mcp-app");
+                }
+              })();
+              return false;
+            }
+            return (
+              Platform.OS === "android" ||
+              request.isTopFrame === false ||
+              request.url === "about:blank"
+            );
+          }}
           setSupportMultipleWindows={false}
           onLoadEnd={() => setLoaded(true)}
           onError={() => setCrashed(true)}
