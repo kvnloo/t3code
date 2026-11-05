@@ -67,7 +67,10 @@ export function buildArchivedThreadGroups(input: {
     environmentLabel: candidate.environmentLabel,
     activityAt: candidate.thread.updatedAt,
   }));
-  const groupsByKey = new Map<string, { key: string; project: EnvironmentProject; threads: EnvironmentThreadShell[] }>();
+  const groupsByKey = new Map<
+    string,
+    { key: string; project: EnvironmentProject; threads: EnvironmentThreadShell[] }
+  >();
   for (const { item } of ranked) {
     const key = scopedProjectKey(item.project.environmentId, item.project.id);
     let group = groupsByKey.get(key);
