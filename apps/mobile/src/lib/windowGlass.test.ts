@@ -33,6 +33,18 @@ describe("applyWindowGlass", () => {
     expect(applyWindowGlass(dark, null)).toBe(dark);
   });
 
+  it("clears the Settings palette for either glass mode without mutating solid colors", () => {
+    for (const variables of Object.values(defaultThemeVariables) as MobileThemeVariables[]) {
+      const originalSheet = variables["--color-sheet-solid"];
+      for (const mode of ["clear", "frosted"] as const) {
+        const glass = applyWindowGlass(variables, resolveWindowGlassPlan(mode, false));
+        expect(glass["--color-sheet-solid"]).toMatch(/^#[\da-f]{6}00$/i);
+        expect(variables["--color-sheet-solid"]).toBe(originalSheet);
+        expect(applyWindowGlass(variables, resolveWindowGlassPlan("off", false))).toBe(variables);
+      }
+    }
+  });
+
   it("clears stacked full-screen backgrounds and paints the tint once at the root", () => {
     const plan = { tint: 0.5, pane: 0.25, blurDp: 0 };
     const glass = applyWindowGlass(dark, plan);
@@ -40,6 +52,8 @@ describe("applyWindowGlass", () => {
     expect(alpha(glass["--color-screen"])).toBe(0);
     expect(alpha(glass["--color-header"])).toBe(0);
     expect(alpha(glass["--color-sheet"])).toBe(0);
+    // ScreenContent uses this background for Android Settings pages.
+    expect(alpha(glass["--color-sheet-solid"])).toBe(0);
     expect(alpha(glass["--color-thread-canvas"])).toBeCloseTo(0.25, 2);
     expect(alpha(glass["--color-card"])).toBeCloseTo(0.25, 2);
     expect(windowGlassRootColor(dark, plan)).toBe("#0a0a0a80");

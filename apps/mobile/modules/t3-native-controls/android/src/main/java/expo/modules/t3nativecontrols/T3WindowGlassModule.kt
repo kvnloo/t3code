@@ -64,7 +64,13 @@ class T3WindowGlassModule : Module() {
   private fun applyGlass(activity: Activity, blurDp: Double) {
     val window = activity.window
     if (original == null) {
-      original = OriginalWindow(window.decorView.background, window.attributes.format)
+      // Window pixel format alone does not release the Activity's opaque surface.
+      // Convert it now so Settings does not need a background/resume to reveal wallpaper.
+      val background = window.decorView.background
+      val format = window.attributes.format
+      val restoreOpacity = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+        activity.setTranslucent(true)
+      original = OriginalWindow(background, format, restoreOpacity)
     }
     window.setFormat(PixelFormat.TRANSLUCENT)
     window.setBackgroundDrawable(ColorDrawable(android.graphics.Color.TRANSPARENT))
@@ -105,6 +111,9 @@ class T3WindowGlassModule : Module() {
     window.clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER)
     window.setBackgroundDrawable(saved.background)
     window.setFormat(saved.format)
+    if (saved.restoreOpacity && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+      activity.setTranslucent(false)
+    }
     original = null
   }
 
@@ -119,7 +128,11 @@ class T3WindowGlassModule : Module() {
       )
   )
 
-  private data class OriginalWindow(val background: Drawable?, val format: Int)
+  private data class OriginalWindow(
+    val background: Drawable?,
+    val format: Int,
+    val restoreOpacity: Boolean,
+  )
 
   companion object {
     @Volatile

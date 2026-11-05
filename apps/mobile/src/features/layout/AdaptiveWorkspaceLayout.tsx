@@ -87,6 +87,7 @@ import { newTaskDestination } from "../threads/new-task-project-selection";
 import { RenderErrorBoundary, RenderFailureView } from "../../components/RenderErrorBoundary";
 import { PaneContext } from "../../components/ui/Pane";
 import { WORKSPACE_PANE_TIMING } from "./workspace-pane-animation";
+import { workspaceSidebarOpacity } from "./workspace-sidebar-opacity";
 import { WorkspaceInspectorPane } from "./workspace-inspector-pane";
 import { WorkspaceInspectorSheet } from "./workspace-inspector-sheet";
 import type { InspectorContent } from "./inspector-panes";
@@ -898,12 +899,16 @@ function AdaptiveWorkspaceLayoutContent(
   const stripOffset = useDerivedValue(() =>
     stripSidebar ? drawnSidebarWidth.value - sidebarSlotWidth : 0,
   );
+  const platformOS = Platform.OS;
+  const workspacePageOpen = Boolean(workspacePage);
   const sidebarAnimatedStyle = useAnimatedStyle(() => ({
-    // Fading a UIKit glass ancestor can leave remounted header effects missing.
-    opacity:
-      stripSidebar || Platform.OS === "ios" || floatingTabsEnabled
-        ? 1
-        : Math.min(1, drawnSidebarWidth.value / 80),
+    opacity: workspaceSidebarOpacity({
+      platform: platformOS,
+      workspacePageOpen,
+      floatingTabsEnabled,
+      stripSidebar,
+      sidebarWidth: drawnSidebarWidth.value,
+    }),
     width: stripSidebar ? sidebarSlotWidth : drawnSidebarWidth.value,
     flexShrink: stripSidebar ? 0 : 1,
     transform: [{ translateX: stripOffset.value }],
@@ -1058,9 +1063,8 @@ function AdaptiveWorkspaceLayoutContent(
             !workspacePage && panes.primarySidebarVisible ? "auto" : "no-hide-descendants"
           }
           pointerEvents={!workspacePage && panes.primarySidebarVisible ? "auto" : "none"}
-          // Under a workspace page the sidebar leaves the row but keeps its size, so its
-          // lists never lay out at zero size and are ready, unchanged, on the way back. The
-          // content pane, laid out after it, covers it, in the same mount as the page.
+          // Keep the retained list sized, but hide its pixels too: a transparent page
+          // cannot occlude the sidebar underneath it.
           style={[
             workspacePage ? { position: "absolute", top: 0, bottom: 0, left: 0 } : null,
             sidebarFloats

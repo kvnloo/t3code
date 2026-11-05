@@ -51,6 +51,7 @@ const SCENE_VARIABLES = [
   "--color-drawer",
   "--color-status-bar",
   "--color-sheet",
+  "--color-sheet-solid",
 ] as const satisfies ReadonlyArray<keyof MobileThemeVariables>;
 
 // Panes on top of the tint: the glass panels the content sits on.
