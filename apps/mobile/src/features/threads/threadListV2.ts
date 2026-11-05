@@ -11,11 +11,9 @@ import {
 import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { resolveThreadProviderStack } from "@t3tools/client-runtime/state/models";
-import {
-  threadSearchMatchKey,
-  threadSearchSubject,
-} from "@t3tools/client-runtime/state/thread-search";
-import { foldSearchQuery, rankSearchItems, scoreThreadSearch } from "@t3tools/shared/paletteSearch";
+import { threadSearchMatchKey } from "@t3tools/client-runtime/state/thread-search";
+import { scopedProjectKey } from "../../lib/scopedEntities";
+import { rankMobileThreadMatches } from "./mobileThreadSearch";
 import {
   createInboxReturnTracker,
   isThreadWorking,
@@ -620,6 +618,7 @@ export function buildThreadListV2Items(input: {
     readonly projectId: ProjectId;
   }> | null;
   readonly searchQuery: string;
+  readonly projectTitles?: ReadonlyMap<string, string>;
   readonly matchedThreadKeys?: ReadonlySet<string>;
   readonly settlementEnvironmentIds?: ReadonlySet<EnvironmentId>;
   readonly snoozeEnvironmentIds?: ReadonlySet<EnvironmentId>;
@@ -650,7 +649,7 @@ export function buildThreadListV2Items(input: {
             pendingOrder: null,
           }),
         );
-  const query = foldSearchQuery(input.searchQuery);
+  const query = input.searchQuery.trim();
   const nowMs = Date.parse(now);
   const projectKeys = input.projectRefs
     ? new Set(input.projectRefs.map((ref) => `${ref.environmentId}:${ref.projectId}`))
@@ -671,30 +670,32 @@ export function buildThreadListV2Items(input: {
       (input.environmentId === null || thread.environmentId === input.environmentId) &&
       (projectKeys === null || projectKeys.has(`${thread.environmentId}:${thread.projectId}`)),
   );
-  // The same matches as the command palette, typo fallback included. Only
-  // listed threads are ranked: a hidden exact match must not turn typos off.
   const rankedMatches =
     query.length > 0
-      ? rankSearchItems(listedThreads, (thread, options) =>
-          scoreThreadSearch(query, threadSearchSubject(thread, null), nowMs, {
-            ...options,
-            picks: false,
-          }),
-        ).map(({ item }) => item)
+      ? rankMobileThreadMatches(listedThreads, query, (thread) => ({
+          title: thread.title,
+          project: input.projectTitles?.get(
+            scopedProjectKey(thread.environmentId, thread.projectId),
+          ),
+          branch: thread.branch,
+          messageMatched:
+            input.matchedThreadKeys?.has(
+              threadSearchMatchKey({ environmentId: thread.environmentId, threadId: thread.id }),
+            ) === true,
+          activityAt: thread.updatedAt,
+        }))
       : null;
-  const matchingThreads = rankedMatches === null ? null : new Set(rankedMatches);
-  // Threads listed only because their messages match; only their rows show
-  // the message and open at it.
-  const contentOnlyThreadKeys = new Set<string>();
+  const matchingThreads =
+    rankedMatches === null ? null : new Set(rankedMatches.map(({ item }) => item));
+  const contentOnlyThreadKeys = new Set(
+    rankedMatches
+      ?.filter(({ tier }) => tier === "message")
+      .map(({ item }) =>
+        threadSearchMatchKey({ environmentId: item.environmentId, threadId: item.id }),
+      ) ?? [],
+  );
   for (const thread of listedThreads) {
-    if (matchingThreads !== null && !matchingThreads.has(thread)) {
-      const key = threadSearchMatchKey({
-        environmentId: thread.environmentId,
-        threadId: thread.id,
-      });
-      if (input.matchedThreadKeys?.has(key) !== true) continue;
-      contentOnlyThreadKeys.add(key);
-    }
+    if (matchingThreads !== null && !matchingThreads.has(thread)) continue;
     const supportsSettlement = input.settlementEnvironmentIds?.has(thread.environmentId) ?? true;
     const supportsSnooze = input.snoozeEnvironmentIds?.has(thread.environmentId) ?? true;
     if (supportsSnooze && effectiveSnoozed(thread, { now })) {
@@ -722,23 +723,12 @@ export function buildThreadListV2Items(input: {
   }
 
   if (rankedMatches !== null) {
-    // Searching lists every match by rank across shelves, as the palette and
-    // the web sidebar do, then threads listed for their messages in the
-    // server's order. Each row keeps its shelf's look.
+    // Search ranks titles before context and message matches across shelves,
+    // while each result retains its shelf appearance.
     const slim = new Set([...snoozed, ...settled]);
     const snoozedThreads = new Set(snoozed);
     const pinnedThreads = new Set(pinned);
-    const threadByKey = new Map(
-      listedThreads.map((thread) => [
-        threadSearchMatchKey({ environmentId: thread.environmentId, threadId: thread.id }),
-        thread,
-      ]),
-    );
-    const contentOnly = [...(input.matchedThreadKeys ?? [])].flatMap((key) => {
-      const thread = contentOnlyThreadKeys.has(key) ? threadByKey.get(key) : undefined;
-      return thread ? [thread] : [];
-    });
-    const results = [...rankedMatches, ...contentOnly];
+    const results = rankedMatches.map(({ item }) => item);
     return {
       items: results.map((thread, index) => ({
         thread,
