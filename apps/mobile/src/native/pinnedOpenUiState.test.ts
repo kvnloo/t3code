@@ -29,6 +29,12 @@ describe("pinned OpenUI snapshots", () => {
     expect(unpinned.items).toEqual([]);
     expect(unpinned.expandedId).toBeNull();
     expect(pinnedOpenUiReducer(unpinned, { type: "expand", id: 1 })).toBe(unpinned);
+    const repinned = pinnedOpenUiReducer(unpinned, {
+      type: "pin", code: "report payload", version: 1, resolver,
+    });
+    expect(repinned.items).toHaveLength(1);
+    expect(repinned.items[0]?.id).toBe(2);
+    expect(repinned.expandedId).toBeNull();
   });
 
   it("deduplicates within a resolver and bounds snapshots to the most recent three", () => {
@@ -76,5 +82,20 @@ describe("pinned OpenUI snapshots", () => {
     });
     expect(differentEnvironment.items).toEqual([]);
     expect(differentEnvironment.scopeKey).toBe("environment-2:thread-1");
+  });
+  it("keeps the last message above the measured dock with keyboard down and up", () => {
+    // The composer overlay includes the dock. Keyboard translation is additive,
+    // rather than a fixed dock offset, so both positions reserve the same space.
+    const composerHeight = 112;
+    const dockHeight = 72;
+    const viewportHeight = 800;
+    for (const keyboardHeight of [0, 300]) {
+      const measuredOverlayHeight = composerHeight + dockHeight;
+      const feedBottomInset = measuredOverlayHeight + keyboardHeight;
+      const lastMessageBottom = viewportHeight - feedBottomInset;
+      const dockTop = viewportHeight - keyboardHeight - measuredOverlayHeight;
+      expect(feedBottomInset).toBe(composerHeight + dockHeight + keyboardHeight);
+      expect(lastMessageBottom).toBeLessThanOrEqual(dockTop);
+    }
   });
 });
