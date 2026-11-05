@@ -203,57 +203,57 @@ export function AndroidWorkspaceNavigation(props: {
               <SymbolView name="magnifyingglass" size={21} tintColorClassName="accent-icon" />
             </Pressable>
           ) : null}
-            <NativeNavigation
-              rail={rail}
-              floating={floating}
-              tabs={tabs}
-              selectedTab={selectedTab}
-              dark={themeAppearance === "dark"}
-              textScale={scale}
-              newEnabled={connectionState.hasConnections}
-              safeAreaTop={toolbar.paddingTop}
-              safeAreaBottom={insets.bottom}
-              headerHeight={toolbar.height}
-              containerColor={nativeColor(containerColor)}
-              selectedColor={nativeColor(selectedColor)}
-              indicatorColor={nativeColor(indicatorColor)}
-              unselectedColor={nativeColor(unselectedColor)}
-              actionColor={nativeColor(colors["--color-primary"])}
-              actionContentColor={nativeColor(colors["--color-primary-foreground"])}
-              onTabSelected={(event) => {
-                Keyboard.dismiss();
-                const tab = event.nativeEvent.tab;
-                if (tab !== "settings") workspace.dispatch({ type: "select", tab });
-                // Reset the root stack even when a nested settings navigator has focus.
-                // The provider renders inside the root stack's layout, so the container's root state is
-                // that stack's current state.
-                const rootState = rootNavigationRef.getRootState();
-                if (root && rootState) {
-                  navigation.dispatch({
-                    ...CommonActions.reset(
-                      androidWorkspaceTabNavigationState(rootState, tab, layout.usesSplitView),
-                    ),
-                    target: root.key,
-                  });
-                }
-                props.onSelect?.();
-              }}
-              onNewThread={() => {
-                Keyboard.dismiss();
-                props.onNewThread();
-              }}
-              onOverlayChange={(event) => props.onOverlayChange?.(event.nativeEvent.overlay)}
-              style={
-                rail
-                  ? { flex: 1 }
-                  : floating
-                    ? {
-                        width: metrics.pill + 2 * FLOATING_TABS.shadow - (showSearchPill ? 48 : 0),
-                        height: metrics.height + 2 * FLOATING_TABS.shadow,
-                      }
-                    : { height: 80 * Math.max(1, scale), ...(showSearchPill ? { flex: 1 } : {}) }
+          <NativeNavigation
+            rail={rail}
+            floating={floating}
+            tabs={tabs}
+            selectedTab={selectedTab}
+            dark={themeAppearance === "dark"}
+            textScale={scale}
+            newEnabled={connectionState.hasConnections}
+            safeAreaTop={toolbar.paddingTop}
+            safeAreaBottom={insets.bottom}
+            headerHeight={toolbar.height}
+            containerColor={nativeColor(containerColor)}
+            selectedColor={nativeColor(selectedColor)}
+            indicatorColor={nativeColor(indicatorColor)}
+            unselectedColor={nativeColor(unselectedColor)}
+            actionColor={nativeColor(colors["--color-primary"])}
+            actionContentColor={nativeColor(colors["--color-primary-foreground"])}
+            onTabSelected={(event) => {
+              Keyboard.dismiss();
+              const tab = event.nativeEvent.tab;
+              if (tab !== "settings") workspace.dispatch({ type: "select", tab });
+              // Reset the root stack even when a nested settings navigator has focus.
+              // The provider renders inside the root stack's layout, so the container's root state is
+              // that stack's current state.
+              const rootState = rootNavigationRef.getRootState();
+              if (root && rootState) {
+                navigation.dispatch({
+                  ...CommonActions.reset(
+                    androidWorkspaceTabNavigationState(rootState, tab, layout.usesSplitView),
+                  ),
+                  target: root.key,
+                });
               }
-            />
+              props.onSelect?.();
+            }}
+            onNewThread={() => {
+              Keyboard.dismiss();
+              props.onNewThread();
+            }}
+            onOverlayChange={(event) => props.onOverlayChange?.(event.nativeEvent.overlay)}
+            style={
+              rail
+                ? { flex: 1 }
+                : floating
+                  ? {
+                      width: metrics.pill + 2 * FLOATING_TABS.shadow - (showSearchPill ? 48 : 0),
+                      height: metrics.height + 2 * FLOATING_TABS.shadow,
+                    }
+                  : { height: 80 * Math.max(1, scale), ...(showSearchPill ? { flex: 1 } : {}) }
+            }
+          />
         </>
       )}
     </View>
