@@ -10,12 +10,13 @@ The shared source and historical graph remain untouched. Local staging files and
 
 From the checkout root, stage the existing source as both `analyze-base.py` and `analyze.py` in this directory. Stage its `corpus/open-prs.json`, `corpus/discussions.json`, `corpus/ux-candidates.json`, `corpus/redesign-stack-files.json`, and `corpus/prfiles/` here. Apply the draft only to the staged `analyze.py`.
 
-Run:
+Ignored staging files do not ship through `--src-include`. Package them as an explicit fleet input, then run on a phone's SSH Linux guest. No phone UI input is involved.
 
 ```sh
-fleet-build --node mbp --light --wait 1800 --src-include scripts/ayo-O05-graph --fetch scripts/ayo-O05-graph/PROOF.json -- python3 scripts/ayo-O05-graph/proof.py
+tar -cf /tmp/ayo-O05-inputs.tar -C scripts/ayo-O05-graph analyze-base.py analyze.py corpus
+fleet-build --node phones --guest --light --wait 1800 --src-include scripts/ayo-O05-graph --input /tmp/ayo-O05-inputs.tar:scripts/ayo-O05-graph/inputs.tar --fetch scripts/ayo-O05-graph/PROOF.json -- python3 scripts/ayo-O05-graph/proof.py
 ```
 
-`proof.py` invokes the actual analyzer twice, using temporary output directories and a read-only corpus reference. The source corpus is never rewritten. It requires the original to fail the endpoint invariant and the patched analyzer to pass. It also checks that every original node and edge remains unchanged, then removes an endpoint as a negative control.
+`proof.py` invokes the original analyzer twice and the patched analyzer once, using temporary output directories and a read-only corpus reference. It pins `PYTHONHASHSEED=0` because the analyzer iterates sets, then checks that the two original outputs match. The source corpus is never rewritten. It requires the original to fail the endpoint invariant and the patched analyzer to pass. It also checks that every original node and edge remains unchanged, then removes an endpoint as a negative control.
 
 The authoritative execution status is in `/mnt/zer0models/workspace/zer0/data/operations/intent-analyzer-20261104/ayo-runs/exec-O05/REPORT.md`. A draft patch or this README alone is not a passing receipt.

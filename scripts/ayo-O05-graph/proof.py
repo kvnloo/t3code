@@ -2,12 +2,18 @@
 """Run the existing analyzer against its real frozen corpus, before and after."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import tarfile
 
 HERE = Path(__file__).resolve().parent
+# Fleet source shipping excludes ignored fixtures; --input stages this exact archive.
+if (HERE / 'inputs.tar').is_file():
+    with tarfile.open(HERE / 'inputs.tar') as archive:
+        archive.extractall(HERE, filter='data')
 
 
 def check(graph):
@@ -24,7 +30,8 @@ def run(name):
         (root / 'analyze.py').write_bytes(source.read_bytes())
         (root / 'corpus').symlink_to(HERE / 'corpus', target_is_directory=True)
         result = subprocess.run([sys.executable, str(root / 'analyze.py')],
-                                capture_output=True, text=True)
+                                capture_output=True, text=True,
+                                env={**os.environ, 'PYTHONHASHSEED': '0'})
         (HERE / f'{name}.log').write_text(result.stdout + result.stderr)
         if result.returncode:
             raise RuntimeError(f'{name} exited {result.returncode}')
@@ -32,6 +39,8 @@ def run(name):
 
 
 before = run('analyze-base.py')
+assert before == run('analyze-base.py'), 'The original analyzer output is not repeatable'
+print('REPEATABILITY: two original runs match with PYTHONHASHSEED=0', flush=True)
 try:
     check(before)
 except ValueError as error:
@@ -56,6 +65,7 @@ else:
     raise AssertionError('The invariant checker accepted a missing endpoint')
 receipt = {
     'base_red': True, 'head_green': True, 'negative_control_red': True,
+    'baseline_repeatable': True, 'python_hash_seed': '0',
     'edges_unchanged': len(before['edges']), 'original_nodes_unchanged': len(before['nodes']),
     'reference_nodes_added': added,
     'base_sha256': hashlib.sha256((HERE / 'analyze-base.py').read_bytes()).hexdigest(),
