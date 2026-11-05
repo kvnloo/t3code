@@ -99,7 +99,7 @@ export interface ThreadActionMenuState {
   /** A No project thread with its own folder, on a server that can promote it. */
   readonly canTurnIntoProject?: boolean;
   /** Styled tags first, in priority order, then any other tags on the thread. */
-  readonly tags?: ReadonlyArray<{ readonly tag: string; readonly checked: boolean }>;
+  readonly tags?: ReadonlyArray<{ readonly tag: string; readonly name?: string; readonly checked: boolean }>;
 }
 
 /** Local navigation, read markers, and copying remain available to read-only clients. */
@@ -193,7 +193,7 @@ export function buildThreadActionMenuItems(
             children: [
               ...state.tags.map((entry) => ({
                 id: `tag:${entry.tag}` as const,
-                label: entry.tag,
+                label: entry.name ?? entry.tag,
                 checked: entry.checked,
               })),
               {

@@ -66,6 +66,8 @@ export type ThreadTagColor = typeof ThreadTagColor.Type;
 /** How a tag looks in thread lists. Tags without a style stay invisible there. */
 export const ThreadTagStyle = Schema.Struct({
   tag: ThreadTag,
+  /** Editable label; the tag remains the stable assignment and agent-facing key. */
+  displayName: Schema.optionalKey(ThreadTag),
   icon: Schema.optionalKey(ThreadTagIcon),
   color: Schema.optionalKey(ThreadTagColor),
 });

@@ -10,6 +10,9 @@ import {
 } from "./thread-list-v2-row-appearance";
 import { RowPressable } from "../../components/ui/RowPressable";
 import { CustomSnoozeSheet } from "./CustomSnoozeSheet";
+import { ThreadTagsEditor } from "./ThreadTagsEditor";
+import { Button } from "../../components/ui/Button";
+import { Modal, ScrollView } from "react-native";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { serverEnvironment } from "../../state/server";
 import { threadArrangementOpenAtom } from "../../state/thread-order";
@@ -900,6 +903,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     [props.autoSettleOptOutSupported, thread.autoSettleDisabledAt],
   );
   const canTurnIntoProject = canTurnThreadIntoProject(thread);
+  const [tagsOpen, setTagsOpen] = useState(false);
   const tagStyles = useAtomValue(serverEnvironment.threadTagStylesAtom(thread.environmentId));
   const menuTags = useMemo(
     () => threadMenuTags(thread.source.tags, tagStyles),
@@ -927,20 +931,7 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
         supported: props.titleRegenerationSupported,
         isRegenerating: isRegeneratingTitle,
       }),
-      ...(menuTags.length > 0
-        ? [
-            {
-              id: "tags",
-              title: "Tags",
-              image: "tag",
-              subactions: menuTags.map((entry) => ({
-                id: `tag:${entry.tag}`,
-                title: entry.tag,
-                state: entry.checked ? ("on" as const) : ("off" as const),
-              })),
-            } satisfies MenuAction,
-          ]
-        : []),
+      { id: "tags:open", title: "Tags…", image: "tag" },
       ...(canTurnIntoProject
         ? [
             {
@@ -954,7 +945,6 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
     ],
     [
       canTurnIntoProject,
-      menuTags,
       props.titleRegenerationSupported,
       thread.runtime,
       isRegeneratingTitle,
@@ -1037,6 +1027,10 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
       if (nativeEvent.event === "rename") handleRename();
       if (nativeEvent.event === "regenerate-title") handleRegenerateTitle();
       if (nativeEvent.event === "turn-into-project") void turnThreadIntoProject(thread);
+      if (nativeEvent.event === "tags:open") {
+        setTagsOpen(true);
+        return;
+      }
       if (nativeEvent.event.startsWith("tag:")) {
         handleToggleTag(nativeEvent.event.slice("tag:".length));
         return;
@@ -1525,6 +1519,17 @@ export const ThreadListV2Row = memo(function ThreadListV2Row(props: {
 
   return (
     <View collapsable={false}>
+      {tagsOpen ? (
+        <Modal transparent animationType="fade" onRequestClose={() => setTagsOpen(false)}>
+          <View className="flex-1 justify-center bg-backdrop px-5">
+            <ScrollView className="max-h-[85%] grow-0 rounded-3xl bg-screen" contentContainerStyle={{ padding: 20, gap: 16 }} keyboardShouldPersistTaps="handled">
+              <Text accessibilityRole="header" className="text-xl text-foreground">Tags</Text>
+              <ThreadTagsEditor key={`${thread.environmentId}:${thread.id}`} environmentId={thread.environmentId} tags={menuTags} onToggle={handleToggleTag} onBeforeManage={() => setTagsOpen(false)} />
+              <Button label="Done" onPress={() => setTagsOpen(false)} />
+            </ScrollView>
+          </View>
+        </Modal>
+      ) : null}
       {customSnoozeOpen && (
         <CustomSnoozeSheet onClose={() => setCustomSnoozeOpen(false)} onSnooze={handleSnooze} />
       )}

@@ -122,7 +122,7 @@ export function ThreadTagStylesRow() {
             key={style.tag}
             style={style}
             index={index}
-            takenTags={draft.filter((_, candidate) => candidate !== index).map((s) => s.tag)}
+            takenTags={draft.filter((_, candidate) => candidate !== index).map((s) => s.displayName ?? s.tag)}
             onChange={(next) => replaceAt(index, next)}
             onRaise={
               index === 0
@@ -200,14 +200,13 @@ function ThreadTagStyleFields(props: {
       <DraftInput
         size="sm"
         className="w-40"
-        aria-label="Tag name"
-        value={style.tag}
+        aria-label="Tag display name"
+        value={style.displayName ?? style.tag}
         spellCheck={false}
         onCommit={(next) => {
-          const tag = next.trim();
-          // Keep the old name when the new one is invalid or already styled.
-          if (tag === style.tag || !isThreadTag(tag) || props.takenTags.includes(tag)) return;
-          onChange({ ...style, tag });
+          const displayName = next.trim();
+          if (displayName === (style.displayName ?? style.tag) || !isThreadTag(displayName) || props.takenTags.includes(displayName)) return;
+          onChange({ ...style, displayName });
         }}
       />
       <Select
@@ -233,7 +232,7 @@ function ThreadTagStyleFields(props: {
       </Select>
       <div className="ml-auto flex min-w-0 items-center gap-1">
         <ThreadTagChip
-          badge={{ tag: style.tag, icon: style.icon ?? null, color: style.color ?? null }}
+          badge={{ tag: style.displayName ?? style.tag, icon: style.icon ?? null, color: style.color ?? null }}
         />
         <Button
           variant="ghost-muted"

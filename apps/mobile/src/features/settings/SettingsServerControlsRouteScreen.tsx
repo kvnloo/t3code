@@ -45,6 +45,7 @@ import {
 } from "./settings-scoped-server";
 import { PullRequestGlyph } from "../pull-requests/pullRequestGlyphs";
 import { AutoSettleSettingsRows } from "./ThreadSettingsSections";
+import { ThreadTagsEditor } from "../threads/ThreadTagsEditor";
 import { supportsSharedSettingsSync } from "@t3tools/client-runtime/state/shared-settings";
 
 type SettingsPage = "threads" | "source-control" | "worktrees" | "maintenance";
@@ -316,6 +317,13 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
               ) : null}
               {props.page === "threads" ? (
                 <>
+                  {!projectSelected ? displayTargets.map((target) => (
+                    <SettingsSection key={target.environment.environmentId} title={`Tags · ${target.environment.label}`}>
+                      <View className="p-4">
+                        <ThreadTagsEditor key={target.environment.environmentId} environmentId={target.environment.environmentId} />
+                      </View>
+                    </SettingsSection>
+                  )) : null}
                   <SettingsSection
                     title="Default workspace"
                     footer={managed("defaultThreadEnvMode")}
