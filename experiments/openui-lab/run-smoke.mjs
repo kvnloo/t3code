@@ -23,6 +23,11 @@ const sources = {
   "OpenUiGallery.tsx": "apps/web/src/components/chat/OpenUiGallery.tsx",
   "openUiGallery.ts": "packages/client-runtime/src/openUiGallery.ts",
   "gallery.test.ts": "experiments/openui-lab/gallery.test.ts",
+  "OpenUiKitCards.tsx": "apps/web/src/components/chat/OpenUiKitCards.tsx",
+  "openUiKitCards.ts": "packages/client-runtime/src/openUiKitCards.ts",
+  "openUiKitCardDocument.ts": "packages/client-runtime/src/openUiKitCardDocument.ts",
+  "ephemeralUiKitDocument.generated.ts": "packages/client-runtime/src/ephemeralUiKitDocument.generated.ts",
+  "kit-cards.test.ts": "experiments/openui-lab/kit-cards.test.ts",
   "report.test.ts": "experiments/openui-lab/report.test.ts",
   "charts.test.ts": "experiments/openui-lab/charts.test.ts",
   "source-demo-fences.md": "experiments/openui-lab/source-demo-fences.md",
@@ -39,6 +44,11 @@ const rewrites = [
   ["@t3tools/client-runtime/openui-gallery", "./openUiGallery"],
   ["../../apps/web/src/components/chat/OpenUiGallery", "./OpenUiGallery"],
   ["../../lib/utils", "./utils"],
+  ["@t3tools/client-runtime/openui-kit-cards", "./openUiKitCards"],
+  ["@t3tools/client-runtime/openui-kit-card-document", "./openUiKitCardDocument"],
+  ["../../packages/client-runtime/src/ephemeralUiKitDocument.generated.ts", "./ephemeralUiKitDocument.generated.ts"],
+  ["../../packages/client-runtime/src/openUiKitCardDocument.ts", "./openUiKitCardDocument.ts"],
+  ["../../packages/client-runtime/src/openUiKitCards.ts", "./openUiKitCards.ts"],
   ["../ui/dialog", "./dialog"],
   ["./openUiImageSource", "./imageSource"],
 ];
@@ -110,6 +120,7 @@ const result =
         "charts.test.ts",
         "app-cards.test.ts",
         "gallery.test.ts",
+        "kit-cards.test.ts",
       ])
     : install;
 writeFileSync(join(out, "smoke.log"), result.log);

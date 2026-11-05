@@ -9,6 +9,7 @@
 
 import { APP_CARD_EXAMPLE, APP_CARD_PROMPT_RULES, appCardProblem, isAppCardType, type AppCardPanel } from "./openUiAppCards.ts";
 import { GALLERY_EXAMPLE, GALLERY_PROMPT_RULE, galleryProblem, type GalleryPanel } from "./openUiGallery.ts";
+import { KIT_CARDS_EXAMPLE, KIT_CARDS_PROMPT_RULE, kitCardsProblem, type KitCardsPanel } from "./openUiKitCards.ts";
 
 export const OPENUI_CHART_FENCE = "openui-v2";
 
@@ -48,11 +49,13 @@ export const OPENUI_CHART_PROMPT = {
     "After the fenced block include a normal Markdown summary for clients without the renderer.",
     ...APP_CARD_PROMPT_RULES,
     GALLERY_PROMPT_RULE,
+    KIT_CARDS_PROMPT_RULE,
   ],
   examples: [
     'root = Board("Churn", "Login is the hottest file.", [map, top])\nmap = Treemap("Size and churn", "LOC", "commits", [{path: "src/login.ts", size: 80, color: 12}, {path: "src/ui.ts", size: 120, color: 4}])\ntop = BarChart("Most commits", "commits", [{label: "login.ts", value: 12}, {label: "ui.ts", value: 4}])',
     APP_CARD_EXAMPLE,
     GALLERY_EXAMPLE,
+    KIT_CARDS_EXAMPLE,
   ],
 };
 
@@ -114,7 +117,7 @@ export function inspectParsedChartBoard(
   }
   for (const panel of panels) {
     const typeName = isRecord(panel) ? panel.typeName : undefined;
-    if (typeName !== "Treemap" && typeName !== "BarChart" && typeName !== "StackedArea" && typeName !== "Heatmap" && typeName !== "Gallery" && !isAppCardType(typeName)) {
+    if (typeName !== "Treemap" && typeName !== "BarChart" && typeName !== "StackedArea" && typeName !== "Heatmap" && typeName !== "Gallery" && typeName !== "EphemeralCards" && !isAppCardType(typeName)) {
       return { kind: "invalid", reason: "Chart board contains an unknown panel." };
     }
     const props = panelSchemas[typeName](isRecord(panel) ? panel.props : undefined);
@@ -379,7 +382,8 @@ export type ChartPanel =
   | { readonly typeName: "StackedArea"; readonly props: { readonly categories: ReadonlyArray<string>; readonly series: ReadonlyArray<StackedSeries> } }
   | { readonly typeName: "Heatmap"; readonly props: { readonly rows: ReadonlyArray<string>; readonly columns: ReadonlyArray<string>; readonly counts: ReadonlyArray<ReadonlyArray<number>> } }
   | AppCardPanel
-  | GalleryPanel;
+  | GalleryPanel
+  | KitCardsPanel;
 
 /** Cross-field rules the schemas cannot express; returns a reader-facing reason or null. */
 export function chartPanelProblem(panel: ChartPanel): string | null {
@@ -412,6 +416,8 @@ export function chartPanelProblem(panel: ChartPanel): string | null {
     }
     case "Gallery":
       return galleryProblem(panel);
+    case "EphemeralCards":
+      return kitCardsProblem(panel);
     default:
       return appCardProblem(panel);
   }
