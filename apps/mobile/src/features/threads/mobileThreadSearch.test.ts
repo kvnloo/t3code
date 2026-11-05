@@ -17,16 +17,77 @@ function rankedIds(items: ReadonlyArray<Candidate>, query: string): string[] {
 }
 
 describe("mobile thread fuzzy search", () => {
-  it("tolerates one insertion, deletion, substitution, or adjacent swap", () => {
+  it.each([
+    { name: "adjacent transposition", query: "serach", title: "Search", matches: true },
+    { name: "substitution", query: "searxh", title: "Search", matches: true },
+    { name: "extra query letter", query: "searxch", title: "Search", matches: true },
+    { name: "missing query letter", query: "sarch", title: "Search", matches: true },
+    { name: "short token typo is excluded", query: "cot", title: "Cat", matches: false },
+    { name: "two edits are excluded", query: "sxxrch", title: "Search", matches: false },
+  ])("handles $name", ({ query, title, matches }) => {
     const items = [
-      { id: "search", title: "Search" },
+      { id: "match", title },
       { id: "unrelated", title: "Compile" },
     ];
-    expect(rankedIds(items, "serach")).toEqual(["search"]);
-    expect(rankedIds(items, "searxh")).toEqual(["search"]);
-    expect(rankedIds(items, "searxch")).toEqual(["search"]);
-    expect(rankedIds(items, "sarch")).toEqual(["search"]);
-    expect(rankedIds([{ id: "short", title: "cat" }], "cot")).toEqual([]);
+    expect(rankedIds(items, query)).toEqual(matches ? ["match"] : []);
+  });
+
+  it.each([
+    {
+      name: "exact word, prefix, substring, typo, then scattered subsequence",
+      query: "arch",
+      items: [
+        { id: "typo", title: "Arxh", activityAt: "2026-06-05T00:00:00.000Z" },
+        { id: "subsequence", title: "AxRxCxH", activityAt: "2026-06-04T00:00:00.000Z" },
+        { id: "substring", title: "Search", activityAt: "2026-01-03T00:00:00.000Z" },
+        { id: "prefix", title: "Archive", activityAt: "2026-01-02T00:00:00.000Z" },
+        { id: "exact", title: "Arch", activityAt: "2026-01-01T00:00:00.000Z" },
+      ],
+      expected: ["exact", "prefix", "substring", "typo", "subsequence"],
+    },
+    {
+      name: "title before project and branch context before message body",
+      query: "search",
+      items: [
+        {
+          id: "message",
+          title: "Other work",
+          messagePreview: "Search",
+          messageMatched: true,
+          activityAt: "2026-06-04T00:00:00.000Z",
+        },
+        {
+          id: "branch",
+          title: "Other work",
+          branch: "feature/search",
+          activityAt: "2026-06-03T00:00:00.000Z",
+        },
+        {
+          id: "project",
+          title: "Other work",
+          project: "Search",
+          activityAt: "2026-06-02T00:00:00.000Z",
+        },
+        {
+          id: "title",
+          title: "Searching",
+          activityAt: "2026-06-01T00:00:00.000Z",
+        },
+      ],
+      expected: ["title", "project", "branch", "message"],
+    },
+    {
+      name: "recency then original order when quality and timestamp tie",
+      query: "search",
+      items: [
+        { id: "first-tie", title: "Search thread", activityAt: "2026-06-01T00:00:00.000Z" },
+        { id: "older", title: "Search thread", activityAt: "2026-01-01T00:00:00.000Z" },
+        { id: "second-tie", title: "Search thread", activityAt: "2026-06-01T00:00:00.000Z" },
+      ],
+      expected: ["first-tie", "second-tie", "older"],
+    },
+  ])("orders $name", ({ items, query, expected }) => {
+    expect(rankedIds(items, query)).toEqual(expected);
   });
 
   it("matches an in-order subsequence within a word", () => {
