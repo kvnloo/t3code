@@ -674,7 +674,9 @@ export function buildThreadListV2Items(input: {
     query.length > 0
       ? rankMobileThreadMatches(listedThreads, query, (thread) => ({
           title: thread.title,
-          project: input.projectTitles?.get(scopedProjectKey(thread.environmentId, thread.projectId)),
+          project: input.projectTitles?.get(
+            scopedProjectKey(thread.environmentId, thread.projectId),
+          ),
           branch: thread.branch,
           messageMatched:
             input.matchedThreadKeys?.has(
