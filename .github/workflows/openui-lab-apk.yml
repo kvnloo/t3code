@@ -1,0 +1,21 @@
+name: OpenUI lab APK (fork)
+
+# Fork-only throwaway build ref: builds com.t3tools.t3code.openui on a free runner.
+on:
+  push:
+    branches: ["apk/openui-*"]
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build
+        run: HUSKY=0 bash .github/scripts/openui-lab-apk.sh
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: openui-lab-apk
+          path: android-result/
+          if-no-files-found: ignore
