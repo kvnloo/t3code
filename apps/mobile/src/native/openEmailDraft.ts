@@ -17,11 +17,5 @@ export async function openEmailDraft(draft: MailtoDraft): Promise<void> {
   if (!native?.openEmailDraft) {
     throw new Error("The Android email composer requires a rebuilt T3 Code client.");
   }
-  await native.openEmailDraft(
-    [...draft.to],
-    [...draft.cc],
-    [...draft.bcc],
-    draft.subject,
-    draft.body,
-  );
+  await native.openEmailDraft([...draft.to], [...draft.cc], [...draft.bcc], draft.subject, draft.body);
 }

@@ -5,8 +5,9 @@ function addMailtoSendtoQuery(manifest) {
   const hasEmailQuery = manifest.queries.some((query) =>
     query.intent?.some(
       (intent) =>
-        intent.action?.some((action) => action.$?.["android:name"] === "android.intent.action.SENDTO") &&
-        intent.data?.some((data) => data.$?.["android:scheme"] === "mailto"),
+        intent.action?.some(
+          (action) => action.$?.["android:name"] === "android.intent.action.SENDTO",
+        ) && intent.data?.some((data) => data.$?.["android:scheme"] === "mailto"),
     ),
   );
   if (!hasEmailQuery) {

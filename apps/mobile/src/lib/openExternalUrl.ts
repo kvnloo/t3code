@@ -28,7 +28,6 @@ export class ExternalUrlOpenError extends Schema.TaggedError<ExternalUrlOpenErro
   }
 }
 
-
 export interface MailtoDraft {
   readonly to: ReadonlyArray<string>;
   readonly cc: ReadonlyArray<string>;
