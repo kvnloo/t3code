@@ -45,4 +45,5 @@ it.each([
     { scheme: "https", host, pathPrefix: "/threads/" },
   ]);
   expect(assetLinks.map((link) => link.target.package_name)).toContain(identifier);
+  expect(config.plugins).toContain("./plugins/withAndroidMailtoQueries.cjs");
 });

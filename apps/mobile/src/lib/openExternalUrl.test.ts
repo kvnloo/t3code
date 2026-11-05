@@ -1,13 +1,19 @@
 import { Linking } from "react-native";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
-import { tryOpenExternalUrl } from "./openExternalUrl";
+import { openEmailDraft } from "../native/openEmailDraft";
+import { parseMailtoDraftUrl, tryOpenExternalUrl } from "./openExternalUrl";
 
 vi.mock("react-native", () => ({
   Linking: { openURL: vi.fn() },
+  Platform: { OS: "android" },
+}));
+vi.mock("../native/openEmailDraft", () => ({
+  openEmailDraft: vi.fn(),
 }));
 
 const openURL = vi.mocked(Linking.openURL);
+const openEmail = vi.mocked(openEmailDraft);
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -33,4 +39,54 @@ describe("tryOpenExternalUrl", () => {
     expect(diagnostics).not.toContain("private-challenge");
     expect(diagnostics).not.toContain("43123");
   });
+});
+
+describe("Android email drafts", () => {
+  const href =
+    "mailto:first%40example.com,second@example.com?to=third%40example.com&cc=copy%40example.com&bcc=hidden%40example.com&subject=Hello%20%26%20Thanks&body=Line%201%0ALine%202";
+
+  it("decodes to, cc, subject and body without losing encoded characters", () => {
+    expect(parseMailtoDraftUrl(href)).toEqual({
+      to: ["first@example.com", "second@example.com", "third@example.com"],
+      cc: ["copy@example.com"],
+      bcc: ["hidden@example.com"],
+      subject: "Hello & Thanks",
+      body: "Line 1\nLine 2",
+    });
+  });
+
+  it("opens the email composer rather than the generic ACTION_VIEW link path", async () => {
+    openEmail.mockResolvedValue(undefined);
+
+    await expect(tryOpenExternalUrl(href, "pull-request")).resolves.toBe(true);
+
+    expect(openEmail).toHaveBeenCalledWith({
+      to: ["first@example.com", "second@example.com", "third@example.com"],
+      cc: ["copy@example.com"],
+      bcc: ["hidden@example.com"],
+      subject: "Hello & Thanks",
+      body: "Line 1\nLine 2",
+    });
+    expect(openURL).not.toHaveBeenCalled();
+  });
+
+  it("accepts a mailto link without recipients for a blank draft", () => {
+    expect(parseMailtoDraftUrl("mailto:?subject=Follow%20up")).toEqual({
+      to: [],
+      cc: [],
+      bcc: [],
+      subject: "Follow up",
+      body: "",
+    });
+  });
+
+  it.each(["javascript:alert(1)", "file:///sdcard/private.txt", "data:text/html,unsafe"])(
+    "blocks unsafe chat schemes without launching another app: %s",
+    async (href) => {
+      expect(parseMailtoDraftUrl(href)).toBeNull();
+      await expect(tryOpenExternalUrl(href, "pull-request")).resolves.toBe(false);
+      expect(openURL).not.toHaveBeenCalled();
+      expect(openEmail).not.toHaveBeenCalled();
+    },
+  );
 });
