@@ -3,6 +3,7 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import { createContext, use, useState, type Dispatch, type ReactNode } from "react";
 
 import { mobilePreferencesAtom } from "../../state/preferences";
+import type { BottomSearchPrototypeModel } from "./bottom-search-prototype";
 import {
   navigationCustomizationAvailable,
   resolveHiddenNavigationTabs,
@@ -23,6 +24,7 @@ export const WorkspaceTabsContext = createContext<{
   readonly dispatch: Dispatch<WorkspaceTabsAction>;
   readonly isTabActive: (tab: WorkspaceTab) => boolean;
   readonly bottomClearance: number;
+  readonly bottomSearch?: BottomSearchPrototypeModel;
   readonly settingsOpen: boolean;
   readonly getScrollOffset: (tab: WorkspaceSearchTab) => number;
   readonly recordScrollOffset: (tab: WorkspaceSearchTab, offset: number) => void;

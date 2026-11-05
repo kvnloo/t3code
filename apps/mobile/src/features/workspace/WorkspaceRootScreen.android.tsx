@@ -20,6 +20,7 @@ import { AndroidWorkspaceNavigation, FloatingWorkspaceTabs } from "./AndroidWork
 import { FLOATING_TABS } from "./floating-workspace-tabs";
 import { WorkspaceTabsContext, useWorkspaceTabs } from "./WorkspaceTabsContext";
 import { WorkspaceTabPanes } from "./WorkspaceTabPanes";
+import { useBottomSearchPrototypeModel } from "./bottom-search-prototype";
 import { WorkspaceAppBarScope } from "../../components/ui/WorkspaceAppBar.android";
 import { usePaneRole } from "../../components/ui/Pane";
 import { AndroidWorkspaceSidebar } from "./AndroidWorkspaceSidebar.android";
@@ -38,8 +39,10 @@ function WorkspaceRoot() {
   const enabled = useEnabledNavigationTabs();
   const insets = useSafeAreaInsets();
   const { fabClearance, fabSize } = useAndroidControlSizing();
+  const bottomSearch = useBottomSearchPrototypeModel(!layout.usesSplitView);
   const context = {
     ...workspace,
+    bottomSearch,
     bottomClearance: layout.usesSplitView
       ? workspace.bottomClearance
       : floatingTabsEnabled
