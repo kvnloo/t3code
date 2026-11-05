@@ -12,6 +12,7 @@ export interface SearchFieldProps {
   readonly placeholder: string;
   readonly value: string;
   readonly onChangeText: (value: string) => void;
+  readonly onBlur?: () => void;
 }
 
 export function SearchField({
@@ -22,6 +23,7 @@ export function SearchField({
   placeholder,
   value,
   onChangeText,
+  onBlur,
 }: SearchFieldProps) {
   const { scale, mediumIconSize } = useAndroidControlSizing();
   return (
@@ -54,6 +56,7 @@ export function SearchField({
         style={{ paddingVertical: 7 * scale }}
         value={value}
         onChangeText={onChangeText}
+        onBlur={onBlur}
       />
       {value.length > 0 ? (
         <Pressable
