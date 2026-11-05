@@ -1,5 +1,7 @@
 import * as Schema from "effect/Schema";
-import { Linking } from "react-native";
+import { Linking, Platform } from "react-native";
+
+import { openEmailDraft } from "../native/openEmailDraft";
 
 const ExternalUrlTarget = Schema.Literals([
   "file-preview",
@@ -26,6 +28,41 @@ export class ExternalUrlOpenError extends Schema.TaggedError<ExternalUrlOpenErro
   }
 }
 
+export interface MailtoDraft {
+  readonly to: ReadonlyArray<string>;
+  readonly cc: ReadonlyArray<string>;
+  readonly bcc: ReadonlyArray<string>;
+  readonly subject: string;
+  readonly body: string;
+}
+
+function emailAddresses(value: string): string[] {
+  return value
+    .split(",")
+    .map((address) => address.trim())
+    .filter(Boolean);
+}
+
+export function parseMailtoDraftUrl(href: string): MailtoDraft | null {
+  if (!/^mailto:/i.test(href)) return null;
+  try {
+    const url = new URL(href);
+    if (url.protocol !== "mailto:") return null;
+    return {
+      to: [
+        ...emailAddresses(decodeURIComponent(url.pathname)),
+        ...url.searchParams.getAll("to").flatMap(emailAddresses),
+      ],
+      cc: url.searchParams.getAll("cc").flatMap(emailAddresses),
+      bcc: url.searchParams.getAll("bcc").flatMap(emailAddresses),
+      subject: url.searchParams.get("subject") ?? "",
+      body: url.searchParams.get("body") ?? "",
+    };
+  } catch {
+    return null;
+  }
+}
+
 function externalUrlMetadata(url: string): { readonly scheme: string; readonly host?: string } {
   try {
     const parsed = new URL(url);
@@ -41,8 +78,15 @@ function externalUrlMetadata(url: string): { readonly scheme: string; readonly h
 }
 
 export async function tryOpenExternalUrl(url: string, target: ExternalUrlTarget): Promise<boolean> {
+  const chatLink = target === "markdown-link" || target === "pull-request";
+  if (chatLink && /^(?:javascript|file|data|content|intent):/i.test(url.trim())) return false;
   try {
-    await Linking.openURL(url);
+    const draft =
+      Platform.OS === "android" && target !== "provider-auth"
+        ? parseMailtoDraftUrl(url)
+        : null;
+    if (draft) await openEmailDraft(draft);
+    else await Linking.openURL(url);
     return true;
   } catch (cause) {
     const error = new ExternalUrlOpenError({ target, ...externalUrlMetadata(url), cause });

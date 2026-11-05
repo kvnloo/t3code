@@ -1,6 +1,7 @@
 package expo.modules.t3nativecontrols
 
 import android.content.Intent
+import android.net.Uri
 import android.text.format.DateFormat
 import androidx.core.content.FileProvider
 import expo.modules.kotlin.Promise
@@ -19,6 +20,19 @@ class T3NativeControlsModule : Module() {
     Function("is24HourFormat") {
       val context = appContext.reactContext ?: error("The app is not active.")
       DateFormat.is24HourFormat(context)
+    }
+
+    AsyncFunction("openEmailDraft") {
+      to: List<String>, cc: List<String>, bcc: List<String>, subject: String, body: String ->
+      val activity = appContext.currentActivity ?: error("The app is not active.")
+      val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:")).apply {
+        if (to.isNotEmpty()) putExtra(Intent.EXTRA_EMAIL, to.toTypedArray())
+        if (cc.isNotEmpty()) putExtra(Intent.EXTRA_CC, cc.toTypedArray())
+        if (bcc.isNotEmpty()) putExtra(Intent.EXTRA_BCC, bcc.toTypedArray())
+        if (subject.isNotEmpty()) putExtra(Intent.EXTRA_SUBJECT, subject)
+        if (body.isNotEmpty()) putExtra(Intent.EXTRA_TEXT, body)
+      }
+      activity.startActivity(intent)
     }
 
     AsyncFunction("openFile") { uri: String, mimeType: String, promise: Promise ->

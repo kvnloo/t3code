@@ -1183,6 +1183,19 @@ const CHAT_MARKDOWN_COMPONENTS = {
               return;
             }
             if (event.defaultPrevented) return;
+            if (/^mailto:/i.test(href)) {
+              event.preventDefault();
+              event.stopPropagation();
+              void readLocalApi()
+                ?.shell.openExternal(href)
+                .catch((cause) =>
+                  reportMarkdownActionFailure(
+                    { operation: "open-link-external", target: href },
+                    cause,
+                  ),
+                );
+              return;
+            }
             if (
               resolveLinkTarget({
                 url: href,
