@@ -1,17 +1,24 @@
 import { selectedNavigationTab, visibleNavigationTabs } from "./navigation-tab-order";
+import { useRef } from "react";
 import { requireNativeView } from "expo";
 import { CommonActions, useNavigation } from "@react-navigation/native";
 import {
   Keyboard,
+  Pressable,
   processColor,
   useWindowDimensions,
   View,
   type NativeSyntheticEvent,
+  type TextInputInstance,
   type ViewProps,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
+import { SearchField } from "../../components/ui/SearchField";
+import { SymbolView } from "../../components/ui/AppSymbol";
+import { useHardwareBack } from "../../lib/backHandler";
+import { resolveBottomSearchMode } from "./bottom-search-prototype-state";
 import { useToolbarLayout } from "../../components/ui/useToolbarLayout";
 import { rootNavigationRef } from "../../lib/rootNavigation";
 import { useWorkspaceConnectionState } from "../../state/workspace";
@@ -73,6 +80,8 @@ export function AndroidWorkspaceNavigation(props: {
   readonly onOverlayChange?: (overlay: boolean) => void;
 }) {
   const workspace = useWorkspaceTabs()!;
+  const bottomSearch = workspace.bottomSearch;
+  const searchInputRef = useRef<TextInputInstance>(null);
   const order = useNavigationTabOrder();
   const hidden = useHiddenNavigationTabs();
   const root = useAndroidWorkspaceRoot();
@@ -81,7 +90,12 @@ export function AndroidWorkspaceNavigation(props: {
   const toolbar = useToolbarLayout();
   const connectionState = useWorkspaceConnectionState();
   const keyboardVisible = useSoftKeyboardShowing();
-  const { layout, keyboardHoldsSidebar } = useAdaptiveWorkspaceLayout();
+  const {
+    layout,
+    keyboardHoldsSidebar,
+    primarySidebarSearchQuery,
+    setPrimarySidebarSearchQuery,
+  } = useAdaptiveWorkspaceLayout();
   const { themeAppearance, themeVariables: colors } = useAppearancePreferences();
   const { scale, fabSize } = useAndroidControlSizing();
   const window = useWindowDimensions();
@@ -97,13 +111,25 @@ export function AndroidWorkspaceNavigation(props: {
     hidden,
     rail ? 5 : 4,
   );
+  const searchMode = resolveBottomSearchMode({
+    enabled: bottomSearch?.enabled === true,
+    active: !rail && workspace.state.selectedTab === "threads" && root?.settingsOpen !== true,
+    expanded: bottomSearch?.expanded === true,
+  });
+  const showSearchPill = searchMode === "pill";
+  const showSearchField = searchMode === "field";
+  useHardwareBack(showSearchField, () => {
+    bottomSearch?.close();
+    Keyboard.dismiss();
+    return true;
+  });
   // FloatingWorkspaceTabs starts the bar at the left inset, so a cutout narrows the room.
   const barWidth =
     (props.paneWidth ?? window.width) -
     (Math.max(insets.left, FLOATING_TABS.edge) - FLOATING_TABS.edge);
   const metrics = floatingTabsMetrics(tabs.length, scale, fabSize, barWidth, props.fillWidth);
   // The composer's keyboard slides the sidebar away with the bar on it; other keyboards don't.
-  if (!rail && keyboardVisible && !keyboardHoldsSidebar) return null;
+  if (!rail && keyboardVisible && !keyboardHoldsSidebar && !showSearchField) return null;
 
   return (
     <View
@@ -113,61 +139,123 @@ export function AndroidWorkspaceNavigation(props: {
         rail
           ? { flex: 1 }
           : floating
-            ? undefined
-            : { backgroundColor: containerColor, paddingBottom: insets.bottom }
+            ? showSearchField
+              ? {
+                  width:
+                    (props.paneWidth ?? window.width) -
+                    Math.max(insets.left, FLOATING_TABS.edge) -
+                    Math.max(insets.right, FLOATING_TABS.edge),
+                }
+              : showSearchPill
+                ? { flexDirection: "row", alignItems: "center" }
+                : undefined
+            : {
+                backgroundColor: containerColor,
+                paddingBottom: insets.bottom,
+                ...(showSearchPill ? { flexDirection: "row", alignItems: "center" } : {}),
+              }
       }
     >
-      <NativeNavigation
-        rail={rail}
-        floating={floating}
-        tabs={tabs}
-        selectedTab={selectedTab}
-        dark={themeAppearance === "dark"}
-        textScale={scale}
-        newEnabled={connectionState.hasConnections}
-        safeAreaTop={toolbar.paddingTop}
-        safeAreaBottom={insets.bottom}
-        headerHeight={toolbar.height}
-        containerColor={nativeColor(containerColor)}
-        selectedColor={nativeColor(selectedColor)}
-        indicatorColor={nativeColor(indicatorColor)}
-        unselectedColor={nativeColor(unselectedColor)}
-        actionColor={nativeColor(colors["--color-primary"])}
-        actionContentColor={nativeColor(colors["--color-primary-foreground"])}
-        onTabSelected={(event) => {
-          Keyboard.dismiss();
-          const tab = event.nativeEvent.tab;
-          if (tab !== "settings") workspace.dispatch({ type: "select", tab });
-          // Reset the root stack even when a nested settings navigator has focus.
-          // The provider renders inside the root stack's layout, so the container's root state is
-          // that stack's current state.
-          const rootState = rootNavigationRef.getRootState();
-          if (root && rootState) {
-            navigation.dispatch({
-              ...CommonActions.reset(
-                androidWorkspaceTabNavigationState(rootState, tab, layout.usesSplitView),
-              ),
-              target: root.key,
-            });
-          }
-          props.onSelect?.();
-        }}
-        onNewThread={() => {
-          Keyboard.dismiss();
-          props.onNewThread();
-        }}
-        onOverlayChange={(event) => props.onOverlayChange?.(event.nativeEvent.overlay)}
-        style={
-          rail
-            ? { flex: 1 }
-            : floating
-              ? {
-                  width: metrics.pill + 2 * FLOATING_TABS.shadow,
-                  height: metrics.height + 2 * FLOATING_TABS.shadow,
+      {showSearchField ? (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+            paddingHorizontal: floating ? 0 : 12,
+            height: floating
+              ? metrics.height + 2 * FLOATING_TABS.shadow
+              : 80 * Math.max(1, scale),
+          }}
+        >
+          <SearchField
+            inputRef={searchInputRef}
+            accessibilityLabel="Search threads"
+            clearAccessibilityLabel="Clear search"
+            placeholder="Search threads"
+            value={primarySidebarSearchQuery}
+            onChangeText={setPrimarySidebarSearchQuery}
+            onBlur={() => bottomSearch?.blur(primarySidebarSearchQuery)}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Close bottom search"
+            hitSlop={8}
+            onPress={() => {
+              bottomSearch?.close();
+              Keyboard.dismiss();
+            }}
+            style={{ padding: 8 }}
+          >
+            <SymbolView name="xmark" size={20} tintColorClassName="accent-icon" />
+          </Pressable>
+        </View>
+      ) : (
+        <>
+          {showSearchPill ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Search threads"
+              onPress={() => bottomSearch?.open()}
+              className="items-center justify-center rounded-full bg-subtle-strong"
+              style={{ width: 48, height: floating ? metrics.height : 48 }}
+            >
+              <SymbolView name="magnifyingglass" size={21} tintColorClassName="accent-icon" />
+            </Pressable>
+          ) : null}
+            <NativeNavigation
+              rail={rail}
+              floating={floating}
+              tabs={tabs}
+              selectedTab={selectedTab}
+              dark={themeAppearance === "dark"}
+              textScale={scale}
+              newEnabled={connectionState.hasConnections}
+              safeAreaTop={toolbar.paddingTop}
+              safeAreaBottom={insets.bottom}
+              headerHeight={toolbar.height}
+              containerColor={nativeColor(containerColor)}
+              selectedColor={nativeColor(selectedColor)}
+              indicatorColor={nativeColor(indicatorColor)}
+              unselectedColor={nativeColor(unselectedColor)}
+              actionColor={nativeColor(colors["--color-primary"])}
+              actionContentColor={nativeColor(colors["--color-primary-foreground"])}
+              onTabSelected={(event) => {
+                Keyboard.dismiss();
+                const tab = event.nativeEvent.tab;
+                if (tab !== "settings") workspace.dispatch({ type: "select", tab });
+                // Reset the root stack even when a nested settings navigator has focus.
+                // The provider renders inside the root stack's layout, so the container's root state is
+                // that stack's current state.
+                const rootState = rootNavigationRef.getRootState();
+                if (root && rootState) {
+                  navigation.dispatch({
+                    ...CommonActions.reset(
+                      androidWorkspaceTabNavigationState(rootState, tab, layout.usesSplitView),
+                    ),
+                    target: root.key,
+                  });
                 }
-              : { height: 80 * Math.max(1, scale) }
-        }
-      />
+                props.onSelect?.();
+              }}
+              onNewThread={() => {
+                Keyboard.dismiss();
+                props.onNewThread();
+              }}
+              onOverlayChange={(event) => props.onOverlayChange?.(event.nativeEvent.overlay)}
+              style={
+                rail
+                  ? { flex: 1 }
+                  : floating
+                    ? {
+                        width: metrics.pill + 2 * FLOATING_TABS.shadow - (showSearchPill ? 48 : 0),
+                        height: metrics.height + 2 * FLOATING_TABS.shadow,
+                      }
+                    : { height: 80 * Math.max(1, scale), ...(showSearchPill ? { flex: 1 } : {}) }
+              }
+            />
+        </>
+      )}
     </View>
   );
 }
