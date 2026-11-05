@@ -113,3 +113,13 @@ test("only kit messages are read, and the readout says nothing was sent", () => 
     "inbox · Open Invoice #4471 · message:m4471 · not sent",
   );
 });
+
+test("replays the block a real Claude turn emitted for an ordinary request", () => {
+  // Reply to "Show me the ephemeral-ui cards for an email inbox, a CI run, a ride and a session trace."
+  const code =
+    'root = Board("Ephemeral UI cards", "An email inbox, a CI run, a ride and a session trace, as the ephemeral-ui kit shows them.", [a])\na = EphemeralCards("Inbox, CI, ride and trace", [{kind: "inbox", app: "gmail"}, {kind: "ci", app: "github"}, {kind: "ride"}, {kind: "trace"}])';
+  assert.deepEqual(inspectOpenUiChart(code), { kind: "ready" });
+  const html = renderToStaticMarkup(createElement(OpenUiCharts, { code }));
+  assert.match(html, /data-openui-kit-cards/);
+  assert.match(html, /Inbox, CI, ride and trace/);
+});
