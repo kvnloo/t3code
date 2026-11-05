@@ -1,0 +1,18 @@
+--- a/analyze.py
++++ b/analyze.py
+@@ -154,6 +154,15 @@
+     redesign_unique_files=len(touch_layer), redesign_deleted_files=len(deleted),
+ )
+ hub_files = [(f, len(s), churn[f]) for f, s in sorted(fileidx.items(), key=lambda kv: -len(kv[1]))[:30]]
++# Referenced open PRs outside the UX subset still need nodes for their edges.
++for edge in edges:
++    for key in (edge["src"], edge["dst"]):
++        if key not in nodes:
++            n = int(key.removeprefix("pr:"))
++            p = open_prs[n]
++            nodes[key] = dict(kind="pr", n=n, title=p["title"], author=p["author"], group="reference")
++if any(e["src"] not in nodes or e["dst"] not in nodes for e in edges):
++    raise ValueError("graph has missing endpoints")
+ (R / "graph.json").write_text(json.dumps(dict(nodes=nodes, edges=edges), indent=1))
+ (R / "analysis.json").write_text(json.dumps(dict(stats=stats, per_pr=per_pr, hub_files=hub_files,
+                                                  lanes={k: v for k, v in sorted(lanes.items(), key=lambda kv: -len(kv[1]))}),
