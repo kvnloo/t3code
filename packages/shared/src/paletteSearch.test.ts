@@ -202,6 +202,19 @@ describe("scoreThreadSearch", () => {
   it("forgives one typo only when nothing matches exactly", () => {
     const threads = [thread("Hosting alternatives to Railway"), thread("Trim MCP model lists")];
     expect(rankTitles("railwya", threads)).toEqual(["Hosting alternatives to Railway"]);
+    for (const query of ["xndroid", "ndroid", "aandroid", "adnroid"]) {
+      expect(rankTitles(query, [thread("Android search"), thread("Other")]), query).toEqual([
+        "Android search",
+      ]);
+    }
+    expect(rankTitles("xndro", [thread("Android search")])).toEqual([]);
+    expect(rankTitles("xndriod", [thread("Android search")])).toEqual([]);
+    expect(rankTitles("xndroid", [thread("Android search"), thread("Xndroid notes")])).toEqual([
+      "Xndroid notes",
+    ]);
+    expect(
+      scoreThreadSearch("xndroid", thread("Android search"), NOW, { typos: true })?.ranges,
+    ).toEqual([{ start: 0, end: 7 }]);
     expect(rankTitles("trim mpc", threads)).toEqual(["Trim MCP model lists"]);
     expect(
       rankTitles("drga", [thread("Restore drag handles"), thread("Organize indicators")]),

@@ -190,7 +190,7 @@ interface TokenMatch extends SearchRange {
 
 /**
  * Mid-word hits need four or more characters and `midWord`, so "del" does not find "model".
- * Typos preserve the first letter except for swaps; short tokens allow fewer edits to limit noise.
+ * Prefix typos preserve the first letter except for swaps; longer whole words allow leading edits.
  * Numbers never match with a typo because different pull request numbers must stay distinct.
  */
 function matchToken(
@@ -242,13 +242,11 @@ function matchToken(
   if (LETTER.test(token)) {
     for (let index = 0; index < field.text.length; index++) {
       if (!field.wordStarts[index]) continue;
-      // People rarely mistype the first letter, so a typo keeps it, unless it
-      // swaps the first two of a longer word ("ing" is not "nig…").
       const first = field.text[index];
       const firstLetterKept =
         first === token[0] ||
         (token.length > 3 && first === token[1] && field.text[index + 1] === token[0]);
-      if (!firstLetterKept) continue;
+      if (!firstLetterKept && token.length < 5) continue;
       // The whole run, across camelCase joins: "githbu" is "GitHub".
       let runEnd = index + 1;
       while (runEnd < field.text.length && ALPHANUMERIC.test(field.text[runEnd]!)) runEnd++;
@@ -258,9 +256,11 @@ function matchToken(
       // much ("cron" would find every "con…").
       const short = token.length <= 4;
       // The same length first, so "githbu" highlights all of "GitHub".
-      const lengths = short
-        ? [token.length, token.length + 1]
-        : [token.length, token.length - 1, token.length + 1];
+      const lengths = !firstLetterKept
+        ? [word.length]
+        : short
+          ? [token.length, token.length + 1]
+          : [token.length, token.length - 1, token.length + 1];
       for (const length of lengths) {
         if (length > word.length) continue;
         const prefix = word.slice(0, length);
