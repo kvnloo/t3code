@@ -13,6 +13,8 @@ import type { ThreadListToolbarProps } from "./ThreadListToolbar.types";
 export function ThreadListToolbar(props: ThreadListToolbarProps) {
   const navigation = useNavigation();
   const workspace = useWorkspaceTabs();
+  const bottomSearch = workspace?.bottomSearch;
+  const bottomSearchEnabled = bottomSearch?.enabled === true;
   const isTabActive = workspace?.isTabActive;
   const homeFocused = useNavigationState((state) => state.routes[state.index]?.name === "Home");
   const listFocused =
@@ -20,13 +22,19 @@ export function ThreadListToolbar(props: ThreadListToolbarProps) {
   const connectionState = useWorkspaceConnectionState();
   const { onRequestVisibility, onSearchQueryChange } = props;
   const [searchOpen, setSearchOpen] = useState(false);
-  const searching = searchOpen || props.searchQuery.length > 0;
+  const searching = !bottomSearchEnabled && (searchOpen || props.searchQuery.length > 0);
   const openSearch = () => {
     onRequestVisibility?.();
     setSearchOpen(true);
     return true;
   };
-  useHardwareKeyboardCommand("focusSearch", openSearch);
+  useHardwareKeyboardCommand("focusSearch", () => {
+    if (bottomSearchEnabled) {
+      bottomSearch?.open();
+      return true;
+    }
+    return openSearch();
+  });
 
   const closeSearch = () => {
     onSearchQueryChange("");
@@ -62,7 +70,7 @@ export function ThreadListToolbar(props: ThreadListToolbarProps) {
           onOpenEnvironments={props.onOpenEnvironments}
         />
       }
-      search={{
+      search={bottomSearchEnabled ? undefined : {
         value: props.searchQuery,
         onChangeText: onSearchQueryChange,
         placeholder: "Search",
