@@ -41,6 +41,7 @@ export function AndroidHomeFabLayout(props: ComponentProps<typeof SharedAndroidH
     ? floatingTabsMetrics(enabledTabs.length + 1, scale, fabSize, barWidth).height
     : fabSize;
   const workspace = useWorkspaceTabs();
+  const searchExpanded = workspace?.bottomSearch?.expanded === true;
   const bottomClearance = insets.bottom + FLOATING_TABS.bottom + FLOATING_TABS.edge + size;
   const context = floatingTabsEnabled && workspace ? { ...workspace, bottomClearance } : workspace;
   const scrollState = useRef({ anchor: 0, expanded: true });
@@ -63,6 +64,7 @@ export function AndroidHomeFabLayout(props: ComponentProps<typeof SharedAndroidH
         <FabScrollContext value={onScroll}>{props.children}</FabScrollContext>
       </WorkspaceTabsContext>
       {!props.disabled &&
+      !searchExpanded &&
       (!props.sidebar || floatingTabsEnabled) &&
       state.hasConnections &&
       layoutWidth !== null ? (
