@@ -70,15 +70,19 @@ export function ThreadListToolbar(props: ThreadListToolbarProps) {
           onOpenEnvironments={props.onOpenEnvironments}
         />
       }
-      search={bottomSearchEnabled ? undefined : {
-        value: props.searchQuery,
-        onChangeText: onSearchQueryChange,
-        placeholder: "Search",
-        accessibilityLabel: "Search threads",
-        active: searching,
-        onOpen: openSearch,
-        onClose: closeSearch,
-      }}
+      search={
+        bottomSearchEnabled
+          ? undefined
+          : {
+              value: props.searchQuery,
+              onChangeText: onSearchQueryChange,
+              placeholder: "Search",
+              accessibilityLabel: "Search threads",
+              active: searching,
+              onOpen: openSearch,
+              onClose: closeSearch,
+            }
+      }
       menus={
         connectionState.hasConnections
           ? [
