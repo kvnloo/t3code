@@ -1,6 +1,6 @@
-import { selectedNavigationTab, visibleNavigationTabs } from "./navigation-tab-order";
-import { requireNativeView } from "expo";
 import { CommonActions, useNavigation } from "@react-navigation/native";
+import { requireNativeView } from "expo";
+import { useEffect, useState } from "react";
 import {
   Keyboard,
   processColor,
@@ -15,6 +15,14 @@ import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSi
 import { useToolbarLayout } from "../../components/ui/useToolbarLayout";
 import { rootNavigationRef } from "../../lib/rootNavigation";
 import { useWorkspaceConnectionState } from "../../state/workspace";
+import { BottomThreadSearchSheet } from "../home/BottomThreadSearchSheet";
+import {
+  bottomSearchTransition,
+  isBottomSearchAvailable,
+  type BottomSearchAction,
+} from "../home/bottom-search-prototype";
+import { useBottomSearchPrototypeB } from "../home/useBottomSearchPrototypeB";
+import { useHardwareKeyboardCommand } from "../keyboard/hardwareKeyboardCommands";
 import { androidWorkspaceNavigationColors } from "./android-workspace-navigation-colors";
 import {
   androidWorkspaceTabNavigationState,
@@ -52,6 +60,8 @@ interface NativeNavigationProps extends ViewProps {
     event: NativeSyntheticEvent<{ readonly tab: AndroidWorkspaceNavigationTab }>,
   ) => void;
   readonly onNewThread: () => void;
+  readonly searchSwipeEnabled: boolean;
+  readonly onSearchSwipe: () => void;
   readonly onOverlayChange: (event: NativeSyntheticEvent<{ readonly overlay: boolean }>) => void;
 }
 
@@ -81,7 +91,14 @@ export function AndroidWorkspaceNavigation(props: {
   const toolbar = useToolbarLayout();
   const connectionState = useWorkspaceConnectionState();
   const keyboardVisible = useSoftKeyboardShowing();
-  const { layout, keyboardHoldsSidebar } = useAdaptiveWorkspaceLayout();
+  const {
+    layout,
+    keyboardHoldsSidebar,
+    primarySidebarSearchQuery,
+    setPrimarySidebarSearchQuery,
+  } = useAdaptiveWorkspaceLayout();
+  const bottomSearchEnabled = useBottomSearchPrototypeB();
+  const [sheetOpen, setSheetOpen] = useState(false);
   const { themeAppearance, themeVariables: colors } = useAppearancePreferences();
   const { scale, fabSize } = useAndroidControlSizing();
   const window = useWindowDimensions();
@@ -97,78 +114,119 @@ export function AndroidWorkspaceNavigation(props: {
     hidden,
     rail ? 5 : 4,
   );
+  const canOpenBottomSearch = isBottomSearchAvailable(
+    bottomSearchEnabled,
+    rail,
+    layout.usesSplitView,
+    workspace.state.selectedTab,
+    root?.settingsOpen ?? false,
+  );
+  const updateBottomSearch = (action: BottomSearchAction) => {
+    const next = bottomSearchTransition(
+      { open: sheetOpen, query: primarySidebarSearchQuery },
+      action,
+      canOpenBottomSearch,
+    );
+    if (next.open !== sheetOpen) setSheetOpen(next.open);
+    if (next.query !== primarySidebarSearchQuery) setPrimarySidebarSearchQuery(next.query);
+    if (action.type === "dismiss") Keyboard.dismiss();
+  };
+  const openBottomSearch = () => {
+    if (!canOpenBottomSearch) return false;
+    updateBottomSearch({ type: "open" });
+    return true;
+  };
+  useHardwareKeyboardCommand("focusSearch", openBottomSearch);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- disabling the prototype closes its transient sheet.
+  useEffect(() => {
+    if (!canOpenBottomSearch) setSheetOpen(false);
+  }, [canOpenBottomSearch]);
   // FloatingWorkspaceTabs starts the bar at the left inset, so a cutout narrows the room.
   const barWidth =
     (props.paneWidth ?? window.width) -
     (Math.max(insets.left, FLOATING_TABS.edge) - FLOATING_TABS.edge);
   const metrics = floatingTabsMetrics(tabs.length, scale, fabSize, barWidth, props.fillWidth);
   // The composer's keyboard slides the sidebar away with the bar on it; other keyboards don't.
-  if (!rail && keyboardVisible && !keyboardHoldsSidebar) return null;
+  const hideNavigation = !rail && keyboardVisible && !keyboardHoldsSidebar;
 
   return (
-    <View
-      style={
-        // The rail draws its own surface and pads the system bars; while open it spans the
-        // workspace, so the rest of it must stay transparent.
-        rail
-          ? { flex: 1 }
-          : floating
-            ? undefined
-            : { backgroundColor: containerColor, paddingBottom: insets.bottom }
-      }
-    >
-      <NativeNavigation
-        rail={rail}
-        floating={floating}
-        tabs={tabs}
-        selectedTab={selectedTab}
-        dark={themeAppearance === "dark"}
-        textScale={scale}
-        newEnabled={connectionState.hasConnections}
-        safeAreaTop={toolbar.paddingTop}
-        safeAreaBottom={insets.bottom}
-        headerHeight={toolbar.height}
-        containerColor={nativeColor(containerColor)}
-        selectedColor={nativeColor(selectedColor)}
-        indicatorColor={nativeColor(indicatorColor)}
-        unselectedColor={nativeColor(unselectedColor)}
-        actionColor={nativeColor(colors["--color-primary"])}
-        actionContentColor={nativeColor(colors["--color-primary-foreground"])}
-        onTabSelected={(event) => {
-          Keyboard.dismiss();
-          const tab = event.nativeEvent.tab;
-          if (tab !== "settings") workspace.dispatch({ type: "select", tab });
-          // Reset the root stack even when a nested settings navigator has focus.
-          // The provider renders inside the root stack's layout, so the container's root state is
-          // that stack's current state.
-          const rootState = rootNavigationRef.getRootState();
-          if (root && rootState) {
-            navigation.dispatch({
-              ...CommonActions.reset(
-                androidWorkspaceTabNavigationState(rootState, tab, layout.usesSplitView),
-              ),
-              target: root.key,
-            });
+    <>
+      {!hideNavigation ? (
+        <View
+          style={
+            // The rail draws its own surface and pads the system bars; while open it spans the
+            // workspace, so the rest of it must stay transparent.
+            rail
+              ? { flex: 1 }
+              : floating
+                ? undefined
+                : { backgroundColor: containerColor, paddingBottom: insets.bottom }
           }
-          props.onSelect?.();
-        }}
-        onNewThread={() => {
-          Keyboard.dismiss();
-          props.onNewThread();
-        }}
-        onOverlayChange={(event) => props.onOverlayChange?.(event.nativeEvent.overlay)}
-        style={
-          rail
-            ? { flex: 1 }
-            : floating
-              ? {
-                  width: metrics.pill + 2 * FLOATING_TABS.shadow,
-                  height: metrics.height + 2 * FLOATING_TABS.shadow,
-                }
-              : { height: 80 * Math.max(1, scale) }
-        }
-      />
-    </View>
+        >
+          <NativeNavigation
+            rail={rail}
+            floating={floating}
+            tabs={tabs}
+            selectedTab={selectedTab}
+            dark={themeAppearance === "dark"}
+            textScale={scale}
+            newEnabled={connectionState.hasConnections}
+            searchSwipeEnabled={canOpenBottomSearch}
+            onSearchSwipe={openBottomSearch}
+            safeAreaTop={toolbar.paddingTop}
+            safeAreaBottom={insets.bottom}
+            headerHeight={toolbar.height}
+            containerColor={nativeColor(containerColor)}
+            selectedColor={nativeColor(selectedColor)}
+            indicatorColor={nativeColor(indicatorColor)}
+            unselectedColor={nativeColor(unselectedColor)}
+            actionColor={nativeColor(colors["--color-primary"])}
+            actionContentColor={nativeColor(colors["--color-primary-foreground"])}
+            onTabSelected={(event) => {
+              setSheetOpen(false);
+              Keyboard.dismiss();
+              const tab = event.nativeEvent.tab;
+              if (tab !== "settings") workspace.dispatch({ type: "select", tab });
+              // Reset the root stack even when a nested settings navigator has focus.
+              // The provider renders inside the root stack's layout, so the container's root state is
+              // that stack's current state.
+              const rootState = rootNavigationRef.getRootState();
+              if (root && rootState) {
+                navigation.dispatch({
+                  ...CommonActions.reset(
+                    androidWorkspaceTabNavigationState(rootState, tab, layout.usesSplitView),
+                  ),
+                  target: root.key,
+                });
+              }
+              props.onSelect?.();
+            }}
+            onNewThread={() => {
+              Keyboard.dismiss();
+              props.onNewThread();
+            }}
+            onOverlayChange={(event) => props.onOverlayChange?.(event.nativeEvent.overlay)}
+            style={
+              rail
+                ? { flex: 1 }
+                : floating
+                  ? {
+                      width: metrics.pill + 2 * FLOATING_TABS.shadow,
+                      height: metrics.height + 2 * FLOATING_TABS.shadow,
+                    }
+                  : { height: 80 * Math.max(1, scale) }
+            }
+          />
+        </View>
+      ) : null}
+      {canOpenBottomSearch && sheetOpen ? (
+        <BottomThreadSearchSheet
+          query={primarySidebarSearchQuery}
+          onChangeQuery={(query) => updateBottomSearch({ type: "query", query })}
+          onClose={() => updateBottomSearch({ type: "dismiss" })}
+        />
+      ) : null}
+    </>
   );
 }
 

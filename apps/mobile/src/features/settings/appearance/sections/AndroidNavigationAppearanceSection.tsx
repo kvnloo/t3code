@@ -1,11 +1,18 @@
+import { useAtomSet, useAtomValue } from "@effect/atom-react";
+import { AsyncResult } from "effect/reactivity";
 import { View } from "react-native";
 
 import { ListChoiceRow as SettingsChoiceRow } from "../../../../components/ui/ListChoiceRow";
+import { mobilePreferencesAtom, updateMobilePreferencesAtom } from "../../../../state/preferences";
 import { SettingsSection } from "../../components/SettingsSection";
+import { SettingsSwitchRow } from "../../components/SettingsSwitchRow";
 import { useAppearancePreferences } from "../AppearancePreferencesProvider";
 
 export function AndroidNavigationAppearanceSection() {
   const { isReady, androidNavigationStyle, setAndroidNavigationStyle } = useAppearancePreferences();
+  const preferences = useAtomValue(mobilePreferencesAtom);
+  const savePreferences = useAtomSet(updateMobilePreferencesAtom);
+  const ready = isReady && AsyncResult.isSuccess(preferences) && !preferences.waiting;
   return (
     <SettingsSection title="Navigation">
       <View accessibilityRole="radiogroup">
@@ -25,6 +32,16 @@ export function AndroidNavigationAppearanceSection() {
           separated
         />
       </View>
+      <SettingsSwitchRow
+        disabled={!ready}
+        icon="magnifyingglass"
+        label="Bottom search (prototype B)"
+        subtitle="Swipe up on the bottom navigation to search threads."
+        value={
+          AsyncResult.isSuccess(preferences) && preferences.value.bottomSearchPrototypeB === true
+        }
+        onValueChange={(enabled) => savePreferences({ bottomSearchPrototypeB: enabled })}
+      />
     </SettingsSection>
   );
 }
