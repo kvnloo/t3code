@@ -79,6 +79,14 @@ describe("resolveMarkdownLinkPresentation", () => {
     });
   });
 
+  it.each([
+    "mailto:hello@example.com",
+    "mailto:alice@example.com,bob@example.com?cc=carol%40example.com&subject=Hello%20%26%20thanks&body=First%20line%0D%0ASecond%20line%20%2B%20notes",
+    "mailto:?subject=Draft&body=Review%20before%20sending",
+  ])("preserves email draft fields for native dispatch: %s", (href) => {
+    expect(resolveMarkdownLinkPresentation(href)).toEqual({ kind: "link", href });
+  });
+
   it("does not style app routes as file links", () => {
     expect(resolveMarkdownLinkPresentation("/chat/settings")).toEqual({
       kind: "link",

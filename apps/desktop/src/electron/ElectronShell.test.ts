@@ -24,6 +24,23 @@ describe("ElectronShell", () => {
     writeTextMock.mockReset();
   });
 
+  it.effect("opens email drafts without changing recipients or encoded content", () =>
+    Effect.gen(function* () {
+      openExternalMock.mockResolvedValue(undefined);
+
+      const urls = [
+        "mailto:hello@example.com",
+        "mailto:alice@example.com,bob@example.com?cc=carol%40example.com&subject=Hello%20%26%20thanks&body=First%20line%0D%0ASecond%20line%20%2B%20notes",
+        "mailto:?subject=Draft&body=Review%20before%20sending",
+      ];
+      const electronShell = yield* ElectronShell.ElectronShell;
+      for (const url of urls) {
+        assert.equal(yield* electronShell.openExternal(url), true);
+      }
+      assert.deepEqual(openExternalMock.mock.calls, urls.map((url) => [url]));
+    }).pipe(Effect.provide(ElectronShell.layer)),
+  );
+
   it.effect("opens remote SSH editor URLs", () =>
     Effect.gen(function* () {
       openExternalMock.mockResolvedValue(undefined);
