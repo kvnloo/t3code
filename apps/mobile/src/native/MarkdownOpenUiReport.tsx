@@ -22,7 +22,7 @@ export function MarkdownOpenUiReport({ code, version, pinned = false }: { code: 
   const source = <ScrollView horizontal style={{ maxHeight: 240 }}><AppText selectable className="p-3 font-mono text-xs">{code}</AppText></ScrollView>;
   return (
     <View className="my-3 overflow-hidden rounded-lg border border-border">
-      <View className="flex-row items-center justify-between gap-2 border-b border-border px-3 py-2">
+      <View className="flex-row flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
         <AppText className="text-xs text-foreground-muted">OpenUI Lab · read-only · v{version}</AppText>
         <View className="flex-row items-center gap-2">
           {pinning && !pinned ? (
