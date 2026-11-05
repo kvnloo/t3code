@@ -188,6 +188,8 @@ import {
 } from "./ThreadComposer";
 import { ComposerPopoverHost } from "./ComposerPopoverHost";
 import { ThreadFeed, type ThreadFeedHandle, type ThreadFeedHistoryControls } from "./ThreadFeed";
+import { PinnedOpenUiProvider } from "../../native/PinnedOpenUiContext";
+import { PinnedOpenUiDock } from "../../native/PinnedOpenUiDock";
 import { useThreadTurnSubagents } from "./ThreadAgentsSheet";
 import { ComposerQueuedEditBanner } from "./ComposerQueuedEdit";
 import { useThreadQueuedCount } from "./ThreadQueueControl";
@@ -344,10 +346,12 @@ const COMPOSER_HEIGHT_SETTLE_MS = 220;
 // one thread, so the body remounts when the thread changes.
 export function ThreadDetailScreen(props: ThreadDetailScreenProps) {
   return (
-    <ThreadDetailBody
+    <PinnedOpenUiProvider
       key={scopedThreadKey(props.environmentId, props.selectedThread.id)}
-      {...props}
-    />
+      scopeKey={scopedThreadKey(props.environmentId, props.selectedThread.id)}
+    >
+      <ThreadDetailBody {...props} />
+    </PinnedOpenUiProvider>
   );
 }
 
@@ -1383,6 +1387,7 @@ function ThreadDetailBody(props: ThreadDetailScreenProps) {
                 className="w-full"
               >
                 <View className="w-full self-center" style={{ maxWidth: contentMaxWidth }}>
+                  <PinnedOpenUiDock keyboardVisible={isKeyboardVisible} maxHeight={windowHeight * 0.38} />
                   <FloatingWorkingControl
                     colorScheme={isDarkMode ? "dark" : "light"}
                     status={floatingStatus}
