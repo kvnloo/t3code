@@ -461,8 +461,12 @@ describe("ChatMarkdown Windows file links", () => {
 
 it("opens an encoded email draft through the browser protocol handler", async () => {
   const href =
-    "mailto:alice%2Balerts%40example.com?cc=team%2Bops%40example.com&subject=R%C3%A9sum%C3%A9%20%2B%20Roadmap%20%26%20Notes&body=Line%201%0ALine%202%20%2B%20caf%C3%A9%20%26%20tea";
-  await using screen = await render(<ChatMarkdown cwd={undefined} text={`[Draft email](${href})`} />);
+    "mailto:alice%2Balerts%40example.com?cc=team%2Bops%40example.com" +
+    "&subject=R%C3%A9sum%C3%A9%20%2B%20Roadmap%20%26%20Notes" +
+    "&body=Line%201%0ALine%202%20%2B%20caf%C3%A9%20%26%20tea";
+  await using screen = await render(
+    <ChatMarkdown cwd={undefined} text={`[Draft email](${href})`} />,
+  );
   using openedWindow = vi.spyOn(window, "open").mockReturnValue(null);
 
   expect(screen.container.querySelector("a")?.getAttribute("href")).toBe(href);

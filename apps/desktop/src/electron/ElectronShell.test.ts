@@ -96,13 +96,15 @@ describe("ElectronShell", () => {
   viteIt("opens encoded email drafts using the system mail handler", async () => {
     openExternalMock.mockResolvedValue(undefined);
     const href =
-      "mailto:alice%2Balerts%40example.com?cc=team%2Bops%40example.com&subject=R%C3%A9sum%C3%A9%20%2B%20Roadmap%20%26%20Notes&body=Line%201%0ALine%202%20%2B%20caf%C3%A9%20%26%20tea";
+      "mailto:alice%2Balerts%40example.com?cc=team%2Bops%40example.com" +
+      "&subject=R%C3%A9sum%C3%A9%20%2B%20Roadmap%20%26%20Notes" +
+      "&body=Line%201%0ALine%202%20%2B%20caf%C3%A9%20%26%20tea";
 
     await expect(Effect.runPromise(ElectronShell.make.openExternal(href))).resolves.toBe(true);
     expect(openExternalMock).toHaveBeenCalledTimes(1);
     expect(openExternalMock).toHaveBeenCalledWith(href);
     expect(new URL(href).searchParams.get("subject")).toBe("Résumé + Roadmap & Notes");
-    expect(new URL(href).searchParams.get("body")).toBe("Line 1\\nLine 2 + café & tea");
+    expect(new URL(href).searchParams.get("body")).toBe("Line 1\nLine 2 + café & tea");
   });
 
   it.effect("does not open unsafe external URLs", () =>
