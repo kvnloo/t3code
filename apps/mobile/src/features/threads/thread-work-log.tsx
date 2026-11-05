@@ -79,10 +79,13 @@ import {
   shouldFollowThreadWorkGroupAppend,
   type ThreadWorkGroupScrollPosition,
 } from "./thread-feed-live-follow";
+import type { AppBrand } from "@t3tools/client-runtime/app-connectors";
 import {
+  resolveWorkEntryAppActivity,
   resolveWorkEntryToolPresentation,
   toolGroupAction,
   type ToolGroupSummaryKind,
+  workEntryAppActivityLabel,
   workEntryViewedImagePath,
 } from "@t3tools/client-runtime/work-log/presentation";
 import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
@@ -197,6 +200,24 @@ export function ThreadDisclosureChevron(props: {
         type="monochrome"
       />
     </Animated.View>
+  );
+}
+
+/** Brand monogram for tools from a known app (Gmail, Uber, Maps, ...); no logos are bundled. */
+function AppActivityMark({ brand }: { readonly brand: AppBrand }) {
+  return (
+    <View
+      accessible={false}
+      className="h-4 w-4 items-center justify-center rounded-[4px]"
+      style={{ backgroundColor: brand.color }}
+    >
+      <Text
+        className="font-t3-bold"
+        style={{ color: brand.onColor, fontSize: brand.mark.length > 1 ? 7 : 10, lineHeight: 12 }}
+      >
+        {brand.mark}
+      </Text>
+    </View>
   );
 }
 
@@ -1007,12 +1028,15 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
       </Text>
     );
   const toolPresentation = resolveWorkEntryToolPresentation(row.workEntry);
-  const previewText = row.groupStandIn?.label ?? workEntryRowLabel(row.workEntry);
+  const appActivity = row.groupStandIn ? null : resolveWorkEntryAppActivity(row.workEntry);
+  const appLabel = appActivity ? workEntryAppActivityLabel(row.workEntry) : null;
+  const previewText = row.groupStandIn?.label ?? appLabel ?? workEntryRowLabel(row.workEntry);
   const answerPreview = row.workEntry.questionAnswer
     ? getQuestionAnswerPreview(row.workEntry.questionAnswer)
     : null;
   const accessiblePreview = [previewText, answerPreview].filter(Boolean).join(": ");
-  const displayText = row.groupStandIn?.label ?? workEntryRowLabel(row.workEntry, expanded);
+  const displayText =
+    row.groupStandIn?.label ?? appLabel ?? workEntryRowLabel(row.workEntry, expanded);
   const isSystemNotice = row.projectedItem.item.type === "system_notice";
   const isUsageLimit =
     row.projectedItem.item.type === "error" &&
@@ -1058,7 +1082,7 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
         }}
         onLongPress={() => props.onCopyRow(row.id, row.getCopyText())}
       >
-        {row.live && !expanded ? (
+        {row.live && !expanded && !appActivity ? (
           <ShimmeringWorkContent
             environmentId={props.environmentId}
             icon={icon}
@@ -1071,7 +1095,9 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
         ) : (
           <>
             <WorkLogIconSlot>
-              {toolIcon ? (
+              {appActivity ? (
+                <AppActivityMark brand={appActivity.brand} />
+              ) : toolIcon ? (
                 <ToolActivityIconView
                   environmentId={props.environmentId}
                   icon={toolIcon}

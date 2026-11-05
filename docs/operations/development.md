@@ -86,6 +86,12 @@ To add a scenario, point a `SCENARIOS` entry at a generic ACP replay fixture
 The agent replays session updates, permission requests, and questions. It drops session setup
 and vendor frames, so Grok and fx recordings lose their vendor-only behavior.
 
+The `App cards` scenario plays four demo connector calls (Gmail, Uber, Google Maps, GitHub) and an
+OpenUI board of app cards, which is the quickest way to check the cards on web, desktop and a paired
+phone. The same turn, shot frame by frame inside the app, is the app cards film:
+`VITE_APP_CARDS_FILM=<dir inside the repo> vp test run --project renders test/appCardsFilm.renders.tsx`
+in `apps/web`.
+
 ### Sharing and remote debugging
 
 `vp run dev --share` publishes the web port over the machine's tailnet and prints a pairing URL

@@ -83,3 +83,17 @@ describe("T3 device instructions", () => {
     assert.notInclude(t3AcpPromptWithInstructions({ prompt: "Hi.", state }), "## T3 Code devices");
   });
 });
+
+describe("T3 visual instructions", () => {
+  it("name every ephemeral-ui card kind and say the cards show sample data", () => {
+    const line = T3_CODE_ORCHESTRATION_INSTRUCTIONS.split("\n").find((entry) =>
+      entry.includes("EphemeralCards("),
+    );
+    assert.isDefined(line);
+    const kinds = /Kinds: ([a-z\- ]+)\./.exec(line ?? "")?.[1]?.split(" ") ?? [];
+    assert.equal(kinds.length, 50);
+    assert.equal(new Set(kinds).size, 50);
+    assert.include(line, "sample data");
+    assert.include(T3_CODE_ORCHESTRATION_INSTRUCTIONS, "openui-v2");
+  });
+});
