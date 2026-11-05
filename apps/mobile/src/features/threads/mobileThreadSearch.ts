@@ -66,8 +66,9 @@ function subsequence(query: string, value: string): boolean {
 }
 
 function wordQuality(query: string, value: string): number {
-  if (query === value) return 4;
-  if (value.startsWith(query)) return 3;
+  if (query === value) return 5;
+  if (value.startsWith(query)) return 4;
+  if (query.length >= 3 && value.includes(query)) return 3;
   if (
     query.length >= 4 &&
     (oneEdit(query, value) ||
