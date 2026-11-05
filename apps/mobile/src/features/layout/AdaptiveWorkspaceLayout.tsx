@@ -85,6 +85,7 @@ import { ThreadNavigationSidebar } from "../threads/ThreadNavigationSidebar";
 import { useOpenThreadPullRequests } from "../threads/use-open-thread-pull-requests";
 import { RenderErrorBoundary, RenderFailureView } from "../../components/RenderErrorBoundary";
 import { WORKSPACE_PANE_TIMING } from "./workspace-pane-animation";
+import { workspaceSidebarOpacity } from "./workspace-sidebar-opacity";
 import { WorkspaceInspectorPane } from "./workspace-inspector-pane";
 import {
   WorkspaceContentWidthContext,
@@ -809,12 +810,15 @@ function AdaptiveWorkspaceLayoutContent(
       Math.max(listPaneFloor, renderedSidebarWidth.value - listPaneGap),
     ),
   }));
+  const platformOS = Platform.OS;
+  const workspacePageOpen = Boolean(workspacePage);
   const sidebarAnimatedStyle = useAnimatedStyle(() => ({
-    // Fading a UIKit glass ancestor can leave remounted header effects missing.
-    opacity:
-      Platform.OS === "ios" || floatingTabsEnabled
-        ? 1
-        : Math.min(1, renderedSidebarWidth.value / 80),
+    opacity: workspaceSidebarOpacity({
+      platform: platformOS,
+      workspacePageOpen,
+      floatingTabsEnabled,
+      sidebarWidth: renderedSidebarWidth.value,
+    }),
     width: renderedSidebarWidth.value,
   }));
 
@@ -922,9 +926,8 @@ function AdaptiveWorkspaceLayoutContent(
             !workspacePage && panes.primarySidebarVisible ? "auto" : "no-hide-descendants"
           }
           pointerEvents={!workspacePage && panes.primarySidebarVisible ? "auto" : "none"}
-          // Under a workspace page the sidebar leaves the row but keeps its size, so its
-          // lists never lay out at zero size and are ready, unchanged, on the way back. The
-          // content pane, laid out after it, covers it, in the same mount as the page.
+          // Keep the retained list sized, but hide its pixels too: a transparent page
+          // cannot occlude the sidebar underneath it.
           style={[
             workspacePage ? { position: "absolute", top: 0, bottom: 0, left: 0 } : null,
             sidebarAnimatedStyle,
