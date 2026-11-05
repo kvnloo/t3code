@@ -1,3 +1,4 @@
+import { SettingsThreadTagsRouteScreen } from "./features/settings/SettingsThreadTagsRouteScreen";
 import { isDraftThreadRoute } from "./features/threads/thread-route-state";
 import { ComponentCatalogScreen } from "./features/development/ComponentCatalogScreen";
 import { PullRequestGuideStopScreen } from "./features/pull-requests/guide/PullRequestGuideScreen";
@@ -271,6 +272,11 @@ const SETTINGS_SCREENS = {
     screen: SettingsNotificationsRouteScreen,
     linking: "settings/notifications",
     options: { ...SETTINGS_PAGE_OPTIONS, title: "Notifications" },
+  }),
+  SettingsThreadTags: createNativeStackScreen({
+    screen: SettingsThreadTagsRouteScreen,
+    linking: "settings/thread-tags/:environmentId",
+    options: { ...SETTINGS_PAGE_OPTIONS, title: "Manage tags" },
   }),
   SettingsThreads: createNativeStackScreen({
     screen: SettingsThreadsRouteScreen,
