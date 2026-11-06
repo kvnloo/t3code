@@ -33,6 +33,19 @@ describe("scoreQueryMatch", () => {
   });
 });
 
+describe("scoreQueryMatch typo tolerance", () => {
+  const match = (value: string, query: string) =>
+    scoreQueryMatch({ value, query, exactBase: 0, prefixBase: 10, fuzzyBase: 50 });
+
+  it("recovers a single adjacent transposition without accepting arbitrary edits", () => {
+    expect(match("search", "serach")).toBe(51);
+    expect(match("search", "search")).toBe(0);
+    expect(match("search", "searxh")).toBeNull();
+    expect(match("cat", "cta")).toBeNull();
+    expect(match("search", "serahc")).toBeNull();
+  });
+});
+
 describe("scoreSubsequenceMatch", () => {
   it("scores tighter subsequences ahead of looser ones", () => {
     const compact = scoreSubsequenceMatch("ghfixci", "gfc");
