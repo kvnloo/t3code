@@ -41,12 +41,16 @@ const withService = <A, E>(
     readonly removeFails?: boolean;
     readonly closedFirst?: boolean;
     readonly failedRecords?: number;
+    readonly initialStatus?: "pending" | "cancelled";
   } = {},
 ) =>
   Effect.gen(function* () {
     const stored = new Map<string, Uint8Array>();
     const dispatched: Array<OrchestrationV2ServerCommand> = [];
-    let secretStatus = "pending";
+    let secretStatus: string = options.initialStatus ?? "pending";
+    const successors: Array<
+      Extract<OrchestrationV2ServerCommand, { type: "secret_request.record" }>
+    > = [];
     let failedRecords = options.failedRecords ?? 0;
     const requestThreadId = options.threadId ?? threadId;
     const layerDependencies = Layer.mergeAll(
@@ -93,23 +97,34 @@ const withService = <A, E>(
         }),
       ),
       Layer.mock(ThreadManagementService.ThreadManagementService)({
-        getThreadRecords: () =>
+        getThreadRecords: (requestedThreadId) =>
           Effect.succeed({
             thread: { projectId },
-            runs: [{ id: "run-1", status: options.runStatus ?? "running" }],
-            turnItems: [
-              {
-                id: turnItemId,
-                threadId: requestThreadId,
-                runId: "run-1",
-                nodeId: "node-root",
-                type: "secret_request",
-                label: "GitHub token",
-                reason: "Used as GH_TOKEN.",
-                ...(options.delivery === undefined ? {} : { delivery: options.delivery }),
-                secretStatus,
-              },
+            runs: [
+              { id: "run-1", rootNodeId: "node-root", status: options.runStatus ?? "running" },
             ],
+            turnItems:
+              requestedThreadId !== requestThreadId
+                ? []
+                : [
+                    ...successors.map((command) => ({
+                      ...command,
+                      type: "secret_request",
+                      id: command.turnItemId,
+                      parentItemId: command.reopenedFrom ?? null,
+                    })),
+                    {
+                      id: turnItemId,
+                      threadId: requestThreadId,
+                      runId: "run-1",
+                      nodeId: "node-root",
+                      type: "secret_request",
+                      label: "GitHub token",
+                      reason: "Used as GH_TOKEN.",
+                      ...(options.delivery === undefined ? {} : { delivery: options.delivery }),
+                      secretStatus,
+                    },
+                  ],
           } as never),
         dispatch: (command) => {
           if (command.type === "secret_request.record" && failedRecords > 0) {
@@ -118,7 +133,12 @@ const withService = <A, E>(
           }
           return Effect.sync(() => {
             dispatched.push(command);
-            if (options.closedFirst && command.type === "secret_request.record") {
+            if (command.type === "secret_request.record" && command.turnItemId !== turnItemId) {
+              const index = successors.findIndex((item) => item.turnItemId === command.turnItemId);
+              if (index < 0) successors.push(command);
+              else if (successors[index]?.secretStatus === "pending")
+                successors[index] = { ...successors[index], ...command };
+            } else if (options.closedFirst && command.type === "secret_request.record") {
               secretStatus = "cancelled";
             } else if (command.type === "secret_request.record" && secretStatus === "pending") {
               secretStatus = command.secretStatus;
@@ -347,6 +367,115 @@ it.effect("a used value that cannot be deleted is not handed out", () =>
   ),
 );
 
+it.effect(
+  "reopening replaces the reference without a model turn or a secret in thread records",
+  () =>
+    withService(({ service, dispatched }) =>
+      Effect.gen(function* () {
+        yield* service.answer({
+          threadId,
+          turnItemId,
+          answer: { type: "save", secret: "synthetic-old-secret" },
+        });
+        const oldRef = Option.getOrThrow(yield* service.savedRef({ threadId, turnItemId }));
+        const reopened = yield* service.reopen({ threadId, turnItemId });
+        assert.equal(reopened.state, "pending");
+        assert.notEqual(reopened.turnItemId, turnItemId);
+        const retry = yield* service.reopen({ threadId, turnItemId });
+        assert.deepEqual(retry, reopened);
+        assert.equal(dispatched.length, 2);
+        const staleAnswer = yield* service
+          .answer({ threadId, turnItemId, answer: { type: "save", secret: "stale-secret" } })
+          .pipe(Effect.flip);
+        assert.equal(staleAnswer.reason, "already_answered");
+        assert.equal(
+          (yield* service.consume({ ref: oldRef, projectId }).pipe(Effect.flip)).reason,
+          "ref_unavailable",
+        );
+        yield* service.answer({
+          threadId,
+          turnItemId: reopened.turnItemId,
+          answer: { type: "save", secret: "synthetic-new-secret" },
+        });
+        const delivered = yield* service.reopen({ threadId, turnItemId });
+        assert.equal(delivered.state, "saved");
+        if (delivered.state !== "saved" || delivered.delivery.type !== "ref")
+          return assert.fail("expected a saved reference");
+        assert.notEqual(delivered.delivery.ref, oldRef);
+        assert.equal(
+          yield* service.consume({ ref: delivered.delivery.ref, projectId }),
+          "synthetic-new-secret",
+        );
+        assert.isFalse(JSON.stringify(dispatched).includes("synthetic-new-secret"));
+        assert.isTrue(dispatched.every((command) => command.type === "secret_request.record"));
+      }),
+    ),
+);
+
+it.effect("reopen rejects a pending request and requests outside their original thread", () =>
+  withService(({ service, dispatched }) =>
+    Effect.gen(function* () {
+      assert.equal(
+        (yield* service.reopen({ threadId, turnItemId }).pipe(Effect.flip)).reason,
+        "not_reopenable",
+      );
+      assert.equal(
+        (yield* service
+          .reopen({ threadId: ThreadId.make("elsewhere"), turnItemId })
+          .pipe(Effect.flip)).reason,
+        "not_found",
+      );
+      assert.equal(dispatched.length, 0);
+    }),
+  ),
+);
+
+it.effect("an expired prompt can be reopened and answered after its run stops", () =>
+  withService(
+    ({ service, dispatched }) =>
+      Effect.gen(function* () {
+        const [first, second] = yield* Effect.all(
+          [service.reopen({ threadId, turnItemId }), service.reopen({ threadId, turnItemId })],
+          { concurrency: "unbounded" },
+        );
+        assert.deepEqual(first, second);
+        assert.equal(dispatched.length, 1);
+        assert.include(dispatched[0] as object, {
+          label: "GitHub token",
+          reason: "Used as GH_TOKEN.",
+          reopenedFrom: turnItemId,
+        });
+        const stale = yield* service
+          .answer({ threadId, turnItemId, answer: { type: "save", secret: "stale-secret" } })
+          .pipe(Effect.flip);
+        assert.equal(stale.reason, "already_answered");
+        yield* service.answer({
+          threadId,
+          turnItemId: first.turnItemId,
+          answer: { type: "save", secret: "synthetic-new-secret" },
+        });
+        const ref = Option.getOrThrow(
+          yield* service.savedRef({ threadId, turnItemId: first.turnItemId }),
+        );
+        assert.equal(yield* service.consume({ ref, projectId }), "synthetic-new-secret");
+        assert.isFalse(JSON.stringify(dispatched).includes("synthetic-new-secret"));
+      }),
+    { initialStatus: "cancelled", runStatus: "completed" },
+  ),
+);
+
+it.effect("reopen fails closed when the old reference cannot be invalidated", () =>
+  withService(
+    ({ service, dispatched }) =>
+      Effect.gen(function* () {
+        const error = yield* service.reopen({ threadId, turnItemId }).pipe(Effect.flip);
+        assert.equal(error.reason, "consume_failed");
+        assert.equal(dispatched.length, 0);
+      }),
+    { initialStatus: "cancelled", removeFails: true },
+  ),
+);
+
 const SECRET_FILE_TTL_MS = 24 * 60 * 60 * 1000;
 
 it.effect("a file request moves its value to an owner-only file, once", () =>
@@ -387,6 +516,31 @@ it.effect("a file request moves its value to an owner-only file, once", () =>
     yield* TestClock.setTime(Option.getOrThrow(mtime).getTime() + SECRET_FILE_TTL_MS + 1);
     yield* withService(() => Effect.void, { directory });
     assert.isFalse(yield* fs.exists(file));
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect("a reopened file request retains file delivery after the original wait ended", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const directory = yield* fs.makeTempDirectoryScoped({ prefix: "secret-reopen-files-test-" });
+    yield* withService(
+      ({ service, dispatched }) =>
+        Effect.gen(function* () {
+          const reopened = yield* service.reopen({ threadId, turnItemId });
+          yield* service.answer({
+            threadId,
+            turnItemId: reopened.turnItemId,
+            answer: { type: "save", secret: "synthetic-file-secret" },
+          });
+          const delivered = yield* service.reopen({ threadId, turnItemId });
+          if (delivered.state !== "saved" || delivered.delivery.type !== "file")
+            return assert.fail("expected private file delivery");
+          assert.equal(yield* fs.readFileString(delivered.delivery.path), "synthetic-file-secret");
+          assert.deepEqual(yield* service.reopen({ threadId, turnItemId }), delivered);
+          assert.isFalse(JSON.stringify(dispatched).includes("synthetic-file-secret"));
+        }),
+      { initialStatus: "cancelled", runStatus: "completed", delivery: "file", directory },
+    );
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 

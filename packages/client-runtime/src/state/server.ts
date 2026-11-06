@@ -1601,6 +1601,15 @@ export function createServerEnvironmentAtoms<R, E>(
     }),
     // Off the config lane: answering a card must not queue behind settings
     // edits. One answer per card at a time.
+    reopenSecretRequest: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:secrets:reopen-request",
+      tag: WS_METHODS.secretsReopenRequest,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) =>
+          JSON.stringify([environmentId, input.threadId, input.turnItemId]),
+      },
+    }),
     answerSecretRequest: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:secrets:answer-request",
       tag: WS_METHODS.secretsAnswerRequest,

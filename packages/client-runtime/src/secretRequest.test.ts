@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   secretRequestDisplay,
+  secretRequestCanReopen,
   secretRequestFailureMessage,
   secretRequestPrivacyNote,
 } from "./secretRequest.ts";
@@ -16,6 +17,11 @@ describe("secretRequestDisplay", () => {
     expect(secretRequestDisplay({ secretStatus: "saved" }, "inherited")).toMatchObject({
       outcome: "saved",
     });
+    for (const secretStatus of ["pending", "saved", "declined", "cancelled"] as const) {
+      expect(secretRequestCanReopen({ secretStatus }, "inherited")).toBe(false);
+      expect(secretRequestCanReopen({ secretStatus }, "synthetic")).toBe(false);
+      expect(secretRequestCanReopen({ secretStatus }, "local")).toBe(secretStatus !== "pending");
+    }
   });
 });
 

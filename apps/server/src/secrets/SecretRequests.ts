@@ -6,7 +6,10 @@ import {
   CommandId,
   SecretRef,
   SecretRequestError,
+  TurnItemId,
   type ProjectId,
+  type SecretRequestReopenInput,
+  type SecretRequestReopenResult,
   type SecretRequestAnswerInput,
   type ThreadId,
 } from "@t3tools/contracts";
@@ -53,6 +56,9 @@ export class SecretRequests extends Context.Service<
   SecretRequests,
   {
     readonly answer: (input: SecretRequestAnswerInput) => Effect.Effect<void, SecretRequestError>;
+    readonly reopen: (
+      input: SecretRequestReopenInput,
+    ) => Effect.Effect<SecretRequestReopenResult, SecretRequestError>;
     readonly savedRef: (input: {
       readonly threadId: ThreadId;
       readonly turnItemId: string;
@@ -81,6 +87,8 @@ const make = Effect.gen(function* () {
     yield* store.getOrCreateRandom("secret-request-salt", 32).pipe(Effect.orDie),
   ).toString("hex");
 
+  const reopenLock = yield* Semaphore.make(1);
+
   const answer: SecretRequests["Service"]["answer"] = Effect.fn("SecretRequests.answer")(
     function* (input) {
       yield* Effect.annotateCurrentSpan({
@@ -94,14 +102,30 @@ const make = Effect.gen(function* () {
         })
         .pipe(Effect.mapError((cause) => new SecretRequestError({ reason: "load_failed", cause })));
       const item = records.turnItems.find((candidate) => candidate.id === input.turnItemId);
-      if (item?.type !== "secret_request" || item.runId === null || item.nodeId === null) {
+      if (
+        item?.type !== "secret_request" ||
+        item.threadId !== input.threadId ||
+        item.runId === null ||
+        item.nodeId === null
+      ) {
         return yield* new SecretRequestError({ reason: "not_found" });
       }
       if (item.secretStatus !== "pending") {
         return yield* new SecretRequestError({ reason: "already_answered" });
       }
       const run = records.runs.find((candidate) => candidate.id === item.runId);
-      if (run === undefined || ThreadManagementService.isTerminalRunStatus(run.status)) {
+      const isReopened = records.turnItems.some(
+        (original) =>
+          original.id === item.parentItemId &&
+          original.type === "secret_request" &&
+          original.threadId === input.threadId &&
+          original.runId === item.runId &&
+          original.secretStatus !== "pending",
+      );
+      if (
+        run === undefined ||
+        (!isReopened && ThreadManagementService.isTerminalRunStatus(run.status))
+      ) {
         return yield* new SecretRequestError({ reason: "agent_stopped" });
       }
       // Create before recording so racing answers cannot overwrite values or show saved before storage.
@@ -330,7 +354,70 @@ const make = Effect.gen(function* () {
     Effect.forkScoped,
   );
 
-  return SecretRequests.of({ answer, savedRef, consume, saveToFile });
+  const reopen: SecretRequests["Service"]["reopen"] = Effect.fn("SecretRequests.reopen")(function* (
+    input,
+  ) {
+    const records = yield* threadManagement
+      .getThreadRecords(input.threadId, ["runs", "turnItems"], {
+        turnItemTypes: ["secret_request"],
+        messageRoles: [],
+      })
+      .pipe(Effect.mapError((cause) => new SecretRequestError({ reason: "load_failed", cause })));
+    const original = records.turnItems.find((item) => item.id === input.turnItemId);
+    if (
+      original?.type !== "secret_request" ||
+      original.threadId !== input.threadId ||
+      original.runId === null
+    ) {
+      return yield* new SecretRequestError({ reason: "not_found" });
+    }
+    if (original.secretStatus === "pending")
+      return yield* new SecretRequestError({ reason: "not_reopenable" });
+    const run = records.runs.find((candidate) => candidate.id === original.runId);
+    if (run === undefined || run.rootNodeId === null)
+      return yield* new SecretRequestError({ reason: "agent_stopped" });
+    const turnItemId = TurnItemId.make(
+      `turn-item:secret-request:reopened:${NodeCrypto.createHash("sha256").update(`${input.threadId}\u0000${original.id}`).digest("hex")}`,
+    );
+    const existing = records.turnItems.find((item) => item.id === turnItemId);
+    if (existing !== undefined) {
+      if (existing.type !== "secret_request" || existing.parentItemId !== original.id)
+        return yield* new SecretRequestError({ reason: "not_found" });
+      if (existing.secretStatus === "saved") {
+        if (existing.delivery === "file") {
+          const file = yield* saveToFile({ threadId: input.threadId, turnItemId });
+          return { state: "saved", turnItemId, delivery: { type: "file", path: file } };
+        }
+        const ref = refFor(salt, input.threadId, turnItemId);
+        yield* readRef({ ref, projectId: records.thread.projectId });
+        return { state: "saved", turnItemId, delivery: { type: "ref", ref } };
+      }
+      return { state: existing.secretStatus === "pending" ? "pending" : "ended", turnItemId };
+    }
+    const removed = yield* removeLogged(storeName(refFor(salt, input.threadId, original.id))).pipe(
+      consumeLock.withPermits(1),
+    );
+    if (!removed) return yield* new SecretRequestError({ reason: "consume_failed" });
+    yield* threadManagement
+      .dispatch({
+        type: "secret_request.record",
+        commandId: CommandId.make(`secret-request:reopen:${turnItemId}`),
+        threadId: input.threadId,
+        runId: original.runId,
+        nodeId: run.rootNodeId,
+        turnItemId,
+        reopenedFrom: original.id,
+        label: original.label,
+        reason: original.reason,
+        ...(original.placeholder === undefined ? {} : { placeholder: original.placeholder }),
+        ...(original.delivery === undefined ? {} : { delivery: original.delivery }),
+        secretStatus: "pending",
+      })
+      .pipe(Effect.mapError((cause) => new SecretRequestError({ reason: "record_failed", cause })));
+    return { state: "pending", turnItemId };
+  }, reopenLock.withPermits(1));
+
+  return SecretRequests.of({ answer, reopen, savedRef, consume, saveToFile });
 });
 
 export const layer = Layer.effect(SecretRequests, make);

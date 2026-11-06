@@ -3524,6 +3524,7 @@ const OrchestrationV2InternalCommand = Schema.Union([
    */
   Schema.Struct({
     type: Schema.Literal("secret_request.record"),
+    reopenedFrom: Schema.optional(TurnItemId),
     commandId: CommandId,
     threadId: ThreadId,
     runId: RunId,

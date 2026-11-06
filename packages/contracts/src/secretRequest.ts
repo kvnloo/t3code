@@ -1,6 +1,26 @@
 import * as Schema from "effect/Schema";
 
-import { ThreadId, TrimmedNonEmptyString, TurnItemId } from "./baseSchemas.ts";
+import { SecretRef, ThreadId, TrimmedNonEmptyString, TurnItemId } from "./baseSchemas.ts";
+
+export const SecretRequestReopenInput = Schema.Struct({
+  threadId: ThreadId,
+  turnItemId: TurnItemId,
+});
+export type SecretRequestReopenInput = typeof SecretRequestReopenInput.Type;
+
+export const SecretRequestReopenResult = Schema.Union([
+  Schema.Struct({ state: Schema.Literal("pending"), turnItemId: TurnItemId }),
+  Schema.Struct({ state: Schema.Literal("ended"), turnItemId: TurnItemId }),
+  Schema.Struct({
+    state: Schema.Literal("saved"),
+    turnItemId: TurnItemId,
+    delivery: Schema.Union([
+      Schema.Struct({ type: Schema.Literal("ref"), ref: SecretRef }),
+      Schema.Struct({ type: Schema.Literal("file"), path: TrimmedNonEmptyString }),
+    ]),
+  }),
+]);
+export type SecretRequestReopenResult = typeof SecretRequestReopenResult.Type;
 
 /** Server stores the value under a one-use SecretRef; the thread learns only status. */
 export const SecretRequestAnswerInput = Schema.Struct({
@@ -17,6 +37,7 @@ const SECRET_REQUEST_FAILURE_MESSAGES = {
   load_failed: "Could not load the secret request.",
   not_found: "This secret request no longer exists.",
   already_answered: "This secret request was already answered.",
+  not_reopenable: "This secret request is still open. Answer the existing prompt.",
   agent_stopped: "The agent that asked has stopped, so this secret can't be used.",
   store_failed: "Could not store the secret.",
   record_failed: "Saved the secret, but could not update the request.",

@@ -3,6 +3,7 @@ import {
   SECRET_REQUEST_DEFAULT_PLACEHOLDER,
   secretRequestAnswerInput,
   secretRequestDisplay,
+  secretRequestCanReopen,
   secretRequestFailureMessage,
   secretRequestPrivacyNote,
   type SecretRequestItem,
@@ -11,7 +12,12 @@ import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, OrchestrationV2ProjectedTurnItem } from "@t3tools/contracts";
+import type {
+  EnvironmentId,
+  OrchestrationV2ProjectedTurnItem,
+  SecretRequestReopenResult,
+} from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
 import { useRef, useState } from "react";
 import { View, type ColorValue } from "react-native";
 
@@ -48,11 +54,96 @@ export function SecretRequestCard(props: {
         ? "checkmark"
         : "minus";
   return (
-    <View className="mb-3 min-h-9 flex-row items-center gap-2 px-1">
-      <SymbolView name={icon} size={13} tintColor={props.iconColor} type="monochrome" />
-      <Text className="flex-1 font-sans text-sm text-foreground-muted" numberOfLines={2}>
-        {item.label} · {display.label}
-      </Text>
+    <View className="mb-3 gap-2 px-1">
+      <View className="min-h-9 flex-row items-center gap-2">
+        <SymbolView name={icon} size={13} tintColor={props.iconColor} type="monochrome" />
+        <Text className="flex-1 font-sans text-sm text-foreground-muted" numberOfLines={2}>
+          {item.label} · {display.label}
+        </Text>
+      </View>
+      {secretRequestCanReopen(item, visibility) ? (
+        <SecretRequestRecovery environmentId={props.environmentId} item={item} />
+      ) : null}
+    </View>
+  );
+}
+
+function SecretRequestRecovery(props: {
+  readonly environmentId: EnvironmentId;
+  readonly item: SecretRequestItem;
+}) {
+  const canOperate = useAtomValue(
+    serverEnvironment.reopenSecretRequest.permissionAtom(props.environmentId),
+  );
+  const reopen = useAtomCommand(serverEnvironment.reopenSecretRequest, {
+    label: "reopen secure prompt",
+    reportFailure: false,
+    reportDefect: false,
+  });
+  const [result, setResult] = useState<SecretRequestReopenResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const inFlight = useRef(false);
+  const send = async (showReference: boolean) => {
+    if (inFlight.current || !canOperate) return;
+    inFlight.current = true;
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const reply = await reopen({
+        environmentId: props.environmentId,
+        input: {
+          threadId: props.item.threadId,
+          turnItemId: showReference ? (props.item.parentItemId ?? props.item.id) : props.item.id,
+        },
+      });
+      if (reply._tag === "Success") setResult(reply.value);
+      else if (!isAtomCommandInterrupted(reply))
+        setError(secretRequestFailureMessage(squashAtomCommandFailure(reply)));
+    } finally {
+      inFlight.current = false;
+      setBusy(false);
+    }
+  };
+  return (
+    <View className="gap-2">
+      <Button
+        label={busy ? "Opening…" : "Reopen secure prompt"}
+        tone="text"
+        disabled={busy || !canOperate}
+        onPress={() => void send(false)}
+      />
+      {props.item.secretStatus === "saved" && props.item.parentItemId !== null ? (
+        <Button
+          label="Show secure reference"
+          tone="text"
+          disabled={busy || !canOperate}
+          onPress={() => void send(true)}
+        />
+      ) : null}
+      {result?.state === "pending" ? (
+        <Text className="font-sans text-xs text-foreground-muted">
+          Secure prompt reopened below. The agent has not been resumed.
+        </Text>
+      ) : null}
+      {result?.state === "ended" ? (
+        <Text className="font-sans text-xs text-foreground-muted">
+          The reopened request ended. Reopen its card to try again.
+        </Text>
+      ) : null}
+      {result?.state === "saved" ? (
+        <Text selectable className="font-sans text-xs text-foreground-muted">
+          Use this {result.delivery.type === "ref" ? "one-use reference" : "private file path"}{" "}
+          instead of the secret:{" "}
+          {result.delivery.type === "ref" ? result.delivery.ref : result.delivery.path}
+        </Text>
+      ) : null}
+      {error !== null ? (
+        <Text accessibilityRole="alert" className="font-sans text-sm text-danger-foreground">
+          {error}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -63,6 +154,9 @@ function PendingSecretRequestForm(props: {
   readonly iconColor: ColorValue;
 }) {
   const { item } = props;
+  const canAnswer = useAtomValue(
+    serverEnvironment.answerSecretRequest.permissionAtom(props.environmentId),
+  );
   const answer = useAtomCommand(serverEnvironment.answerSecretRequest, {
     label: "answer secret request",
     // The failure cause holds the request; keep it out of the console.
@@ -79,7 +173,7 @@ function PendingSecretRequestForm(props: {
     reply: { readonly type: "save"; readonly secret: string } | { readonly type: "decline" },
   ) => {
     const input = secretRequestAnswerInput(item, reply);
-    if (input === null || inFlight.current) return;
+    if (input === null || inFlight.current || !canAnswer) return;
     inFlight.current = true;
     setSubmitting(true);
     setError(null);
@@ -106,12 +200,17 @@ function PendingSecretRequestForm(props: {
           </Text>
         ) : null}
       </View>
+      {item.parentItemId !== null ? (
+        <Text className="font-sans text-xs text-foreground-muted">
+          Reopened by you. Saving does not resume the agent. Use Show secure reference after saving.
+        </Text>
+      ) : null}
       <TextInput
         accessibilityLabel={item.label}
         placeholder={item.placeholder ?? SECRET_REQUEST_DEFAULT_PLACEHOLDER}
         value={secret}
         onChangeText={setSecret}
-        editable={!submitting}
+        editable={!submitting && canAnswer}
         secureTextEntry
         autoCorrect={false}
         autoCapitalize="none"
@@ -135,7 +234,7 @@ function PendingSecretRequestForm(props: {
         label="Save securely"
         tone="primary"
         fullWidth
-        disabled={submitting || secret.trim().length === 0}
+        disabled={submitting || !canAnswer || secret.trim().length === 0}
         onPress={() => void send({ type: "save", secret })}
       />
       <View className="flex-row items-center justify-between gap-2">
@@ -153,7 +252,7 @@ function PendingSecretRequestForm(props: {
         <Button
           label="Decline"
           tone="text"
-          disabled={submitting}
+          disabled={submitting || !canAnswer}
           onPress={() => void send({ type: "decline" })}
         />
       </View>

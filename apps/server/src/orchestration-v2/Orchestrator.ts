@@ -8786,6 +8786,20 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         });
       }
       const now = yield* DateTime.now;
+      if (command.reopenedFrom !== undefined && existing === undefined) {
+        const original = projection.turnItems.find((item) => item.id === command.reopenedFrom);
+        if (
+          original?.type !== "secret_request" ||
+          original.secretStatus === "pending" ||
+          original.runId !== command.runId
+        ) {
+          return yield* new OrchestratorDispatchError({
+            commandId: command.commandId,
+            commandType: command.type,
+            cause: "A reopened secret request must reference a closed request in the same run.",
+          });
+        }
+      }
       const unchanged =
         existing !== undefined &&
         (existing.secretStatus !== "pending" || command.secretStatus === "pending");
@@ -8800,7 +8814,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             providerThreadId: run.providerThreadId,
             providerTurnId: providerTurnForRun(projection, run)?.id ?? null,
             nativeItemRef: null,
-            parentItemId: null,
+            parentItemId: existing?.parentItemId ?? command.reopenedFrom ?? null,
             ordinal: existing?.ordinal ?? (yield* nextTurnItemOrdinal(projection)),
             status: pending
               ? "waiting"

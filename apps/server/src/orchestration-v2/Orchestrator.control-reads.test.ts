@@ -759,6 +759,117 @@ it.effect("implements a proposed plan that the command projection leaves out", (
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect(
+  "persists a reopened secret request without a provider effect or reviving the original",
+  () =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const projections = yield* ProjectionStore.ProjectionStoreV2;
+      const outbox = yield* EffectOutbox.EffectOutboxV2;
+      const threadId = ThreadId.make("thread:secret-reopen");
+      const runId = RunId.make("run:secret-reopen");
+      const nodeId = NodeId.make("node:secret-reopen");
+      const originalId = TurnItemId.make("secret-original");
+      const successorId = TurnItemId.make("secret-successor");
+      const now = yield* DateTime.now;
+      yield* orchestrator.dispatch({
+        type: "thread.create",
+        commandId: CommandId.make("create-secret-reopen"),
+        threadId,
+        projectId: ProjectId.make("project:secret-reopen"),
+        title: "Secret reopen",
+        modelSelection,
+        runtimeMode: "full-access",
+        interactionMode: "default",
+        branch: null,
+        worktreePath: null,
+        createdBy: "user",
+        creationSource: "web",
+      });
+      yield* projections.apply({
+        id: EventId.make("secret-reopen:run"),
+        type: "run.created",
+        threadId,
+        occurredAt: now,
+        payload: {
+          id: runId,
+          threadId,
+          ordinal: 1,
+          providerInstanceId: instanceId,
+          modelSelection,
+          providerThreadId: null,
+          userMessageId: MessageId.make("message:secret-reopen"),
+          rootNodeId: nodeId,
+          activeAttemptId: null,
+          status: "completed",
+          requestedAt: now,
+          startedAt: now,
+          completedAt: now,
+          checkpointId: null,
+          contextHandoffId: null,
+        },
+      });
+      const metadata = {
+        threadId,
+        runId,
+        nodeId,
+        label: "Synthetic token",
+        reason: "Synthetic secure-input test",
+        placeholder: "Token",
+        delivery: "file" as const,
+      };
+      yield* orchestrator.dispatch({
+        type: "secret_request.record",
+        ...metadata,
+        commandId: CommandId.make("secret-original:pending"),
+        turnItemId: originalId,
+        secretStatus: "pending",
+      });
+      const reopenCommand = {
+        type: "secret_request.record" as const,
+        ...metadata,
+        commandId: CommandId.make("secret-successor:pending"),
+        turnItemId: successorId,
+        reopenedFrom: originalId,
+        secretStatus: "pending" as const,
+      };
+      assert.isTrue(
+        Result.isFailure(yield* orchestrator.dispatch(reopenCommand).pipe(Effect.result)),
+      );
+      yield* orchestrator.dispatch({
+        type: "secret_request.record",
+        ...metadata,
+        commandId: CommandId.make("secret-original:cancelled"),
+        turnItemId: originalId,
+        secretStatus: "cancelled",
+      });
+      const accepted = { ...reopenCommand, commandId: CommandId.make("secret-successor:reopen") };
+      yield* orchestrator.dispatch(accepted);
+      yield* orchestrator.dispatch(accepted);
+      yield* orchestrator.dispatch({
+        type: "secret_request.record",
+        ...metadata,
+        commandId: CommandId.make("secret-original:stale"),
+        turnItemId: originalId,
+        secretStatus: "saved",
+      });
+      const projection = yield* projections.getThreadProjection(threadId);
+      const original = projection.turnItems.find((item) => item.id === originalId);
+      const successor = projection.turnItems.find((item) => item.id === successorId);
+      assert.ok(original?.type === "secret_request");
+      assert.ok(successor?.type === "secret_request");
+      if (original?.type !== "secret_request" || successor?.type !== "secret_request")
+        return assert.fail("missing secret request projection");
+      assert.equal(original.secretStatus, "cancelled");
+      assert.equal(successor.parentItemId, originalId);
+      assert.equal(successor.secretStatus, "pending");
+      assert.equal(successor.delivery, "file");
+      assert.equal(successor.placeholder, "Token");
+      assert.equal(projection.runs.length, 1);
+      assert.deepEqual(yield* outbox.listByCommandId(accepted.commandId), []);
+    }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect("settles only the stopped run's background work, once", () =>
   Effect.gen(function* () {
     const orchestrator = yield* Orchestrator.OrchestratorV2;

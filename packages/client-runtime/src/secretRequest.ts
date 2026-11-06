@@ -62,6 +62,13 @@ export function secretRequestDisplay(
   }
 }
 
+export function secretRequestCanReopen(
+  item: Pick<SecretRequestItem, "secretStatus">,
+  visibility: "local" | "inherited" | "synthetic",
+): boolean {
+  return visibility === "local" && item.secretStatus !== "pending";
+}
+
 export function secretRequestAnswerInput(
   item: Pick<SecretRequestItem, "id" | "threadId">,
   answer: { readonly type: "save"; readonly secret: string } | { readonly type: "decline" },
