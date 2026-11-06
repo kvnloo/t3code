@@ -58,6 +58,16 @@ export function scoreSubsequenceMatch(
   return null;
 }
 
+/** A single adjacent-key ordering mistake, without broad edit-distance matches. */
+function isAdjacentTransposition(value: string, query: string): boolean {
+  if (query.length < 4 || value.length !== query.length) return false;
+  let first = 0;
+  while (first < query.length && value[first] === query[first]) first += 1;
+  if (first >= query.length - 1) return false;
+  if (value[first] !== query[first + 1] || value[first + 1] !== query[first]) return false;
+  return value.slice(first + 2) === query.slice(first + 2);
+}
+
 function lengthPenalty(value: string, query: string): number {
   return Math.min(64, Math.max(0, value.length - query.length));
 }
@@ -134,6 +144,9 @@ export function scoreQueryMatch(input: {
     const fuzzyScore = scoreSubsequenceMatch(value, query, { ignorePosition });
     if (fuzzyScore !== null) {
       return input.fuzzyBase + fuzzyScore;
+    }
+    if (isAdjacentTransposition(value, query)) {
+      return input.fuzzyBase + 1;
     }
   }
 
