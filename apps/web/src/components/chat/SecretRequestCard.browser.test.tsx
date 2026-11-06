@@ -1,7 +1,7 @@
 import { EnvironmentId, ThreadId, TurnItemId } from "@t3tools/contracts";
 import type { SecretRequestItem } from "@t3tools/client-runtime/secret-request";
 import * as DateTime from "effect/DateTime";
-import * as Effect from "effect/Effect";
+import * as Cause from "effect/Cause";
 import { expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({ allowed: true, reopen: vi.fn(), answer: vi.fn() }));
@@ -62,9 +62,11 @@ it("reopens from a user click and clears the secure input after saving the succe
     environmentId,
     input: { threadId: item.threadId, turnItemId: originalId },
   });
-  await expect
-    .element(screen.getByRole("status"))
-    .toHaveTextContent("The agent has not been resumed");
+  await vi.waitFor(() =>
+    expect(screen.container.querySelector('[role="status"]')?.textContent).toContain(
+      "The agent has not been resumed.",
+    ),
+  );
 
   await screen.rerender(
     <SecretRequestCard
@@ -115,9 +117,11 @@ it("reopens from a user click and clears the secure input after saving the succe
     />,
   );
   await screen.getByRole("button", { name: "Show secure reference" }).click();
-  await expect
-    .element(screen.getByRole("status"))
-    .toHaveTextContent("secret-ref:00000000000000000000000000000000");
+  await vi.waitFor(() =>
+    expect(screen.container.querySelector("code")?.textContent).toBe(
+      "secret-ref:00000000000000000000000000000000",
+    ),
+  );
   expect(screen.container.textContent).not.toContain("r04-synthetic-secret");
   state.reopen.mockClear();
   await screen.getByRole("button", { name: "Reopen secure prompt" }).click();
@@ -147,9 +151,10 @@ it("does not offer reopen in inherited or synthetic cards, or execute it without
 
 it("redacts an answer failure that contains the typed secret", async () => {
   setup();
-  state.answer.mockResolvedValue(
-    Effect.runSyncExit(Effect.fail(new Error("r04-synthetic-secret"))),
-  );
+  state.answer.mockResolvedValue({
+    _tag: "Failure",
+    cause: Cause.die(new Error("r04-synthetic-secret")),
+  });
   await using screen = await render(
     <SecretRequestCard
       environmentId={environmentId}
