@@ -19,7 +19,6 @@ vi.mock("react-native", () => ({
 }));
 vi.mock("@react-navigation/native", () => ({ useNavigation: () => ({}) }));
 vi.mock("react-native-safe-area-context", () => ({ useSafeAreaInsets: () => ({ bottom: 0 }) }));
-vi.mock("../../../components/ui/AndroidScreenHeader", () => ({ AndroidSheetHeader: () => null }));
 vi.mock("../../../components/ui/SheetHeader", () => ({ SheetHeader: () => null }));
 vi.mock("../../../components/ui/ScreenContent", () => ({
   ScreenContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -30,6 +29,8 @@ vi.mock("../../../components/ui/AppText", () => ({
   AppTextInput: () => null,
 }));
 vi.mock("./gitSheetComponents", () => ({ SheetActionButton: () => null }));
+vi.mock("../../../state/entities", () => ({}));
+vi.mock("../../../state/threads", () => ({}));
 vi.mock("../../../state/use-thread-selection", () => ({
   useThreadSelection: () => ({
     selectedThread: { environmentId: "environment-1", worktreePath: checkout.worktreePath },
