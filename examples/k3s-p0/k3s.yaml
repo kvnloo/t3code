@@ -1,0 +1,173 @@
+# P0 only: dedicated, single-tenant, persistent T3 control environment.
+# Does not provision workers, grant peer permissions, or touch an existing T3 install.
+# Run render.py with a verified OCI digest before applying this template.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: t3-k3s-p0
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: t3-p0-quota
+  namespace: t3-k3s-p0
+spec:
+  hard:
+    pods: "1"
+    persistentvolumeclaims: "1"
+    requests.cpu: "2"
+    requests.memory: 4Gi
+    limits.cpu: "4"
+    limits.memory: 8Gi
+    requests.storage: 20Gi
+    requests.ephemeral-storage: 2Gi
+    limits.ephemeral-storage: 4Gi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: t3-p0
+  namespace: t3-k3s-p0
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: t3-p0-data
+  namespace: t3-k3s-p0
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: t3-owner
+  namespace: t3-k3s-p0
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: t3-owner
+  template:
+    metadata:
+      labels:
+        app: t3-owner
+    spec:
+      serviceAccountName: t3-p0
+      automountServiceAccountToken: false
+      hostname: t3-owner
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: t3
+          image: REPLACE_WITH_PINNED_IMAGE_DIGEST
+          imagePullPolicy: IfNotPresent
+          workingDir: /data
+          ports:
+            - name: http
+              containerPort: 3773
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+              ephemeral-storage: 512Mi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+              ephemeral-storage: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          startupProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: t3-p0-data
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: t3-owner
+  namespace: t3-k3s-p0
+spec:
+  type: ClusterIP
+  selector:
+    app: t3-owner
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+---
+# Tailscale Kubernetes Operator must already exist. TLS terminates at the
+# tailnet ingress proxy. No public Ingress, LoadBalancer, NodePort or Funnel.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: t3-owner
+  namespace: t3-k3s-p0
+spec:
+  ingressClassName: tailscale
+  tls:
+    - hosts:
+        - t3-k3s-p0
+  defaultBackend:
+    service:
+      name: t3-owner
+      port:
+        name: http
+---
+# This allows ingress only from pods in the operator's default "tailscale"
+# namespace. It does NOT restrict egress or replace tailnet ACL grants.
+# Some CNI configurations do not actually enforce NetworkPolicy; test it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: t3-p0-ingress
+  namespace: t3-k3s-p0
+spec:
+  podSelector:
+    matchLabels:
+      app: t3-owner
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tailscale
+      ports:
+        - protocol: TCP
+          port: 3773
