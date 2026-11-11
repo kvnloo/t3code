@@ -37,7 +37,10 @@ describe("ElectronShell", () => {
       for (const url of urls) {
         assert.equal(yield* electronShell.openExternal(url), true);
       }
-      assert.deepEqual(openExternalMock.mock.calls, urls.map((url) => [url]));
+      assert.deepEqual(
+        openExternalMock.mock.calls,
+        urls.map((url) => [url]),
+      );
     }).pipe(Effect.provide(ElectronShell.layer)),
   );
 
