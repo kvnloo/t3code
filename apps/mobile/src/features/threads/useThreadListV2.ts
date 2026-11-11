@@ -71,8 +71,11 @@ export function useThreadListV2(input: {
   const { threads, workingShelfEnabled } = input;
   const priorityOrderEnabled = input.priorityOrderEnabled === true;
   const layoutTime = useMemo(
-    () => threadListV2LayoutTime({ threads, now: input.now, searchQuery: input.searchQuery }),
-    [threads, input.now, input.searchQuery],
+    () =>
+      priorityOrderEnabled
+        ? input.now
+        : threadListV2LayoutTime({ threads, now: input.now, searchQuery: input.searchQuery }),
+    [threads, input.now, input.searchQuery, priorityOrderEnabled],
   );
   // A thread can stop working when the threads change, or when its exit grace expires.
   const inboxVersion = useSyncExternalStore(

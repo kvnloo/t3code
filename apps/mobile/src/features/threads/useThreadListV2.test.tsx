@@ -9,7 +9,7 @@ import { Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 
 import { olderSettledThreads } from "../../state/threads";
-import { makeRawThreadShell } from "../../test-fixtures";
+import { makeRawThreadShell, makeThreadShellFixture } from "../../test-fixtures";
 import { useThreadListV2 } from "./useThreadListV2";
 
 vi.mock("../../state/threads", () => ({
@@ -241,4 +241,36 @@ it("reuses a large thread list across tab renders and updates when its inputs ch
   expect(loaded.layout.items).toHaveLength(160);
   expect(loaded.olderSettledShelf.isListed(threads[150]!)).toBe(true);
   expect(loaded.items).not.toBe(loading.items);
+
+  const priorityInput = {
+    ...input,
+    threads: [
+      makeThreadShellFixture({
+        environmentId,
+        id: ThreadId.make("a-stale"),
+        settledOverride: "active",
+        latestUserAuthoredMessageAt: "2025-12-30T00:00:00.000Z",
+      }),
+      makeThreadShellFixture({
+        environmentId,
+        id: ThreadId.make("z-recent"),
+        settledOverride: "active",
+        latestUserAuthoredMessageAt: "2026-01-01T23:59:00.000Z",
+      }),
+    ],
+    priorityOrderEnabled: true,
+    workingShelfEnabled: false,
+    settledShelfExpanded: false,
+  };
+  await act(async () => root.render(<Probe input={priorityInput} tab="chats" />));
+  const focused = seen.at(-1)!;
+  expect(focused.layout.items.map((item) => item.thread.id)).toEqual(["z-recent", "a-stale"]);
+  await act(async () => root.render(<Probe input={priorityInput} tab="settings" />));
+  expect(seen.at(-1)!.layout).toBe(focused.layout);
+  await act(async () =>
+    root.render(
+      <Probe input={{ ...priorityInput, now: "2026-01-03T00:01:00.000Z" }} tab="chats" />,
+    ),
+  );
+  expect(seen.at(-1)!.layout.items.map((item) => item.thread.id)).toEqual(["a-stale", "z-recent"]);
 });

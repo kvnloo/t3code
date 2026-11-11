@@ -1627,8 +1627,39 @@ describe("Working section beta", () => {
 
   it("orders active threads by attention priority when asked", () => {
     const layout = build({ priorityOrderEnabled: true });
-    // The approval outranks finished work; pinned rows keep their own order above.
     expect(ids(layout).slice(0, 2)).toEqual(["pinned-working", "asks-approval"]);
+    const quiet = makeThread({ id: ThreadId.make("quiet"), title: "quiet" });
+    const review = {
+      ...finishedAt("review", "2026-06-01T03:00:00.000Z"),
+      lastVisitedAt: "2026-06-01T01:00:00.000Z",
+    };
+    const scenarios = [quiet, threads[2]!, review, threads[3]!, threads[4]!];
+    const priority = { threads: scenarios, priorityOrderEnabled: true, workingShelfEnabled: false };
+    expect(ids(build(priority))).toEqual([
+      "pinned-working",
+      "asks-approval",
+      "review",
+      "working",
+      "quiet",
+    ]);
+    const approved = scenarios.map((thread) =>
+      thread.id === "asks-approval" ? { ...thread, hasPendingApprovals: false } : thread,
+    );
+    expect(ids(build({ ...priority, threads: approved }))).toEqual([
+      "pinned-working",
+      "review",
+      "asks-approval",
+      "working",
+      "quiet",
+    ]);
+    const question = approved.map((thread) =>
+      thread.id === "quiet" ? { ...thread, hasPendingUserInput: true } : thread,
+    );
+    expect(ids(build({ ...priority, threads: question })).slice(0, 3)).toEqual([
+      "pinned-working",
+      "quiet",
+      "review",
+    ]);
   });
 
   it("keeps an inactive row in Working during the shared grace and returns it on expiry", () => {
