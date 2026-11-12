@@ -108,7 +108,7 @@ it("preserves actionable T3 errors wrapped by turn startup", () => {
   }
 });
 
-it("names how the provider process exited and the stage it failed in, without its output", () => {
+it("names how the provider process exited with bounded, redacted diagnostics", () => {
   for (const [exit, status] of [
     [{ signal: "SIGILL" }, " after signal SIGILL"],
     [{ code: 134 }, " with code 134"],
@@ -129,13 +129,13 @@ it("names how the provider process exited and the stage it failed in, without it
         },
       }),
     };
-    const expected = `The provider session could not be opened: the provider process exited${status}. Check the server logs for the provider's output, then retry the turn.`;
+    const expected = `The provider session could not be opened: the provider process exited${status}. Retry the turn after checking provider setup and resources; retry alone may not help.\nProvider stderr:\n*** SIGILL *** token=[REDACTED]`;
     assert.equal(knownProviderFailureMessage(sessionOpenFailure), expected);
     assert.equal(makeProviderFailure({ cause: Cause.fail(sessionOpenFailure) }).message, expected);
   }
   assert.equal(
     makeProviderFailure({ cause: { _tag: "AcpProcessExitedError", code: 1 } }).message,
-    "The provider process exited with code 1. Check the server logs for the provider's output, then retry the turn.",
+    "The provider process exited with code 1. Retry the turn after checking provider setup and resources; retry alone may not help.",
   );
 });
 

@@ -240,6 +240,7 @@ export class AcpTransportError extends Schema.TaggedError<AcpTransportError>()(
     method: Schema.optional(Schema.String),
     detail: Schema.optional(Schema.String),
     pid: Schema.optionalKey(Schema.Int),
+    stderr: Schema.optionalKey(Schema.String),
     cause: Schema.Defect(),
   },
 ) {
@@ -264,6 +265,7 @@ export class AcpInputStreamEndedError extends Schema.TaggedError<AcpInputStreamE
 export class AcpRequestError extends Schema.TaggedError<AcpRequestError>()("AcpRequestError", {
   code: AcpSchema.ErrorCode,
   errorMessage: Schema.String,
+  stderr: Schema.optionalKey(Schema.String),
   data: Schema.optional(Schema.Unknown),
   method: Schema.optionalKey(Schema.String),
   requestId: Schema.optionalKey(AcpRequestId),

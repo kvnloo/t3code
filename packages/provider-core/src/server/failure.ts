@@ -147,7 +147,34 @@ function curatedCauseMessages(cause: unknown): {
           const exit = `provider process exited${processExitStatus(cause)}`;
           const stage = category === undefined ? `The ${exit}` : `${category.summary}: the ${exit}`;
           return {
-            known: `${stage}. Check the server logs for the provider's output, then retry the turn.`,
+            known: withAcpDiagnostics(
+              `${stage}. Retry the turn after checking provider setup and resources; retry alone may not help.`,
+              cause,
+            ),
+            category: categoryMessage(),
+          };
+        }
+        case "AcpRequestError": {
+          const rejection = stringField(cause, "errorMessage");
+          if (rejection === undefined) break;
+          const stage = category?.summary ?? "The ACP request failed";
+          return {
+            known: withAcpDiagnostics(
+              `${stage}: ${boundedText(rejection, 512)}. Check provider setup before retrying; retry alone may not help.`,
+              cause,
+            ),
+            category: categoryMessage(),
+          };
+        }
+        case "AcpTransportError": {
+          const timedOut = stringField(cause, "detail")?.includes("timed out") === true;
+          const reason = timedOut ? "ACP request timed out" : "ACP connection failed";
+          const stage = category === undefined ? reason : `${category.summary}: ${reason}`;
+          return {
+            known: withAcpDiagnostics(
+              `${stage}. Retry the turn; if it repeats, check whether the provider is responding.`,
+              cause,
+            ),
             category: categoryMessage(),
           };
         }
@@ -181,7 +208,16 @@ function curatedCauseMessages(cause: unknown): {
   return { known: undefined, category: categoryMessage() };
 }
 
-// Only the structured status; stderr and the spawner cause can carry provider output.
+function withAcpDiagnostics(summary: string, cause: object): string {
+  const stderr = stringField(cause, "stderr");
+  if (stderr === undefined) return summary;
+  // Redact before truncating so a cut cannot remove a credential's identifying prefix.
+  const tail = Array.from(redactProviderFailureText(stderr).split(/\r?\n/u).slice(-20).join("\n"))
+    .slice(-2_048)
+    .join("");
+  return tail.length === 0 ? summary : `${summary}\nProvider stderr:\n${tail}`;
+}
+
 function processExitStatus(exited: object): string {
   const { signal, code } = exited as Record<string, unknown>;
   if (typeof signal === "string" && /^SIG[A-Z0-9]{1,16}$/u.test(signal)) {
@@ -199,7 +235,10 @@ export function knownProviderFailureMessage(cause: unknown): string | undefined 
   return curatedCauseMessages(cause).known;
 }
 
-function stringField(value: unknown, key: "message" | "code"): string | undefined {
+function stringField(
+  value: unknown,
+  key: "message" | "code" | "stderr" | "errorMessage" | "detail",
+): string | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   try {
     const candidate = (value as Record<string, unknown>)[key];

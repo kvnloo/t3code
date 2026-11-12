@@ -1300,28 +1300,34 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
     }
   });
 
-  const enrichProcessExitWithStderr = (
+  const enrichErrorWithStderr = Effect.fn("AcpSessionRuntime.enrichErrorWithStderr")(function* (
     error: EffectAcpErrors.AcpError,
-  ): Effect.Effect<EffectAcpErrors.AcpError> =>
-    error._tag !== "AcpProcessExitedError" || (error.stderr?.trim().length ?? 0) > 0
-      ? Effect.succeed(error)
-      : Deferred.await(stderrDrained).pipe(
-          Effect.timeout("250 millis"),
-          Effect.ignore,
-          Effect.andThen(Ref.get(stderrTailRef)),
-          Effect.map((tail) => {
-            const stderr = sanitizeAcpStderrExcerpt(tail, homeDirectory);
-            return stderr.length === 0
-              ? error
-              : new EffectAcpErrors.AcpProcessExitedError({
-                  ...(error.code !== undefined ? { code: error.code } : {}),
-                  ...(error.signal !== undefined ? { signal: error.signal } : {}),
-                  ...(error.pid !== undefined ? { pid: error.pid } : {}),
-                  stderr,
-                  ...(error.cause !== undefined ? { cause: error.cause } : {}),
-                });
-          }),
-        );
+  ) {
+    if (
+      error._tag !== "AcpProcessExitedError" &&
+      error._tag !== "AcpRequestError" &&
+      error._tag !== "AcpTransportError"
+    ) {
+      return error;
+    }
+    if (error._tag === "AcpTransportError" && error.operation === undefined) return error;
+    if (error._tag === "AcpProcessExitedError" && !error.stderr?.trim()) {
+      yield* Deferred.await(stderrDrained).pipe(Effect.timeout("250 millis"), Effect.ignore);
+    }
+    const stderr = sanitizeAcpStderrExcerpt(
+      error.stderr ?? (yield* Ref.get(stderrTailRef)),
+      homeDirectory,
+    );
+    if (stderr.length === 0) return error;
+    switch (error._tag) {
+      case "AcpProcessExitedError":
+        return new EffectAcpErrors.AcpProcessExitedError({ ...error, cause: error.cause, stderr });
+      case "AcpRequestError":
+        return new EffectAcpErrors.AcpRequestError({ ...error, cause: error.cause, stderr });
+      case "AcpTransportError":
+        return new EffectAcpErrors.AcpTransportError({ ...error, cause: error.cause, stderr });
+    }
+  });
 
   const recordTermination = Effect.fn("AcpSessionRuntime.recordTermination")(function* (
     error: EffectAcpErrors.AcpError,
@@ -1329,7 +1335,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
     if (yield* Ref.get(stoppingRef)) {
       return;
     }
-    const enriched = yield* enrichProcessExitWithStderr(error);
+    const enriched = yield* enrichErrorWithStderr(error);
     const firstTermination = yield* Ref.modify(terminationErrorRef, (current) =>
       Option.isSome(current)
         ? ([false, current] as const)
@@ -1353,9 +1359,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
     logRequest({ method, payload, status: "started" }).pipe(
       Effect.flatMap(() =>
         (options.onStderr ? Effect.raceFirst(effect, Deferred.await(stderrFailure)) : effect).pipe(
-          Effect.catch((error) =>
-            enrichProcessExitWithStderr(error).pipe(Effect.flatMap(Effect.fail)),
-          ),
+          Effect.catch((error) => enrichErrorWithStderr(error).pipe(Effect.flatMap(Effect.fail))),
           Effect.tap((result) =>
             logRequest({
               method,
@@ -2003,6 +2007,7 @@ export const make = Effect.fn("AcpSessionRuntime.make")(function* (
                   }),
               ),
             ),
+            Effect.catch((error) => enrichErrorWithStderr(error).pipe(Effect.flatMap(Effect.fail))),
             Effect.tap((result) =>
               logRequest({
                 method: "session/load",

@@ -443,11 +443,14 @@ describe("AcpRegistryAdapterV2", () => {
       new EffectAcpErrors.AcpRequestError({
         code: -32603,
         errorMessage: "Request rejected. api_key=private-key https://example.test/?token=secret",
+        stderr: "credential setup failed\nAuthorization: Bearer private-stderr-token",
       }),
     );
     assert.include(rejected.message, "Request rejected.");
     assert.notInclude(rejected.message, "private-key");
     assert.notInclude(rejected.message, "token=secret");
+    assert.include(rejected.message, "credential setup failed");
+    assert.notInclude(rejected.message, "private-stderr-token");
   });
 
   describe("the agent's own pickers", () => {
