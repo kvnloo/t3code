@@ -17,6 +17,7 @@ import {
   getProviderOptionDescriptors,
 } from "@t3tools/shared/model";
 import { resolveModelShortName } from "@t3tools/client-runtime/provider-clients";
+import { resolveProviderIconIdentity, type ProviderIconIdentity } from "./providerIconIdentity";
 
 export type ModelOption = {
   readonly key: string;
@@ -28,6 +29,7 @@ export type ModelOption = {
   readonly providerDriver: string;
   readonly supportedRuntimeModes?: ReadonlyArray<RuntimeMode>;
   readonly providerIconUrl?: string | undefined;
+  readonly providerIconIdentity?: ProviderIconIdentity | null;
   readonly providerBadge?: {
     readonly displayName: string;
     readonly accentColor?: string;
@@ -330,6 +332,10 @@ export function buildModelOptions(
         providerKey: provider.instanceId,
         providerLabel,
         providerDriver: provider.driver,
+        providerIconIdentity: resolveProviderIconIdentity({
+          driver: provider.driver,
+          settings: config?.settings?.providerInstances[provider.instanceId]?.config,
+        }),
         providerBadge,
         ...(provider.supportedRuntimeModes === undefined
           ? {}
@@ -399,6 +405,8 @@ export function buildModelOptions(
         providerKey: fallbackModelSelection.instanceId,
         providerLabel,
         providerDriver,
+        providerIconIdentity: resolveProviderIconIdentity({ driver: providerDriver, settings: instanceConfig?.config }),
+        ...(provider?.iconUrl ? { providerIconUrl: provider.iconUrl } : {}),
         providerBadge: providerBadgeFor(fallbackModelSelection.instanceId),
         isDefault: false,
         isLegacy: model?.isLegacy === true,

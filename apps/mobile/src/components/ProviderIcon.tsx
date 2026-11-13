@@ -7,7 +7,12 @@ import {
   providerInstanceInitials,
 } from "@t3tools/client-runtime/state/provider-instance-display";
 import { useId, useState } from "react";
-import { resolveOfficialAcpRegistryIconUrl } from "@t3tools/contracts";
+import {
+  resolveProviderIconImage,
+  type ProviderIconIdentity,
+  type ProviderIconImageState,
+} from "../lib/providerIconIdentity";
+import { HermesProviderIcon } from "./HermesProviderIcon";
 import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 import { AppText as Text } from "./ui/AppText";
 import { getProviderClient } from "@t3tools/client-runtime/provider-clients";
@@ -15,6 +20,7 @@ import { getProviderClient } from "@t3tools/client-runtime/provider-clients";
 type ProviderIconProps = {
   readonly provider: string | null | undefined;
   readonly iconUrl?: string | null | undefined;
+  readonly identity?: ProviderIconIdentity | null | undefined;
   readonly size?: number;
 };
 
@@ -34,18 +40,13 @@ function AcpRegistryProviderIcon(props: {
   readonly iconUrl: string | null | undefined;
   readonly size: number;
 }) {
-  const iconUrl = resolveOfficialAcpRegistryIconUrl(props.iconUrl);
-  const [image, setImage] = useState<{
-    readonly iconUrl: string;
-    readonly status: "loaded" | "failed";
-  } | null>(null);
-  const currentImage = image?.iconUrl === iconUrl ? image : null;
-  const loaded = currentImage?.status === "loaded";
+  const [image, setImage] = useState<ProviderIconImageState>(null);
+  const { iconUrl, loaded, failed } = resolveProviderIconImage(props.iconUrl, image);
 
   return (
     <View style={{ width: props.size, height: props.size }}>
       {!loaded ? <AcpRegistryFallbackIcon color={props.color} size={props.size} /> : null}
-      {iconUrl !== null && currentImage?.status !== "failed" ? (
+      {iconUrl !== null && !failed ? (
         <Image
           accessibilityIgnoresInvertColors
           cachePolicy="memory-disk"
@@ -84,7 +85,11 @@ export function ProviderIcon(props: ProviderIconProps) {
     );
   }
   if (props.provider === "acpRegistry") {
-    return <AcpRegistryProviderIcon color={mono} iconUrl={props.iconUrl} size={size} />;
+    return props.identity === "hermes" ? (
+      <HermesProviderIcon color={mono} size={size} />
+    ) : (
+      <AcpRegistryProviderIcon key={props.iconUrl} color={mono} iconUrl={props.iconUrl} size={size} />
+    );
   }
 
   if (props.provider === "claudeAgent") {
@@ -153,6 +158,7 @@ export function ProviderIcon(props: ProviderIconProps) {
 
 export function ProviderInstanceIcon(props: {
   readonly iconUrl?: string | null;
+  readonly identity?: ProviderIconIdentity | null | undefined;
   readonly provider: string | null | undefined;
   readonly size?: number;
   readonly displayName: string;
@@ -162,22 +168,21 @@ export function ProviderInstanceIcon(props: {
 }) {
   const accentColor = normalizeProviderAccentColor(props.accentColor);
   return (
-    <View style={{ position: "relative" }}>
-      <View style={{ opacity: 0.6 }}>
-        <ProviderIcon iconUrl={props.iconUrl} provider={props.provider} size={props.size} />
-      </View>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+      <ProviderIcon
+        identity={props.identity}
+        iconUrl={props.iconUrl}
+        provider={props.provider}
+        size={props.size}
+      />
       {props.showBadge ? (
-        // An absolute badge alone is capped at icon width and clips initials.
-        <View
-          pointerEvents="none"
-          style={{ position: "absolute", right: -3, bottom: -3, width: 32, alignItems: "flex-end" }}
-        >
+        <View pointerEvents="none">
           <View
             className={accentColor ? undefined : "bg-card"}
             style={{
-              height: 12,
-              minWidth: 12,
-              paddingHorizontal: 2,
+              height: 16,
+              minWidth: 18,
+              paddingHorizontal: 3,
               borderRadius: 999,
               borderWidth: 1,
               borderColor: props.surfaceColor,
@@ -187,11 +192,11 @@ export function ProviderInstanceIcon(props: {
             }}
           >
             <Text
-              className={accentColor ? undefined : "text-foreground-muted"}
+              className={accentColor ? undefined : "text-foreground"}
               style={{
-                fontSize: 7,
+                fontSize: 10,
                 fontWeight: "600",
-                lineHeight: 9,
+                lineHeight: 12,
                 color: accentColor ? providerAccentForegroundColor(accentColor) : undefined,
               }}
             >

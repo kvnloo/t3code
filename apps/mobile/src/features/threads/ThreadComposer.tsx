@@ -72,6 +72,7 @@ import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { ComposerAttachmentButton } from "./ComposerAttachmentButton";
+import { ComposerContextMeter } from "./ComposerContextMeter";
 import {
   ComposerAttachmentStrip,
   ComposerAttachmentThumbnail,
@@ -97,6 +98,7 @@ import {
   resolveComposerSendPresentation,
   type ComposerSendPresentation,
 } from "./composerSendPresentation";
+import { AndroidComposerSendButton } from "./AndroidComposerSendButton";
 import { compactEditorInsets } from "./compactEditorInsets";
 import { ComposerCommandPopover } from "./ComposerCommandPopover";
 import { ComposerPopoverAnchor } from "./ComposerPopoverAnchor";
@@ -113,6 +115,7 @@ import {
   ComposerDictationToolbar,
 } from "../voice-input/ComposerDictationControl";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
+import { ContinuousDictationControl } from "../voice-input/ContinuousDictationControl";
 import { resolveVoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
 import type { ExistingThreadSettingsRouteParams } from "./ThreadSettingsSheet";
 import {
@@ -302,6 +305,7 @@ const FOLLOW_UP_ACTION_SUBTITLE = {
 } as const;
 
 function SendActionButton(props: {
+  readonly scope: string;
   readonly size?: "regular" | "large";
   readonly accessibilityLabel: string;
   readonly presentation: ComposerSendPresentation;
@@ -309,6 +313,9 @@ function SendActionButton(props: {
   readonly onSend: (followUp?: ActiveTurnComposerAction) => void;
 }) {
   const { presentation } = props;
+  if (Platform.OS === "android") {
+    return <AndroidComposerSendButton key={props.scope} {...props} />;
+  }
   const button = (
     <ComposerActionButton
       accessibilityLabel={props.accessibilityLabel}
@@ -829,6 +836,19 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
         style={{ maxWidth: props.contentMaxWidth }}
       >
         {props.draftControls}
+        {Platform.OS === "android" && !props.isDraft ? (
+          <ContinuousDictationControl
+            key={composerOwnerKey}
+            environmentId={props.environmentId}
+            thread={props.selectedThread}
+            connected={props.connectionState === "connected"}
+            disabled={props.hidden || props.interactionLocked === true || queuedEdit !== null || !props.canOperateThread || props.sendBlockedReason != null || modelUnavailable}
+            running={props.activeThreadBusy}
+            canSteer={props.canSteerActiveTurn}
+            followUpBehavior={props.followUpBehavior}
+            serverConfig={props.serverConfig}
+          />
+        ) : null}
         {!isSubmissionLocked &&
         composerMenu.trigger &&
         (composerMenu.items.length > 0 || composerMenu.trigger.kind === "pull-request") ? (
@@ -971,6 +991,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                   />
                 ) : (
                   <SendActionButton
+                    scope={`${props.environmentId}/${composerDraftKey}/${props.hidden}/${!canSend}`}
                     size={usesLargeControls ? "large" : "regular"}
                     accessibilityLabel={sendBlockedReason ?? sendLabel}
                     presentation={sendPresentation}
@@ -1174,6 +1195,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                     />
                   ) : voicePresentation.showsSend ? (
                     <SendActionButton
+                    scope={`${props.environmentId}/${composerDraftKey}/${props.hidden}/${!canSend}`}
                       size={usesLargeControls ? "large" : "regular"}
                       accessibilityLabel={sendBlockedReason ?? sendLabel}
                       presentation={sendPresentation}
@@ -1186,6 +1208,16 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
             </ComposerDictationToolbar>
           </Animated.View>
         </ComposerSurface>
+        {Platform.OS === "android" && !props.isDraft && !props.hidden ? (
+          <ComposerContextMeter
+            key={JSON.stringify([
+              props.environmentId,
+              props.selectedThread.id,
+              props.selectedThread.modelSelection,
+            ])}
+            thread={props.selectedThread}
+          />
+        ) : null}
 
         {props.connectionState === "connected" && !props.canOperateThread ? (
           <Text className="pt-2 text-xs text-foreground-muted">

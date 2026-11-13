@@ -124,7 +124,10 @@ const voiceInputAtom = Atom.make((get) => {
   // background state cancels preparation; recorder status handles calls and
   // route interruptions during capture.
   const appStateSubscription = AppState.addEventListener("change", (nextState) => {
-    if (nextState === "background") void session.controller.appMovedToBackground();
+    if (nextState === "background") {
+      session.continuous?.stop();
+      void session.controller.appMovedToBackground();
+    }
   });
   get.addFinalizer(() => {
     appStateSubscription.remove();
@@ -143,7 +146,13 @@ export function useGlobalVoiceInput() {
     audioLevels,
     isBusy: voiceInputBlocksSubmission(snapshot.state),
     session,
-    stop: () => session.controller.stop(),
-    cancel: () => session.controller.cancel(),
+    stop: () => {
+      if (session.continuous?.isActive) {
+        session.continuous.stop();
+        return Promise.resolve();
+      }
+      return session.controller.stop();
+    },
+    cancel: () => session.cancelAll(),
   };
 }

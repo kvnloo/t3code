@@ -67,8 +67,8 @@ export function ComposerInlineControl(props: {
       >
         {props.renderIcon ? (
           <View
-            className="size-4 shrink-0 items-center justify-center"
-            style={{ width: iconSize, height: iconSize }}
+            className="shrink-0 items-center justify-center"
+            style={{ minWidth: iconSize, height: iconSize }}
           >
             {props.renderIcon(iconSize)}
           </View>
@@ -251,6 +251,13 @@ export function ComposerActionButton(props: {
   // Menu injects onLongPress on Android and onTouchStart/onPress on iOS.
   readonly onLongPress?: PressableProps["onLongPress"];
   readonly onTouchStart?: PressableProps["onTouchStart"];
+  readonly onPressIn?: PressableProps["onPressIn"];
+  readonly onTouchMove?: PressableProps["onTouchMove"];
+  readonly onTouchEnd?: PressableProps["onTouchEnd"];
+  readonly onTouchCancel?: PressableProps["onTouchCancel"];
+  readonly accessibilityHint?: string;
+  readonly accessibilityActions?: PressableProps["accessibilityActions"];
+  readonly onAccessibilityAction?: PressableProps["onAccessibilityAction"];
 }) {
   const { scale, smallIconSize } = useAndroidControlSizing();
   const circleSize = Math.round((props.size === "large" ? 44 : 30) * scale);
@@ -265,6 +272,13 @@ export function ComposerActionButton(props: {
       onPress={props.onPress}
       onLongPress={props.onLongPress}
       onTouchStart={props.onTouchStart}
+      onPressIn={props.onPressIn}
+      onTouchMove={props.onTouchMove}
+      onTouchEnd={props.onTouchEnd}
+      onTouchCancel={props.onTouchCancel}
+      accessibilityHint={props.accessibilityHint}
+      accessibilityActions={props.accessibilityActions}
+      onAccessibilityAction={props.onAccessibilityAction}
     >
       <View
         style={{ width: circleSize, height: circleSize }}

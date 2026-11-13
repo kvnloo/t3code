@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./context-window": {
+      "types": "./src/contextWindow.ts",
+      "default": "./src/contextWindow.ts"
+    },
     "./assembly-highlighting": {
       "types": "./src/assemblyHighlighting.ts",
       "default": "./src/assemblyHighlighting.ts"

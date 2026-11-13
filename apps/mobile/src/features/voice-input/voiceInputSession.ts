@@ -9,6 +9,7 @@ import {
 } from "@t3tools/client-runtime/voice-input";
 
 import { normalizeVoiceInputDecibels, VOICE_WAVEFORM_SAMPLE_COUNT } from "./voiceInputMetering";
+import type { ContinuousVoiceSession } from "./continuousVoiceSession";
 
 const VOICE_METERING_INTERVAL_MS = 80;
 const IDLE_STATE: VoiceInputState = { phase: "idle", error: null, errorAction: null };
@@ -82,6 +83,16 @@ export function createVoiceInputTarget(
  */
 export class VoiceInputSession {
   readonly controller: VoiceInputController;
+  continuous: ContinuousVoiceSession | null = null;
+
+  sample(): VoiceRecordingSample | null {
+    return this.dependencies.sampleRecording();
+  }
+
+  cancelAll(): void {
+    this.continuous?.stop();
+    this.controller.cancel();
+  }
   private readonly dependencies: VoiceInputSessionDependencies;
   private target: VoiceInputTarget | null = null;
   private unsubscribe: (() => void) | null = null;
@@ -131,14 +142,15 @@ export class VoiceInputSession {
   }
 
   cancel(ownerKey: string | null): void {
-    if (ownerKey !== null && this.ownerKey === ownerKey) this.controller.cancel();
+    if (ownerKey !== null && this.ownerKey === ownerKey) this.cancelAll();
   }
 
   retry(): Promise<void> {
     return this.target ? this.start(this.target) : Promise.resolve();
   }
 
-  start(target: VoiceInputTarget): Promise<void> {
+  start(target: VoiceInputTarget, continuous = false): Promise<void> {
+    if (!continuous && this.continuous?.isActive) this.continuous.stop();
     if (voiceInputBlocksSubmission(this.controller.currentState)) return Promise.resolve();
     this.target = target;
     this.unsubscribe = target.subscribe();
@@ -146,6 +158,7 @@ export class VoiceInputSession {
   }
 
   dispose(): void {
+    this.continuous?.dispose();
     this.controller.dispose();
     this.stopRecordingActivity();
     this.unsubscribe?.();

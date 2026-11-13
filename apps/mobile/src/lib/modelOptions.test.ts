@@ -252,7 +252,7 @@ describe("mobile model options", () => {
       settings: {
         ...DEFAULT_SERVER_SETTINGS,
         providerInstances: {
-          acp_one: { driver: "acpRegistry", enabled: true, config: { agentId: "one" } },
+          acp_one: { driver: "acpRegistry", enabled: true, config: { source: "registry", agentId: "hermes" } },
           acp_two: { driver: "acpRegistry", enabled: true, config: { agentId: "two" } },
         },
       },
@@ -270,6 +270,13 @@ describe("mobile model options", () => {
         (option) => option.providerBadge?.showBadge,
       ),
     ).toEqual([false, false]);
+    expect(buildModelOptions(config, null, undefined, null).map((option) => option.providerIconIdentity)).toEqual(["hermes", null]);
+    expect(buildModelOptions(
+      { ...config, providers: [] },
+      { instanceId: ProviderInstanceId.make("acp_one"), model: "saved-model" },
+      undefined,
+      null,
+    )[0]?.providerIconIdentity).toBe("hermes");
     const shared = {
       ...config,
       settings: {
