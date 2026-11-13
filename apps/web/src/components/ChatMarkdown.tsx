@@ -189,6 +189,7 @@ import {
 import { resolveLinkTarget } from "../browser/browserLinkTarget";
 import { PullRequestLinkPreview } from "./pullRequest/PullRequestLinkPreview";
 import { MarkdownCodeBlock, SuspenseShikiCodeBlock } from "./chat/MarkdownCodeBlock";
+import { MarkdownOpenUiCodeBlock } from "./chat/MarkdownOpenUiCodeBlock";
 import { MarkdownMermaidCodeBlock } from "./chat/MarkdownMermaidCodeBlock";
 import { MarkdownTable } from "./chat/MarkdownTable";
 import { MarkdownDetails } from "./chat/MarkdownDetails";
@@ -1590,6 +1591,9 @@ const CHAT_MARKDOWN_COMPONENTS = {
         </Suspense>
       </RenderErrorBoundary>
     );
+    if (language === "openui-v1") {
+      return <MarkdownOpenUiCodeBlock code={codeBlock.code} isStreaming={isStreaming && !isClosedCodeFence(node, text, codeBlock.code)} />;
+    }
     if (language === "mermaid") {
       return (
         <MarkdownMermaidCodeBlock
