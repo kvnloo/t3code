@@ -312,6 +312,13 @@ export function CommandPalette(props: {
         run: () => selectTab("settings"),
       },
       {
+        key: "needsYou",
+        kind: "action",
+        title: "Needs you",
+        searchTerms: ["inbox", "approvals", "questions", "waiting", "attention", "review"],
+        run: () => selectTab("needsYou"),
+      },
+      {
         key: "appearance",
         kind: "action",
         title: "Appearance",

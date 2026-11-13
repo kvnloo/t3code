@@ -39,6 +39,7 @@ import {
 } from "../panelAnimations";
 import { BackgroundThreadAnnouncer } from "./BackgroundThreadAnnouncer";
 import ThreadSidebar from "./Sidebar";
+import { NeedsYouNavigation } from "./NeedsYouNavigation";
 import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
 import { isAppModalPage } from "./sidebar/mainAppLocation";
 import type { SidebarRouteReveal } from "./sidebar/routeReveal";
@@ -469,6 +470,7 @@ export function AppSidebarLayout({ children }: { children: ReactNode }) {
           style={windowControlsInsetStyle}
         >
           <ThreadSidebar routeReveal={sidebarRouteReveal} />
+          <NeedsYouNavigation />
           <SidebarRail onDoubleClick={resetSidebarWidth} />
         </Sidebar>
         {children}
