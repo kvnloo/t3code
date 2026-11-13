@@ -12,7 +12,7 @@ import * as Option from "effect/Option";
 import * as Electron from "electron";
 
 // Remote editor deep links must reach the OS handler.
-const SAFE_WEB_PROTOCOLS = new Set(["http:", "https:"]);
+const SAFE_WEB_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
 const REMOTE_EDITOR_PROTOCOLS = new Set(
   REMOTE_CAPABLE_EDITOR_IDS.flatMap((id) => {
     const scheme = remoteSchemeForEditor(id);
