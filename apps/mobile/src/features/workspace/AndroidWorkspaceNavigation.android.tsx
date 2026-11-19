@@ -82,14 +82,26 @@ export function AndroidWorkspaceNavigation(props: {
   const connectionState = useWorkspaceConnectionState();
   const keyboardVisible = useSoftKeyboardShowing();
   const { layout, keyboardHoldsSidebar } = useAdaptiveWorkspaceLayout();
-  const { themeAppearance, themeVariables: colors } = useAppearancePreferences();
+  const {
+    themeAppearance,
+    themeVariables: colors,
+    windowGlassPane,
+    glassRootColor,
+  } = useAppearancePreferences();
   const { scale, fabSize } = useAndroidControlSizing();
   const window = useWindowDimensions();
   const rail = Boolean(props.rail);
   const floating = !rail && Boolean(props.floating);
   const tabs = [...visibleNavigationTabs(order, hidden, rail ? 5 : 4), "settings"];
   const { containerColor, indicatorColor, selectedColor, unselectedColor } =
-    androidWorkspaceNavigationColors(colors, rail, floating);
+    androidWorkspaceNavigationColors(
+      colors,
+      rail,
+      floating,
+      windowGlassPane !== null && glassRootColor
+        ? { pane: windowGlassPane, rootColor: glassRootColor }
+        : undefined,
+    );
   const selectedTab = selectedNavigationTab(
     order,
     workspace.state.selectedTab,

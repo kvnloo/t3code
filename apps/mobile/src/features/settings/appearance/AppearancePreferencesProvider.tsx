@@ -86,6 +86,10 @@ interface AppearancePreferencesContextValue {
   readonly windowGlassAvailable: boolean;
   readonly windowGlass: WindowGlassMode;
   readonly windowGlassBlurSupported: boolean;
+  /** Pane opacity of the active glass plan; null for a solid window. */
+  readonly windowGlassPane: number | null;
+  /** The tint painted over the wallpaper at the root; undefined for a solid window. */
+  readonly glassRootColor: string | undefined;
   readonly setWindowGlass: (value: WindowGlassMode) => void;
   readonly isReady: boolean;
   readonly setThemeIdForAppearance: (
@@ -310,6 +314,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
   };
   const themeVariables = themeVariablesByAppearance[themeAppearance];
   const glassRootColor = readableThemes[themeAppearance].glassRootColor;
+  const windowGlassPane = windowGlassPlan?.pane ?? null;
   const activeThemeName = getMobileUniwindThemeName(themeId, themeAppearance);
   const { baseFontSize, codeFontSize, codeWordBreak, terminalFontSize } = preferences;
   const appearance = useMemo(
@@ -408,6 +413,8 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       windowGlassAvailable: isWindowGlassAvailable,
       windowGlass,
       windowGlassBlurSupported,
+      windowGlassPane,
+      glassRootColor,
       setWindowGlass,
       isReady,
       setThemeIdForAppearance,
@@ -436,6 +443,8 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
       paletteThemeActive,
       windowGlass,
       windowGlassBlurSupported,
+      windowGlassPane,
+      glassRootColor,
       setWindowGlass,
       isReady,
       setThemeIdForAppearance,
