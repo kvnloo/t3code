@@ -1245,6 +1245,7 @@
   "bb34eaf6ddc55a72": "Ce compte n’a pas de limites d’abonnement.",
   "42a2622893a6bced": "Impossible de lire les limites.",
   "4897e228d3185c96": "Aucune limite signalée.",
+  "7b49074b8a01304a": "{environment} n’est pas connecté. Ses limites d’il y a {age} sont masquées.",
   "e27d2cb964df5dd5": "{source} : aucun compte signalé.",
   "1b503134018285f4": "{days} j {hours} h",
   "164c674cf062933a": "{label} · {count} restants · expire dans {expires}",

@@ -170,16 +170,62 @@ export function providersWithLimits(
   );
 }
 
-export type LimitPresentations = ReadonlyMap<
-  EnvironmentId,
-  {
-    readonly entry: { readonly target: { readonly label: string } };
-    readonly serverConfig: {
-      readonly providers: readonly ServerProvider[];
-      readonly usageLimitSources?: UsageLimitSourceSnapshots | undefined;
-    } | null;
+export interface LimitPresentation {
+  readonly entry: { readonly target: { readonly label: string } };
+  readonly connection?: { readonly phase: string };
+  readonly serverConfig: {
+    readonly providers: readonly ServerProvider[];
+    readonly usageLimitSources?: UsageLimitSourceSnapshots | undefined;
+  } | null;
+}
+
+export type LimitPresentations = ReadonlyMap<EnvironmentId, LimitPresentation>;
+
+/** How long a disconnected environment's last limits reading still counts as current. */
+const DISCONNECTED_LIMITS_MAX_AGE = 15 * MINUTE;
+
+export interface StaleLimitEnvironment {
+  readonly label: string;
+  readonly checkedAt: number;
+}
+
+/**
+ * A disconnected environment cannot refresh, so its cached limits freeze at their last reading.
+ * Once that reading ages past DISCONNECTED_LIMITS_MAX_AGE it no longer describes the account,
+ * and pooling it would show days-old spend as current.
+ */
+export function partitionStaleLimitPresentations<Presentation extends LimitPresentation>(
+  presentations: ReadonlyMap<EnvironmentId, Presentation>,
+  now: number,
+): {
+  readonly current: ReadonlyMap<EnvironmentId, Presentation>;
+  readonly stale: readonly StaleLimitEnvironment[];
+} {
+  const current = new Map<EnvironmentId, Presentation>();
+  const stale: StaleLimitEnvironment[] = [];
+  for (const [environmentId, presentation] of presentations) {
+    const config = presentation.serverConfig;
+    const readings = [
+      ...(config?.providers ?? []).flatMap((provider) =>
+        provider.usageLimits ? [provider.usageLimits.checkedAt] : [],
+      ),
+      ...(config?.usageLimitSources ?? []).flatMap((source) =>
+        source.accounts.map((account) => account.usageLimits.checkedAt),
+      ),
+    ]
+      .map((checkedAt) => Date.parse(checkedAt))
+      .filter(Number.isFinite);
+    const checkedAt = readings.length > 0 ? Math.max(...readings) : null;
+    const disconnected =
+      presentation.connection !== undefined && presentation.connection.phase !== "connected";
+    if (disconnected && checkedAt !== null && now - checkedAt > DISCONNECTED_LIMITS_MAX_AGE) {
+      stale.push({ label: presentation.entry.target.label, checkedAt });
+    } else {
+      current.set(environmentId, presentation);
+    }
   }
->;
+  return { current, stale };
+}
 
 export function collectExternalUsageLinks(
   presentations: LimitPresentations,

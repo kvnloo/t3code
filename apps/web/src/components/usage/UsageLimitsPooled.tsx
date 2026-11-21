@@ -8,6 +8,7 @@ import {
   type LimitPoolMember,
   type LimitPoolWindow,
   paceRemainingPercent,
+  partitionStaleLimitPresentations,
   remainingPercent,
   type ResetCreditChoice,
 } from "@t3tools/shared/usageLimits";
@@ -44,6 +45,7 @@ import {
   cursorUsageWindowDetails,
   formatResetsIn,
   resetCreditChoices,
+  staleLimitNotices,
 } from "@t3tools/shared/usageLimitsCopy";
 
 function accountInitials(email: string): string {
@@ -682,9 +684,10 @@ export function UsageLimitsPooled({
   const m = useMessages();
   const [segmentPopover] = useState(() => PopoverCreateHandle<SegmentPayload>());
   const segmentPopoverActions = useRef<PopoverPrimitive.Root.Actions | null>(null);
-  const pools = collectLimitPools(collectLimitAccounts(presentations), now);
-  const notices = collectLimitNotices(presentations, m);
-  const externalLinks = collectExternalUsageLinks(presentations, m);
+  const { current, stale } = partitionStaleLimitPresentations(presentations, now);
+  const pools = collectLimitPools(collectLimitAccounts(current), now);
+  const notices = [...collectLimitNotices(current, m), ...staleLimitNotices(stale, now, m)];
+  const externalLinks = collectExternalUsageLinks(current, m);
   return (
     <div className="flex flex-col gap-8">
       {pools.length === 0 && notices.length === 0 && externalLinks.length === 0 ? (

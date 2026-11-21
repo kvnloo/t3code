@@ -22,10 +22,11 @@ import {
   exhaustedUsageWindow,
   paceOf,
   paceRemainingPercent,
+  partitionStaleLimitPresentations,
   usesChatGptSharing,
   resolveNewThreadModelSelection,
 } from "./usageLimits.ts";
-import { collectLimitNotices } from "./usageLimitsCopy.ts";
+import { collectLimitNotices, staleLimitNotices } from "./usageLimitsCopy.ts";
 
 const now = Date.parse("2026-09-03T12:00:00.000Z");
 
@@ -1819,6 +1820,77 @@ describe("external usage settings", () => {
       [EnvironmentId.make("c"), host],
     ]);
     expect(collectLimitNotices(presentations)).toEqual(["Host · codex: Could not read limits."]);
+  });
+});
+
+describe("disconnected environments", () => {
+  const claude = (email: string, usedPercent: number, checkedAt: string) =>
+    provider({
+      instanceId: ProviderInstanceId.make(email.split("@")[0]!),
+      driver: ProviderDriverKind.make("claudeAgent"),
+      auth: { status: "authenticated", email },
+      usageLimits: {
+        checkedAt,
+        windows: [
+          {
+            id: "seven_day",
+            kind: "weekly",
+            label: "Weekly",
+            usedPercent,
+            windowDurationMins: 10_080,
+            resetsAt: "2026-09-07T12:00:00.000Z",
+          },
+        ],
+      },
+    });
+  const host = (label: string, phase: string, providers: ServerProvider[]) => ({
+    entry: { target: { label } },
+    connection: { phase },
+    serverConfig: { providers },
+  });
+  const weekly = (presentations: Parameters<typeof collectLimitAccounts>[0]) =>
+    collectLimitPools(collectLimitAccounts(presentations), now)[0]?.windows[0]?.remainingPercent;
+
+  it("leaves a disconnected host's days-old reading out of the pooled limits", () => {
+    const presentations = new Map([
+      [
+        EnvironmentId.make("studio"),
+        host("Studio", "connected", [claude("a@example.com", 32, "2026-09-03T11:59:00.000Z")]),
+      ],
+      [
+        EnvironmentId.make("groot"),
+        host("groot", "offline", [claude("b@example.com", 0, "2026-09-01T06:00:00.000Z")]),
+      ],
+    ]);
+    expect(weekly(presentations)).toBe(84);
+
+    const { current, stale } = partitionStaleLimitPresentations(presentations, now);
+    expect(weekly(current)).toBe(68);
+    expect(staleLimitNotices(stale, now)).toEqual([
+      "groot is not connected. Its limits from 2d 6h ago are hidden.",
+    ]);
+  });
+
+  it("keeps a recent reading through a brief disconnect", () => {
+    const presentations = new Map([
+      [
+        EnvironmentId.make("studio"),
+        host("Studio", "reconnecting", [claude("a@example.com", 32, "2026-09-03T11:50:00.000Z")]),
+      ],
+    ]);
+    const { current, stale } = partitionStaleLimitPresentations(presentations, now);
+    expect(weekly(current)).toBe(68);
+    expect(stale).toEqual([]);
+  });
+
+  it("keeps an old reading from a connected host", () => {
+    const presentations = new Map([
+      [
+        EnvironmentId.make("studio"),
+        host("Studio", "connected", [claude("a@example.com", 32, "2026-09-01T06:00:00.000Z")]),
+      ],
+    ]);
+    expect(partitionStaleLimitPresentations(presentations, now).stale).toEqual([]);
   });
 });
 

@@ -8,6 +8,7 @@ import {
   collectLimitPools,
   displayLimitWindows,
   paceRemainingPercent,
+  partitionStaleLimitPresentations,
   remainingPercent,
   type LimitAccount,
   type LimitPoolWindow,
@@ -16,6 +17,7 @@ import {
   collectExternalUsageLinks,
   collectLimitNotices,
   cursorUsageWindowDetails,
+  staleLimitNotices,
 } from "@t3tools/shared/usageLimitsCopy";
 import { msg, T, useGT, useMessages, Var } from "gt-react-native";
 import { Fragment, type ReactNode, useId, useState } from "react";
@@ -477,13 +479,15 @@ export function UsageLimitsSection({
   readonly wide?: boolean;
 }) {
   const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
-  const selected =
+  const { current: selected, stale } = partitionStaleLimitPresentations(
     selectedEnvironmentIds === null
       ? presentations
-      : new Map([...presentations].filter(([id]) => selectedEnvironmentIds.has(id)));
+      : new Map([...presentations].filter(([id]) => selectedEnvironmentIds.has(id))),
+    now,
+  );
   const pools = collectLimitPools(collectLimitAccounts(selected), now);
   const m = useMessages();
-  const notices = collectLimitNotices(selected, m);
+  const notices = [...collectLimitNotices(selected, m), ...staleLimitNotices(stale, now, m)];
   const externalLinks = collectExternalUsageLinks(selected, m);
   const colors = useProviderColors();
   const gt = useGT();
@@ -599,10 +603,12 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
   const { accountKey, windowId, windowKind, environmentIds, now } = route.params;
   const selectedIds =
     environmentIds === null ? null : new Set(environmentIds.map((id) => EnvironmentId.make(id)));
-  const selected =
+  const { current: selected } = partitionStaleLimitPresentations(
     selectedIds === null
       ? presentations
-      : new Map([...presentations].filter(([id]) => selectedIds.has(id)));
+      : new Map([...presentations].filter(([id]) => selectedIds.has(id))),
+    now,
+  );
   const accounts = collectLimitAccounts(selected);
   const account = accounts.find((candidate) => candidate.key === accountKey);
   const pool = collectLimitPools(accounts, now)

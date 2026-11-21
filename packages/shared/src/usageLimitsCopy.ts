@@ -15,6 +15,7 @@ import {
   providersWithLimits,
   type ResetCreditChoice,
   resetCountdown,
+  type StaleLimitEnvironment,
 } from "./usageLimits.ts";
 
 const MINUTE = 60_000;
@@ -109,6 +110,22 @@ export function collectLimitNotices(
     }
   }
   return [...notices];
+}
+
+/** @public */
+export function staleLimitNotices(
+  stale: readonly StaleLimitEnvironment[],
+  now: number,
+  resolve: MFunctionType = mFallback,
+): readonly string[] {
+  return stale.map(({ label, checkedAt }) =>
+    resolve(
+      msg("{environment} is not connected. Its limits from {age} ago are hidden.", {
+        environment: label,
+        age: formatDuration(now - checkedAt, resolve),
+      }),
+    ),
+  );
 }
 
 /** @public */

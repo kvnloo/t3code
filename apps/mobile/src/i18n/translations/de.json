@@ -1245,6 +1245,7 @@
   "bb34eaf6ddc55a72": "Dieses Konto hat keine Abonnementlimits.",
   "42a2622893a6bced": "Limits konnten nicht gelesen werden.",
   "4897e228d3185c96": "Keine Limits gemeldet.",
+  "7b49074b8a01304a": "{environment} ist nicht verbunden. Die Limits von vor {age} werden ausgeblendet.",
   "e27d2cb964df5dd5": "{source}: Keine Konten gemeldet.",
   "1b503134018285f4": "{days} T. {hours} Std.",
   "164c674cf062933a": "{label} · noch {count} · läuft ab in {expires}",
