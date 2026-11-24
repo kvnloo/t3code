@@ -8,7 +8,12 @@ import {
   resolveWindowGlassPlan,
   type WindowGlassMode,
 } from "../../lib/windowGlass";
-import { androidWorkspaceNavigationColors } from "./android-workspace-navigation-colors";
+import {
+  androidWorkspaceNavigationColors,
+  GLASS_PILL_CONTENT_GHOST_MAX,
+  glassPillAlpha,
+  glassPillContentGhost,
+} from "./android-workspace-navigation-colors";
 
 function luminance(hex: string) {
   const channels = hex
@@ -56,9 +61,10 @@ describe("Android floating navigation pill on window glass", () => {
       rootColor,
     });
 
-    // Same alpha as every other glass pane (cards, thread canvas), not an opaque fill.
+    // Still a glass pane (8-digit hex), never thinner than the other panes.
     expect(colors.containerColor).toMatch(/^#[\da-f]{8}$/iu);
-    expect(Number.parseInt(colors.containerColor.slice(7, 9), 16)).toBe(Math.round(plan.pane * 255));
+    const alpha = Number.parseInt(colors.containerColor.slice(7, 9), 16) / 255;
+    expect(alpha).toBeGreaterThanOrEqual(Math.round(plan.pane * 255) / 255);
 
     // Where the pill can land: the root tint over black or white wallpaper, bare or over a card.
     const surfaces = ["#000000", "#ffffff"].flatMap((wallpaper) => {
@@ -78,6 +84,48 @@ describe("Android floating navigation pill on window glass", () => {
       TEXT_CONTRAST_MINIMUM,
     );
   });
+
+  it.each(CASES)(
+    "$name: rows scrolling under the pill don't read through it",
+    ({ themeId, appearance, mode, blur }) => {
+      const plan = resolveWindowGlassPlan(mode, blur)!;
+      const theme = resolveReadableTheme(
+        getMobileThemeRuntimeVariables(themeId, appearance, "android"),
+        plan,
+      );
+      const glass = { pane: plan.pane, rootColor: theme.glassRootColor! };
+      const colors = androidWorkspaceNavigationColors(theme.variables, false, true, glass);
+      const fill = theme.variables["--color-secondary"];
+      const alpha = Number.parseInt(colors.containerColor.slice(7, 9), 16) / 255;
+
+      // Text and accents under the pill, over every backdrop it can sit on, stay a faint ghost.
+      const surfaces = ["#000000", "#ffffff"].flatMap((wallpaper) => {
+        const tinted = flattenThemeColor(glass.rootColor, wallpaper);
+        return [tinted, flattenThemeColor(theme.variables["--color-grouped-card"], tinted)];
+      });
+      for (const surface of surfaces) {
+        for (const role of ["--color-foreground", "--color-primary"] as const) {
+          const pill = flattenThemeColor(colors.containerColor, surface);
+          const ghost = flattenThemeColor(
+            colors.containerColor,
+            flattenThemeColor(theme.variables[role], surface),
+          );
+          expect(contrast(ghost, pill), `${role} under the pill on ${surface}`).toBeLessThanOrEqual(
+            GLASS_PILL_CONTENT_GHOST_MAX + 0.02,
+          );
+        }
+      }
+      // And no thicker than needed: one step thinner would let the text read again.
+      const chosen = glassPillAlpha(theme.variables, glass);
+      expect(Math.abs(chosen - alpha)).toBeLessThan(1 / 255 + 1e-9);
+      if (chosen > plan.pane) {
+        expect(glassPillContentGhost(theme.variables, glass, chosen - 0.02)).toBeGreaterThan(
+          GLASS_PILL_CONTENT_GHOST_MAX,
+        );
+      }
+      expect(fill).toBeTruthy();
+    },
+  );
 
   it("keeps the solid pill opaque and unchanged without glass", () => {
     for (const themeId of MOBILE_THEME_IDS) {

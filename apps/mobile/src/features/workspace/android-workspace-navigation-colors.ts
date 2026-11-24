@@ -1,6 +1,7 @@
 import {
   flattenThemeColor,
   isDarkThemeColor,
+  themeColorContrastRatio,
   themeColorWithAlpha,
   themeColorWithContrast,
   type MobileThemeVariables,
@@ -38,10 +39,59 @@ function glassBackdrops(colors: MobileThemeVariables, glass: AndroidNavigationGl
   });
 }
 
-// The pill takes the pane alpha every other glass surface uses, so the wallpaper shows through
-// it. Colors on it are checked against every opaque color it can composite to.
+/**
+ * Content scrolls under the floating pill. A real window blur only softens the wallpaper, never
+ * the app's own rows, so at the bare pane alpha a label passing under the pill stays sharp and
+ * lands on top of the pill's icons. Text behind the pill may reach at most this contrast against
+ * the pill around it: faint enough that it no longer reads as a second layer of labels.
+ */
+export const GLASS_PILL_CONTENT_GHOST_MAX = 1.25;
+
+// The strongest content colors a row can paint under the pill.
+const CONTENT_ROLES = ["--color-foreground", "--color-primary"] as const;
+
+/** Worst contrast of content text against the pill around it, seen through a pill of `alpha`. */
+export function glassPillContentGhost(
+  colors: MobileThemeVariables,
+  glass: AndroidNavigationGlass,
+  alpha: number,
+): number {
+  const fill = colorWithAlphaHex(colors["--color-secondary"], alpha);
+  return Math.max(
+    ...glassBackdrops(colors, glass).flatMap((backdrop) => {
+      const around = flattenThemeColor(fill, backdrop);
+      return CONTENT_ROLES.filter((role) => colors[role]).map((role) =>
+        themeColorContrastRatio(
+          flattenThemeColor(fill, flattenThemeColor(colors[role], backdrop)),
+          around,
+        ),
+      );
+    }),
+  );
+}
+
+/**
+ * The pill's opacity: the pane alpha when that already hides content, otherwise the least alpha
+ * (to 0.01) that does. The wallpaper still tints through whatever is left.
+ */
+export function glassPillAlpha(colors: MobileThemeVariables, glass: AndroidNavigationGlass) {
+  const hides = (alpha: number) =>
+    glassPillContentGhost(colors, glass, alpha) <= GLASS_PILL_CONTENT_GHOST_MAX;
+  if (hides(glass.pane)) return glass.pane;
+  let low = glass.pane;
+  let high = 1;
+  for (let step = 0; step < 16; step += 1) {
+    const middle = (low + high) / 2;
+    if (hides(middle)) high = middle;
+    else low = middle;
+  }
+  return Math.min(1, Math.ceil(high * 100) / 100);
+}
+
+// The pill is a glass pane, thick enough that rows scrolling under it don't read through it.
+// Colors on it are checked against every opaque color it can composite to.
 function glassFloatingColors(colors: MobileThemeVariables, glass: AndroidNavigationGlass) {
-  const containerColor = colorWithAlphaHex(colors["--color-secondary"], glass.pane);
+  const containerColor = colorWithAlphaHex(colors["--color-secondary"], glassPillAlpha(colors, glass));
   const pills = glassBackdrops(colors, glass).map((backdrop) =>
     flattenThemeColor(containerColor, backdrop),
   );
